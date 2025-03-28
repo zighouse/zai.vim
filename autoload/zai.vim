@@ -1,10 +1,30 @@
 let s:home = expand('<sfile>:h:h')
 let g:input_mode = 'text' " json, text
+let s:path_sep = has('win32') ? '\' : '/'
+
 if !exists('g:zai_cmd')
-    let g:zai_cmd = '/usr/bin/env python3 ' .. s:home .. '/python3/deepseek.py'
-                \ .. ' --log-dir=' .. expand('~/.local/share/zai/log')
-                \ .. ' --' .. g:input_mode
+    let s:path_template = has('win32') ?
+                \ '{home}\python3\deepseek.py':
+                \ '{home}/python3/deepseek.py'
+    let s:script_path = substitute(s:path_template, '{home}', s:home, 'g')
+
+    if has('win32')
+        let s:log_dir = expand('~/AppData/Local/zai/log')
+    else
+        let s:log_dir = expand('~/.local/share/zai/log')
+    endif
+
+    if has('win32')
+        let g:zai_cmd = 'python "' . s:script_path . '"'
+                    \ .. ' --log-dir="' . s:log_dir . '"'
+                    \ .. ' --' . g:input_mode
+    else
+        let g:zai_cmd = '/usr/bin/env python3 "' . s:script_path . '"'
+                    \ .. ' --log-dir="' . s:log_dir . '"'
+                    \ .. ' --' . g:input_mode
+    endif
 endif
+
 if !exists('g:zai_print_prompt')
     let g:zai_print_prompt = ['**User:**', '**Assistant:**']
 endif

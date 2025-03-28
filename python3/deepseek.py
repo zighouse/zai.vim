@@ -61,12 +61,12 @@ import sys
 import time
 from datetime import datetime
 from openai import OpenAI
+from appdirs import user_data_dir
+from pathlib import Path
 
 # Log directory
-g_log_dir = os.path.expanduser("~/.local/share/zai/log")
-
-# Ensure log directory exists
-os.makedirs(g_log_dir, exist_ok=True)
+g_log_dir = Path(user_data_dir("zai", "zighouse")) / "log"
+g_log_dir.mkdir(parents=True, exist_ok=True)
 
 g_cmd_prefix = ':'
 g_cmd_prefix_chars = [ ':', '/', '~', '\\', ';', '!', '#', '$', '%', '&', '?',
@@ -76,7 +76,7 @@ g_cmd_prefix_chars = [ ':', '/', '~', '\\', ';', '!', '#', '$', '%', '&', '?',
 
 # log file name
 g_log_filename = datetime.now().strftime("%Y%m%d_%H%M%S.md")
-g_log_path = os.path.join(g_log_dir, g_log_filename)
+g_log_path = g_log_dir / g_log_filename
 g_input_mode = 'json'
 g_output_mode = 'text'
 
