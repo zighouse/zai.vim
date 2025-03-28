@@ -1,7 +1,7 @@
 let s:home = expand('<sfile>:h:h')
 let g:input_mode = 'text' " json, text
 if !exists('g:zai_cmd')
-    let g:zai_cmd = '/usr/bin/env python3 ' .. s:home .. '/python3/zai/deepseek.py'
+    let g:zai_cmd = '/usr/bin/env python3 ' .. s:home .. '/python3/deepseek.py'
                 \ .. ' --log-dir=' .. expand('~/.local/share/zai/log')
                 \ .. ' --' .. g:input_mode
 endif
