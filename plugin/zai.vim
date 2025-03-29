@@ -3,6 +3,29 @@ if exists('g:loaded_zai') || &compatible
 endif
 let g:loaded_zai = 1
 
+" Check and install dependencies
+function! s:CheckDependencies() abort
+    if !executable('python3')
+        echohl WarningMsg
+        echomsg "Zai is dependent on Python3. Please install Python3 first."
+        echohl None
+        return
+    endif
+
+    let s:install_script = expand('<sfile>:p:h') . '/../install.py'
+    if filereadable(s:install_script)
+        silent! call system('python3 ' . shellescape(s:install_script))
+    endif
+endfunction
+
+if !exists('g:zai_auto_install_deps')
+    let g:zai_auto_install_deps = 1
+endif
+
+if g:zai_auto_install_deps
+    call s:CheckDependencies()
+endif
+
 command! Zai call zai#Open()
 command! -range ZaiAdd call zai#AddRange(<line1>, <line2>)
 command! ZaiGo call zai#Go()
