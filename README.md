@@ -64,27 +64,27 @@ When the Zai interface is open, you can use special commands prefixed with `:` (
 
 - `:help` - Show help message
 - `:exit`/`:quit` - Exit the interface
-- `:talk\_mode` - Set conversation mode (chain, instant)
+- `:talk_mode` - Set conversation mode (chain, instant)
 - `:model <name>` - Set model (deepseek-coder, deepseek-chat, deepseek-reasoner, etc.)
 - `:temperature <value>` - Set creativity (0-2)
 - `:prompt <text>` - Set system prompt (single line system prompt content)
 - `:file <path>` - Attach a text file
 - `:->/` - Change command prefix to `/`
 
-### Change the talk\_mode in conversation
+### Change the talk_mode in conversation
 
 You can change the talk-mode from chain to instant at any time.
 
 When in chain talk-mode, you chain all your history conversation as context along with you last request content and send to Deepseek service. 
 
 ```
-:talk\_mode chain
+:talk_mode chain
 ```
 
 When in instant talk-mode, you only send the last request content without previous conversation context.  
 
 ```
-:talk\_mode instant
+:talk_mode instant
 ```
 
 Inspite which mode you choose, all conversation contents in a Zai session are logged into one file. If you want to start a new session, close it with `ZaiClose` command or `<Leader>zX`.
