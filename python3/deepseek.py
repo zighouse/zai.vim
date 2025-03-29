@@ -80,10 +80,9 @@ g_log_path = g_log_dir / g_log_filename
 g_input_mode = 'json'
 g_output_mode = 'text'
 
-g_is_block_mode = False # Block mode status
-g_block_signature = ''  # Block ending signature
-g_block = ''            # Accumulated block content
-g_is_block_prompt = False # Block mode for prompt
+g_block_stack = []  # Stack of active blocks, each entry is:
+                    # {'is_prompt': bool, 'signature': str, 'content': str}
+
 g_prompt="""You are an expert in debugging and code logic. For each query:  
      1. Identify key issues.  
      2. Propose solutions with code snippets.  
@@ -279,8 +278,7 @@ def set_prompt(prompt):
 
 def handle_command(command):
     global g_messages, g_config, g_cmd_prefix, g_cmd_prefix_chars, \
-            g_system_message, g_prompt, g_log, \
-            g_is_block_mode, g_is_block_prompt, g_block, g_block_signature
+            g_system_message, g_prompt, g_log, g_block_stack
     argv = command.split()
     argc = len(argv)
     cmd = argv[0]
@@ -333,13 +331,14 @@ def handle_command(command):
         return True
 
     # Block prompt
-    if not g_is_block_mode and cmd.startswith('prompt'):
+    if cmd.startswith('prompt'):
         rest = command[6:].strip()
         if rest.startswith('<<') and len(rest) > 2 and rest[2] != g_cmd_prefix:
-            g_is_block_mode = True
-            g_is_block_prompt = True
-            g_block_signature = rest[2:]
-            g_block = ''
+            g_block_stack.append({
+                'is_prompt': True,
+                'signature': rest[2:],
+                'content': ''
+            })
             return True
 
     # Change command prefix
@@ -356,12 +355,12 @@ def handle_command(command):
                 print(f"Error: File {file_path} exceeds 2MB size limit")
                 return True
             
-            # Check if file is text (by extension)
-            text_extensions = ['.txt', '.md', '.log', '.csv', '.json', '.yaml', '.yml', '.xml', '.html', \
-                    '.htm', '.js', '.py', '.sh', '.c', '.h', '.cpp', '.hpp', '.java', '.tex']
-            if not any(file_path.lower().endswith(ext) for ext in text_extensions):
-                print(f"Error: File {file_path} doesn't appear to be a text file (based on extension)")
-                return True
+            ## Check if file is text (by extension)
+            #text_extensions = ['.txt', '.md', '.log', '.csv', '.json', '.yaml', '.yml', '.xml', '.html', \
+            #        '.htm', '.js', '.py', '.sh', '.c', '.h', '.cpp', '.hpp', '.java', '.tex']
+            #if not any(file_path.lower().endswith(ext) for ext in text_extensions):
+            #    print(f"Error: File {file_path} doesn't appear to be a text file (based on extension)")
+            #    return True
             
             # Read file content
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -391,8 +390,7 @@ def handle_command(command):
     return False
 
 def chat_round():
-    global g_is_block_mode, g_block_signature, g_block, g_messages, \
-            g_input_mode, g_cmd_prefix, g_is_block_prompt
+    global g_block_stack, g_messages, g_input_mode, g_cmd_prefix
     
     try:
         user_input = input("")
@@ -423,32 +421,35 @@ def chat_round():
             return
 
     # Check block mode
-    if not g_is_block_mode:
+    if not g_block_stack:
         match = re.match(r'^<<(\w+)$', user_input)
         if match:
             group = match.group(1)
             if group[0] != g_cmd_prefix:
-                g_is_block_mode = True
-                g_block_signature = match.group(1)
-                g_block = ''
+                g_block_stack.append({
+                    'is_prompt': False,
+                    'signature': group,
+                    'content': ''
+                })
                 return
 
     # Accumulate block mode inputs
-    if g_is_block_mode:
-        if user_input == g_block_signature:
-            g_is_block_mode = False
-            if g_is_block_prompt:
-                # For multi-line prompt
-                g_is_block_prompt = False
-                set_prompt(g_block)
+    if g_block_stack:
+        current_block = g_block_stack[-1]
+        if user_input == current_block['signature']:
+            # Block ended
+            block_content = current_block['content']
+            g_block_stack.pop()
+
+            if current_block['is_prompt']:
+                set_prompt(block_content)
                 return
             else:
-                # For multi-line user request
-                user_request = g_block
-                if not g_block.strip():
+                user_request = block_content
+                if not block_content.strip():
                     return
         else:
-            g_block += user_input + '\n'
+            current_block['content'] += user_input + '\n'
             return
     else:
         if g_input_mode == 'json':
