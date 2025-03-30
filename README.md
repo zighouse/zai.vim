@@ -1,16 +1,15 @@
-# Zai - DeepSeek AI Assistant for Vim
+# Zai.Vim DeepSeek AI Assistant
 
 ![Plugin Screenshot](screenshot.png)
 
-Zai is a Vim plugin that integrates the DeepSeek AI assistant directly into your Vim editor. It provides a convenient interface for interacting with DeepSeek's powerful language models while coding or writing documentation.
+Zai.Vim is a Vim plugin that seamlessly integrates the DeepSeek AI Assistant into your Vim editor. It allows you to access DeepSeek's intelligent services while coding or writing documents, without interrupting your workflow.
 
 ## Features
 
-- **Dual-pane interface**: Input and output windows for seamless interaction
-- **File attachment**: Include file contents in your queries
-- **Model selection**: Choose between different DeepSeek models
-- **Converation control**: Allow changes of configuration in conversation
-- **Session logs**: Keep logs for conversatation
+- **Dual-pane Interface**: Independent input/output windows for smooth interaction
+- **Flexible Configuration**: Switch models/prompts mid-conversation
+- **File Attachments**: Attach text files as conversation context
+- **Session Logging**: Automatic conversation history preservation
 
 ## Installation
 
@@ -19,7 +18,8 @@ Zai is a Vim plugin that integrates the DeepSeek AI assistant directly into your
 - Vim 8.0+ or Neovim
 - Python 3.6+
 - DeepSeek API key (set as `DEEPSEEK_API_KEY` environment variable)
-- OpenAI Python library (will be automatically installed if missing)
+- Required Python packages:
+  - `openai` (auto-install attempted if missing)
 
 ### Using a plugin manager
 
@@ -35,31 +35,50 @@ With [Vundle](https://github.com/VundleVim/Vundle.vim):
 Plugin 'zighouse/zai'
 ```
 
+[lazy.nvim](https://github.com/folke/lazy.nvim):
+```lua
+-- Create zai-vim.lua in .config/nvim/lua/plugins/
+return {
+    {
+        "zighouse/zai.vim",
+        config = function()
+            vim.g.zai_default_model = "deepseek-coder"  -- Optional config
+        end
+    }
+}
+```
+
+## Core Concepts
+### Session Logs
+Zai automatically saves conversation history. Each session (from opening Zai until closing with `:ZaiClose`) generates a log file:
+- Linux/Mac: `~/.local/share/zai/log`  
+- Windows: `%USERPROFILE%\AppData\Local\zai\log`
+
+### Session Modes
+- **Chain Mode**: Maintains full conversation context (ideal for complex tasks)
+- **Instant Mode**: Single-turn interactions (ideal for simple Q&A)
+
+Switch modes using session commands:
+```
+:talk_mode chain   # Enable chain mode
+:talk_mode instant # Enable instant mode
+```
+
 ## Usage
 
-### Basic Commands
-
-| Command       | Description                          | Key Mapping       |
-|---------------|--------------------------------------|-------------------|
-| `:Zai`        | Open the Zai interface              | `<Leader>zo`      |
-| `:ZaiGo`      | Send current input to DeepSeek      | `<Leader>zg`      |
-| `:ZaiClose`   | Close the current Zai session       | `<Leader>zX`      |
-| `:ZaiAdd`     | Add visual selection to input       | `<Leader>za` (visual) |
-
 ### Key Mappings
+| Key Binding     | Command       | Description                  | Mode          |
+|-----------------|---------------|------------------------------|---------------|
+| `<Leader>zo`    | `:Zai`        | Open Zai interface           | Normal        |
+| `<Leader>zg`    | `:ZaiGo`      | Send query                   | Insert        |
+| `<Leader>zX`    | `:ZaiClose`   | Close session                | Normal        |
+| `<Leader>za`    | `:ZaiAdd`     | Add visual selection to input | Visual        |
 
-The plugin provides the following default key mappings:
-
-- `<Leader>zo` - Open Zai interface
-- `<Leader>zg` - Send input to DeepSeek
-- `<Leader>zX` - Close the current Zai session
-- `<Leader>za` - Add visual selection to input (visual mode)
-
-## DeepSeek Commands in Zai session
+### Session Commands
 
 At any time you can use following commands Zai input pane to change the mode or parameters of following conversation. You can select a new model or a new system prompt for a new request.
 
-When the Zai interface is open, you can use special commands prefixed with `:` (configurable):
+Prefix commands with `:` in input area:
 
 - `:help` - Show help message
 - `:exit`/`:quit` - Exit the interface
