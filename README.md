@@ -1,15 +1,14 @@
-# Zai - Deepseek AI Assistant for Vim
+# Zai - DeepSeek AI Assistant for Vim
 
-![Plugin Screenshot](screenshot.png) <!-- Placeholder for screenshot -->
+![Plugin Screenshot](screenshot.png)
 
-Zai is a Vim plugin that integrates the Deepseek AI assistant directly into your Vim editor. It provides a convenient interface for interacting with Deepseek's powerful language models while coding or writing documentation.
+Zai is a Vim plugin that integrates the DeepSeek AI assistant directly into your Vim editor. It provides a convenient interface for interacting with DeepSeek's powerful language models while coding or writing documentation.
 
 ## Features
 
 - **Dual-pane interface**: Input and output windows for seamless interaction
-- **Customizable prompts**: Set system prompts to guide the AI's responses
 - **File attachment**: Include file contents in your queries
-- **Model selection**: Choose between different Deepseek models
+- **Model selection**: Choose between different DeepSeek models
 - **Converation control**: Allow changes of configuration in conversation
 - **Session logs**: Keep logs for conversatation
 
@@ -19,7 +18,7 @@ Zai is a Vim plugin that integrates the Deepseek AI assistant directly into your
 
 - Vim 8.0+ or Neovim
 - Python 3.6+
-- Deepseek API key (set as `DEEPSEEK_API_KEY` environment variable)
+- DeepSeek API key (set as `DEEPSEEK_API_KEY` environment variable)
 - OpenAI Python library (will be automatically installed if missing)
 
 ### Using a plugin manager
@@ -43,7 +42,7 @@ Plugin 'zighouse/zai'
 | Command       | Description                          | Key Mapping       |
 |---------------|--------------------------------------|-------------------|
 | `:Zai`        | Open the Zai interface              | `<Leader>zo`      |
-| `:ZaiGo`      | Send current input to Deepseek      | `<Leader>zg`      |
+| `:ZaiGo`      | Send current input to DeepSeek      | `<Leader>zg`      |
 | `:ZaiClose`   | Close the current Zai session       | `<Leader>zX`      |
 | `:ZaiAdd`     | Add visual selection to input       | `<Leader>za` (visual) |
 
@@ -52,11 +51,11 @@ Plugin 'zighouse/zai'
 The plugin provides the following default key mappings:
 
 - `<Leader>zo` - Open Zai interface
-- `<Leader>zg` - Send input to Deepseek
+- `<Leader>zg` - Send input to DeepSeek
 - `<Leader>zX` - Close the current Zai session
 - `<Leader>za` - Add visual selection to input (visual mode)
 
-## Deepseek Commands in Zai session
+## DeepSeek Commands in Zai session
 
 At any time you can use following commands Zai input pane to change the mode or parameters of following conversation. You can select a new model or a new system prompt for a new request.
 
@@ -75,7 +74,7 @@ When the Zai interface is open, you can use special commands prefixed with `:` (
 
 You can change the talk-mode from chain to instant at any time.
 
-When in chain talk-mode, you chain all your history conversation as context along with you last request content and send to Deepseek service. 
+When in chain talk-mode, you chain all your history conversation as context along with you last request content and send to DeepSeek service. 
 
 ```
 :talk_mode chain
@@ -92,9 +91,9 @@ Inspite which mode you choose, all conversation contents in a Zai session are lo
 
 ### Multi-line Input in Zai Interface and Block :prompt Syntax
 
-Zai supports multi-line input through a special block syntax, making it easy to submit complex prompts or code examples to Deepseek. All you need is to write your request content in input pane and send it to deepseek.
+Zai supports multi-line input through a special block syntax, making it easy to submit complex prompts or code examples to DeepSeek. All you need is to write your request content in input pane and send it to DeepSeek.
 
-You also can override the default one with well considered and a multi-line block of text. The block input system makes it easy to have structured conversations with Deepseek while maintaining clean, readable prompts in your Vim workflow.
+You also can override the default one with well considered and a multi-line block of text. The block input system makes it easy to have structured conversations with DeepSeek while maintaining clean, readable prompts in your Vim workflow.
 
 To make multiple lines as a system prompt:
 1. Start with `:prompt<<EOF` (or any unique marker)

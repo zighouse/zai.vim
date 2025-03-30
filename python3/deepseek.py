@@ -59,6 +59,7 @@ import random
 import re
 import sys
 import time
+import chardet
 from datetime import datetime
 from openai import OpenAI
 from appdirs import user_data_dir
@@ -349,22 +350,23 @@ def handle_command(command):
     # File attachment
     if cmd == 'file' and argc == 2:
         file_path = argv[1]
+        file_obj = Path(file_path).expanduser().resolve()
+        if not file_obj.exists():
+            print(f"Error: File `{file_path}` does not exist.")
+            return True
         try:
-            # Check file size (max 2MB)
-            if os.path.getsize(file_path) > 2 * 1024 * 1024:
-                print(f"Error: File {file_path} exceeds 2MB size limit")
+            # Check file_obj size (max 2MB)
+            if file_obj.stat().st_size > 2 * 1024 * 1024:
+                print(f"Error: File `{file_path}` exceeds 2MB size limit")
                 return True
-            
-            ## Check if file is text (by extension)
-            #text_extensions = ['.txt', '.md', '.log', '.csv', '.json', '.yaml', '.yml', '.xml', '.html', \
-            #        '.htm', '.js', '.py', '.sh', '.c', '.h', '.cpp', '.hpp', '.java', '.tex']
-            #if not any(file_path.lower().endswith(ext) for ext in text_extensions):
-            #    print(f"Error: File {file_path} doesn't appear to be a text file (based on extension)")
-            #    return True
-            
-            # Read file content
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+
+            # Detect character encoding, and decode
+            rawdata = file_obj.read_bytes()
+            encoding = chardet.detect(rawdata)['encoding']
+            if not encoding:
+                print(f"Error: File `{file_path}` doesn't appear to be a text file, can't determin its character encoding.")
+                return True
+            content = rawdata.decode(encoding)
             
             # Create file message with separator
             file_message = f"File: {file_path}\n" + "-" * 40 + "\n" + content + "\n" + "-" * 40
@@ -376,13 +378,13 @@ def handle_command(command):
                 'message': msg,
                 })
             g_messages.append(msg)
-            print(f"Attached file: {file_path}")
+            print(f"Attached file: `{file_path}`")
         except FileNotFoundError:
-            print(f"Error: File {file_path} not found")
-        except UnicodeDecodeError:
-            print(f"Error: File {file_path} is not UTF-8 encoded text")
+            print(f"Error: File `{file_path}` not found")
+        except UnicodeError:
+            print(f"Error: Convert file `{file_path}` to UTF-8 failure")
         except Exception as e:
-            print(f"Error reading file {file_path}: {e}")
+            print(f"Error reading file `{file_path}`: {e}")
         return True
 
     print(f"unknown command: {command}")
