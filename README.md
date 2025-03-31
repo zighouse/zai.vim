@@ -43,16 +43,24 @@ return {
         "zighouse/zai.vim",
         config = function()
             vim.g.zai_default_model = "deepseek-coder"  -- Optional config
+            -- vim.g.zai_log_dir = my-log-dir           -- Optional config
         end
     }
 }
 ```
+
+Manual Installation:  
+
+```
+git -C ~/.vim/plugged clone https://github.com/zighouse/zai.vim
+```  
 
 ## Core Concepts
 ### Session Logs
 Zai automatically saves conversation history. Each session (from opening Zai until closing with `:ZaiClose`) generates a log file:
 - Linux/Mac: `~/.local/share/zai/log`  
 - Windows: `%USERPROFILE%\AppData\Local\zai\log`
+- Or specified by `g:zai_log_dir`
 
 ### Session Modes
 - **Chain Mode**: Maintains full conversation context (ideal for complex tasks)
@@ -78,10 +86,12 @@ Switch modes using session commands:
 
 At any time you can use following commands Zai input pane to change the mode or parameters of following conversation. You can select a new model or a new system prompt for a new request.
 
+Note that the session commands here are entered in the Zai input box, not as Vim commands in command mode. Enter the following instructions in the input box and use `:ZaiGo`/`<Leader>zg` to send them.
+
 Prefix commands with `:` in input area:
 
 - `:help` - Show help message
-- `:exit`/`:quit` - Exit the interface
+- `:exit`/`:quit` - Force to exit the background job
 - `:talk_mode` - Set conversation mode (chain, instant)
 - `:model <name>` - Set model (deepseek-coder, deepseek-chat, deepseek-reasoner, etc.)
 - `:temperature <value>` - Set creativity (0-2)
@@ -107,6 +117,29 @@ When in instant talk-mode, you only send the last request content without previo
 
 Inspite which mode you choose, all conversation contents in a Zai session are logged into one file. If you want to start a new session, close it with `ZaiClose` command or `<Leader>zX`.
 
+
+### Specifying DeepSeek Models  
+Currently in DeepSeek's services, available large language models (LLMs) include `deepseek-coder`, `deepseek-chat`, `deepseek-reasoner`, etc.  
+
+To specify a particular model, enter the following command in the input box. For example, to use the reasoning model, send this instruction:  
+```
+:model deepseek-reasoner
+```  
+You can switch between different models within a single session by including this command in the input box and sending it to Zai's background task. The specified model will then be applied to new conversations.  
+
+### Specifying Creativity Parameters  
+In DeepSeek services, models like `deepseek-coder` and `deepseek-chat` support fine-tuning conversation effects through parameters such as `temperature`. Zai allows you to adjust these parameters by including commands like the following in the input box:  
+
+```
+:temperature 0.3
+```  
+
+Other available parameters in Zai include `top_p`, `max_tokens`, `presence_penalty`, `frequency_penalty`, and `logprobs`. For detailed usage, refer to [Chat Completion Documentation](https://api-docs.deepseek.com/api/create-chat-completion).  
+
+To clear previously set parameters, insert a minus `-` between the command prefix and parameter name. For example, to reset the `temperature` setting:  
+```
+:-temperature
+```  
 
 ### Multi-line Input in Zai Interface and Block :prompt Syntax
 
@@ -155,6 +188,60 @@ CODE
 I have a map of a city, how to find the shortest path between two places in it?
 ```
 
+#### Clearing Custom Prompts  
+Use the following command to clear user-configured prompts (restoring Zai's default prompts):  
+
+```
+:-prompt
+```  
+
+### Attaching Files  
+You can conveniently attach multiple text files as context for consultation in Zai. Include the following command in the input box to attach a file (one attachment command per line):  
+```  
+:file path/to/file.txt  
+```  
+- Supports relative paths based on Vim's `:pwd`  
+- Only text files can be attached  
+- The number of files and content length depend on the model's context token limit (currently 64K tokens max for DeepSeek API services). Avoid attaching excessive/large files.  
+
+Use this command to remove previously attached files:  
+```  
+:-file path/to/file.txt  
+```  
+
+### Command Prefix and Escaping  
+
+Zai uses colon `:` as the default command prefix.  
+
+When a line starting with this prefix appears in the input, it will be interpreted as a session command rather than query content. The command format is:  
+```
+:command_name [arguments]
+```  
+
+**Two escape methods for colon-prefixed content**:  
+1. **Prefix Escaping**  
+
+For occasional colon-prefixed lines, escape by doubling the colon:  
+```
+::quit my asm program  
+```  
+Output as normal text: `:quit my asm program`  
+
+2. **Prefix Replacement**  
+For bulk colon-prefixed content, change the command prefix using:  
+```
+:->/  
+```  
+Now `/` becomes the new command prefix (e.g. `/attach file.txt`), freeing `:` for normal use.  
+
+**Available command prefix characters**:  
+```  
+: / ~ \ ; ! # $ % & ? @ ^ _ * + = , . < > ` ' " ( ) [ ] { }  
+```  
+
+*Note: Hyphen/minus `-` is excluded due to its special "clear" semantics.*  
+
+
 ## License
 
-MIT License
+Zai.vim is released under the MIT License. See the [LICENSE](https://github.com/zighouse/zai/blob/main/LICENSE) file for details.  
