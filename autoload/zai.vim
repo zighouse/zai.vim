@@ -1,6 +1,6 @@
 let s:home = expand('<sfile>:h:h')
-let g:input_mode = 'text' " json, text
 let s:path_sep = has('win32') ? '\' : '/'
+let g:zai_input_mode = 'text' " json, text
 
 if !exists('g:zai_cmd')
     let s:path_template = has('win32') ?
@@ -8,21 +8,22 @@ if !exists('g:zai_cmd')
                 \ '{home}/python3/deepseek.py'
     let s:script_path = substitute(s:path_template, '{home}', s:home, 'g')
 
-    if has('win32')
-        let s:log_dir = expand('~/AppData/Local/zai/log')
+    if exists('g:zai_log_dir')
+        let s:log_dir = g:zai_log_dir
     else
-        let s:log_dir = expand('~/.local/share/zai/log')
+        if has('win32')
+            let s:log_dir = expand('~/AppData/Local/zai/log')
+        else
+            let s:log_dir = expand('~/.local/share/zai/log')
+        endif
     endif
 
-    if has('win32')
-        let g:zai_cmd = 'python "' . s:script_path . '"'
-                    \ .. ' --log-dir="' . s:log_dir . '"'
-                    \ .. ' --' . g:input_mode
-    else
-        let g:zai_cmd = '/usr/bin/env python3 "' . s:script_path . '"'
-                    \ .. ' --log-dir="' . s:log_dir . '"'
-                    \ .. ' --' . g:input_mode
-    endif
+    let s:python_cmd = has('win32') ? 'python' : '/usr/bin/env python3' 
+    let s:opt_script = ' "' . s:script_path . '"'
+    let s:opt_model = exists('g:zai_default_model') ? ' --model="' . g:zai_default_model . '"' : ''
+    let s:opt_dir = ' --log-dir="' . s:log_dir . '"'
+    let s:opt_input_mode = ' --' . g:zai_input_mode
+    let g:zai_cmd = s:python_cmd . s:opt_script . s:opt_dir . s:opt_model . s:opt_input_mode
 endif
 
 if !exists('g:zai_print_prompt')
@@ -477,7 +478,7 @@ function! zai#Go() abort
         return
     endif
 
-    if g:input_mode == 'json'
+    if g:zai_input_mode == 'json'
         " for json input mode
         let l:request = json_encode(l:content)
     else
