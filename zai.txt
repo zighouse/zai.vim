@@ -1,0 +1,175 @@
+*zai.txt*    DeepSeek AI Assistant for Vim
+
+==============================================================================
+CONTENTS                                                  *zai-contents*
+
+1. Introduction ................ |zai-introduction|
+2. Features .................... |zai-features|
+3. Installation ................ |zai-installation|
+  3.1 Requirements ............ |zai-requirements|
+  3.2 Plugin Managers ......... |zai-plugin-managers|
+4. Core Concepts ............... |zai-core-concepts|
+  4.1 Session Logs ............ |zai-session-logs|
+  4.2 Session Modes ........... |zai-session-modes|
+5. Usage ....................... |zai-usage|
+  5.1 Key Mappings ............ |zai-key-mappings|
+  5.2 Session Commands ........ |zai-session-commands|
+  5.3 Talk Modes .............. |zai-talk-modes|
+  5.4 Specifying Models ....... |zai-models|
+  5.5 Creativity Parameters ... |zai-creativity|
+  5.6 Multi-line Input ........ |zai-multiline|
+  5.7 Attaching Files ......... |zai-attach-files|
+  5.8 Command Prefix .......... |zai-command-prefix|
+6. License ..................... |zai-license|
+
+==============================================================================
+1. INTRODUCTION                                             *zai-introduction*
+
+Zai.Vim is a Vim plugin that seamlessly integrates the DeepSeek AI Assistant
+into your Vim editor. It allows you to access DeepSeek's intelligent services
+while coding or writing documents, without interrupting your workflow.
+
+==============================================================================
+2. FEATURES                                                   *zai-features*
+
+- Dual-pane Interface: Independent input/output windows for smooth interaction
+- Flexible Configuration: Switch models/prompts mid-conversation
+- File Attachments: Attach text files as conversation context
+- Session Logging: Automatic conversation history preservation
+
+==============================================================================
+3. INSTALLATION                                           *zai-installation*
+
+3.1 REQUIREMENTS                                         *zai-requirements*
+
+- Vim 8.0+ or Neovim
+- Python 3.6+
+- DeepSeek API key (set as `DEEPSEEK_API_KEY` environment variable)
+- Required Python packages:
+  - `openai` (auto-install attempted if missing)
+
+3.2 PLUGIN MANAGERS                                   *zai-plugin-managers*
+
+With vim-plug: >
+  Plug 'zighouse/zai'
+<
+With Vundle: >
+  Plugin 'zighouse/zai'
+<
+With lazy.nvim: >
+  return {
+      {
+          "zighouse/zai.vim",
+          config = function()
+              vim.g.zai_default_model = "deepseek-coder"
+          end
+      }
+  }
+<
+Manual Installation: >
+  git -C ~/.vim/plugged clone https://github.com/zighouse/zai.vim
+<
+
+==============================================================================
+4. CORE CONCEPTS                                         *zai-core-concepts*
+
+4.1 SESSION LOGS                                         *zai-session-logs*
+
+Zai automatically saves conversation history. Each session (from opening Zai
+until closing with `:ZaiClose`) generates a log file:
+
+- Linux/Mac: `~/.local/share/zai/log`
+- Windows: `%USERPROFILE%\AppData\Local\zai\log`
+- Or specified by `g:zai_log_dir`
+
+4.2 SESSION MODES                                      *zai-session-modes*
+
+- Chain Mode: Maintains full conversation context (ideal for complex tasks)
+- Instant Mode: Single-turn interactions (ideal for simple Q&A)
+
+Switch modes using session commands: >
+  :talk_mode chain   # Enable chain mode
+  :talk_mode instant # Enable instant mode
+<
+
+==============================================================================
+5. USAGE                                                       *zai-usage*
+
+5.1 KEY MAPPINGS                                         *zai-key-mappings*
+
+| Key Binding     | Command       | Description                  | Mode          |
+|-----------------|---------------|------------------------------|---------------|
+| <Leader>zo      | :Zai          | Open Zai interface           | Normal        |
+| <Leader>zg      | :ZaiGo        | Send query                   | Insert        |
+| <Leader>zX      | :ZaiClose     | Close session                | Normal        |
+| <Leader>za      | :ZaiAdd       | Add visual selection to input | Visual        |
+
+5.2 SESSION COMMANDS                                 *zai-session-commands*
+
+Prefix commands with `:` in input area:
+
+- `:help` - Show help message
+- `:exit`/`:quit` - Force to exit the background job
+- `:talk_mode` - Set conversation mode (chain, instant)
+- `:model <name>` - Set model (deepseek-coder, deepseek-chat, etc.)
+- `:temperature <value>` - Set creativity (0-2)
+- `:prompt <text>` - Set system prompt
+- `:file <path>` - Attach a text file
+- `:->/` - Change command prefix to `/`
+
+5.3 TALK MODES                                         *zai-talk-modes*
+
+Change the talk_mode in conversation: >
+  :talk_mode chain   # Maintain conversation context
+  :talk_mode instant # Single-turn interactions
+<
+
+5.4 SPECIFYING MODELS                                    *zai-models*
+
+Available models: deepseek-coder, deepseek-chat, deepseek-reasoner, etc.
+
+Example: >
+  :model deepseek-reasoner
+<
+
+5.5 CREATIVITY PARAMETERS                            *zai-creativity*
+
+Adjust parameters: >
+  :temperature 0.3
+  :top_p 0.9
+  :-temperature  # Reset parameter
+<
+
+5.6 MULTI-LINE INPUT                                  *zai-multiline*
+
+Multi-line prompt example: >
+  :prompt<<TEMPLATE
+   - "As a code-specialized AI..."
+   - Example output format:
+     ### [Solution Summary]
+     [Step-by-Step Explanation]
+  TEMPLATE
+<
+
+5.7 ATTACHING FILES                                *zai-attach-files*
+
+Attach files: >
+  :file path/to/file.txt
+  :-file path/to/file.txt  # Remove attachment
+<
+
+5.8 COMMAND PREFIX                                *zai-command-prefix*
+
+Change prefix: >
+  :->/  # Now use / as command prefix
+<
+Escape colons: >
+  ::text  # Outputs :text
+<
+
+==============================================================================
+6. LICENSE                                                 *zai-license*
+
+MIT License. See |zai-license| for details.
+
+ vim:tw=78:ts=8:ft=help:norl:
