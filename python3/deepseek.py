@@ -44,7 +44,7 @@
 #                            Not recommended to use with top_p simultaneously.
 #   :top_p  1              - Set top_p [0,1]. 0.1 means select top 10% probability tokens.
 #   :max_tokens 1024       - Set maximum generated tokens.
-#   :presence_penalty 0    - [-2, 2] Penalize new tokens for topic repetition. 
+#   :presence_penalty 0    - [-2, 2] Penalize new tokens for topic repetition.
 #   :frequency_penalty 0   - [-2, 2] Penalize repeated tokens globally.
 #   :logprobs 0            - [0,20] Include log probabilities of top tokens.
 #   :prompt <string>       - Set system prompt.
@@ -73,7 +73,7 @@ g_cmd_prefix = ':'
 g_cmd_prefix_chars = [ ':', '/', '~', '\\', ';', '!', '#', '$', '%', '&', '?',
         '@', '^', '_', '*', '+', '=', ',', '.', '<', '>', '`', '\'', '"',
         '(', ')', '[', ']', '{', '}', ]
-# '-' is not a valid command prefix char, it has a special usage. 
+# '-' is not a valid command prefix char, it has a special usage.
 
 # log file name
 g_log_filename = datetime.now().strftime("%Y%m%d_%H%M%S.md")
@@ -84,12 +84,21 @@ g_output_mode = 'text'
 g_block_stack = []  # Stack of active blocks, each entry is:
                     # {'is_prompt': bool, 'signature': str, 'content': str}
 
-g_prompt="""You are an expert in debugging and code logic. For each query:  
-     1. Identify key issues.  
-     2. Propose solutions with code snippets.  
-     3. Conclude with a concise title reflecting the core fix."""
+g_prompt="""You are a strict assistant in programming, software engineering and computer science. For each query:
+     1. Identify key issues.
+     2. Propose solutions with pragmatical considerations.
+     3. Conclude with a concise title reflecting the core suggestion."""
 g_system_message={'role': 'system', 'content': g_prompt}
+# List of messages, each entry is:
+# {'role': str, 'content': str, 'time': str,
+#   'params': {},
+#   'files':[{'path': str, 'encoding': str, 'content': str}]
+# }
 g_messages = [ g_system_message, ]
+
+# List of attachments, each entry is:
+# {'path': str, 'full_path': str, 'encoding': str, 'content': str}
+g_files = []
 
 # FIM completion (Beta)
 # post to https://api.deepseek.com/beta/completions
@@ -119,7 +128,7 @@ BASIC USAGE:
 INPUT MODES:
   Line mode:     Each line is sent as separate request
   Block mode:    Start with <<EOF, end with EOF (or any marker)
-  
+
 COMMANDS:
   Model & Parameters:
     {g_cmd_prefix}model <name>         - Set model (deepseek-coder, deepseek-chat, deepseek-reasoner)
@@ -162,20 +171,22 @@ def save_log():
     if not g_log:
         return
 
+    # print attachments
     with open(g_log_path, "w", encoding="utf-8") as log_file:
         sys_msg = g_system_message['content'].strip()
         if sys_msg:
             log_file.write(f"**System:**\n{sys_msg}\n\n")
-        for log in g_log:
-            msg = log['message']
+        for msg in g_log:
             log_file.write(f"**{msg['role'].capitalize()}:**\n")
-            keys = log.keys() - ['message']
-            if len(keys):
-                log_file.write(f"<small>\n")
-                for k in log:
-                    if k not in ['message']:
-                        log_file.write(f"  - {k}: {log[k]}\n")
-                log_file.write(f"</small>\n")
+            log_file.write(f"<small>\n")
+            for k in msg:
+                if k not in ['role', 'content', 'files']:
+                    log_file.write(f"  - {k}: {msg[k]}\n")
+            if 'files' in msg:
+                log_file.write("  - attachments:\n")
+                for file in msg['files']:
+                    log_file.write(f"    - {file['full_path']}\n")
+            log_file.write(f"</small>\n")
             log_file.write(f"{msg['content']}\n\n")
     print(f"\nSaved log: {g_log_path}")
 
@@ -183,19 +194,28 @@ def build_instant_messages(messages):
     '''In instant mode, keep only system role and latest user messages'''
     if not messages or messages[0]['role'] != 'system':
         return messages
-    
+
     # Find latest user message group
     latest_user_msgs = []
     found_assistant = False
-    
+
     for msg in reversed(messages):
         if msg['role'] == 'assistant':
             found_assistant = True
         elif msg['role'] == 'user':
             if found_assistant:
                 break
-            latest_user_msgs.append(msg)
-    
+            request_msg = {'role': msg['role'], 'content': msg['content']}
+
+            # Attach files
+            if 'files' in msg:
+                files = msg['files']
+                file_contents = '\n\n[attachments]:\n'
+                file_contents += '\n'.join([f"===== file: `{f['path']}` =====\n{f['content']}\n" for f in files])
+                request_msg['content'] += file_contents
+
+            latest_user_msgs.append(request_msg)
+
     latest_user_msgs.reverse()
     return [messages[0]] + latest_user_msgs
 
@@ -205,8 +225,20 @@ def get_completion_params():
     # Conversation mode
     if g_config.get('talk_mode', 'chain') == 'instant':
         params['messages'] = build_instant_messages(g_messages)
-    else: 
-        params['messages'] = g_messages
+    else:
+        for msg in g_messages:
+            # Create new request message
+            request_msg = {'role': msg['role'], 'content': msg['content']}
+
+            # Attach files
+            if 'files' in msg:
+                files = msg['files']
+                file_contents = '\n\n[attachments]:\n'
+                file_contents += '\n'.join([f"===== file: `{f['path']}` =====\n{f['content']}\n" for f in files])
+                request_msg['content'] += file_contents
+
+            # Append request message
+            params['messages'].append(request_msg)
 
     if g_config['model'] == 'deepseek-reasoner':
         candidates = ['model', 'temperature', 'top_p', 'max_tokens', 'presence_penalty', 'frequency_penalty']
@@ -225,16 +257,11 @@ def generate_response():
     full_response = []
 
     params = get_completion_params()
-    msg = {"role": "assistant", "content": ""}
-    log = {
-        'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'message': msg,
-        }
-    log.update(params)
-    log['talk_mode'] = g_config.get('talk_mode', 'chain')
-    log.pop('stream', None)
-    log.pop('messages', None)
-    
+    msg = {"role": "assistant", "content": "", "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+    msg.update(params)
+    msg.pop('stream', None)
+    msg.pop('messages', None)
+
     try:
         stream = g_client.chat.completions.create(**params)
 
@@ -243,17 +270,16 @@ def generate_response():
                 print(content, end='', flush=True)
                 full_response.append(content)
                 time.sleep(random.uniform(0.01, 0.05))
-        
+
         if full_response:
             msg['content'] = ''.join(full_response)
-            log['time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            log['message'] = msg
+            msg['time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             g_messages.append(msg)
-            g_log.append(log)
+            g_log.append(msg)
             print("\n<small>")
-            for k in log:
-                if k not in ['message']:
-                    print(f"  - {k}: {log[k]}")
+            for k in msg:
+                if k not in ['content']:
+                    print(f"  - {k}: {msg[k]}")
             print("</small>")
 
     except Exception as e:
@@ -265,8 +291,9 @@ def generate_response():
         if l and len(l):
             print("Rolling back the message which causing error:")
             print("<small>")
-            for k in log:
-                print(f"  - {k}: {log[k]}")
+            for k in msg:
+                if k not in ['content']:
+                    print(f"  - {k}: {msg[k]}")
             print("</small>")
 
 def set_prompt(prompt):
@@ -279,7 +306,7 @@ def set_prompt(prompt):
 
 def handle_command(command):
     global g_messages, g_config, g_cmd_prefix, g_cmd_prefix_chars, \
-            g_system_message, g_prompt, g_log, g_block_stack
+            g_system_message, g_prompt, g_log, g_block_stack, g_files
     argv = command.split()
     argc = len(argv)
     cmd = argv[0]
@@ -288,7 +315,7 @@ def handle_command(command):
     if cmd == 'help':
         show_help()
         return True
-    
+
     # Rest of the command handling logic...
     # Exit commands
     if cmd in ['exit', 'quit', 'bye']:
@@ -306,9 +333,10 @@ def handle_command(command):
             g_system_message['content'] = g_prompt
             return True
         elif cmd[1:] == 'file':
-            # Remove all file messages, TODO or if an argument provided, remove the given file.
-            g_messages = [msg for msg in g_messages if not (msg["role"] == "user" and msg["content"].startswith("File: "))]
-            g_log = [log for log in g_log if not (log["message"]["role"] == "user" and log["message"]["content"].startswith("File: "))]
+            # Remove all file messages,
+            # TODO: if an argument provided, remove the given file.
+            # TODO: remove files in context messages.
+            g_files = []
             return True
     # String options
     if cmd in ['model', 'talk_mode'] and argc == 2:
@@ -367,17 +395,7 @@ def handle_command(command):
                 print(f"Error: File `{file_path}` doesn't appear to be a text file, can't determin its character encoding.")
                 return True
             content = rawdata.decode(encoding)
-            
-            # Create file message with separator
-            file_message = f"File: {file_path}\n" + "-" * 40 + "\n" + content + "\n" + "-" * 40
-            
-            # Add as user message
-            msg = {"role": "user", "content": file_message}
-            g_log.append({
-                'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'message': msg,
-                })
-            g_messages.append(msg)
+            g_files.append({'path': f'{file_path}', 'full_path': f'{file_obj}', 'encoding': encoding, 'content': content})
             print(f"Attached file: `{file_path}`")
         except FileNotFoundError:
             print(f"Error: File `{file_path}` not found")
@@ -392,17 +410,21 @@ def handle_command(command):
     return False
 
 def chat_round():
-    global g_block_stack, g_messages, g_input_mode, g_cmd_prefix
-    
+    global g_block_stack, g_messages, g_input_mode, g_cmd_prefix, g_files
+
     try:
         user_input = input("")
+    except UnicodeDecodeError as e:
+        save_log()
+        print(f'get input failure:{e}')
+        return
     except EOFError as e:
         save_log()
         print(f'get input failure:{e}')
-        sys.exit(0)
+        return
     if not user_input:
         return # ignore empty
-    
+
     # Process commands
     user_cmd = user_input.strip()
     if len(user_cmd) > 1 and user_cmd[0] == g_cmd_prefix:
@@ -459,12 +481,12 @@ def chat_round():
         else:
             user_request = user_input
 
-    msg = {"role": "user", "content": user_request}
-    g_log.append({
-        'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'message': msg,
-        })
+    msg = {"role": "user", "content": user_request, 'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+    if g_files and len(g_files):
+        msg['files'] = g_files
+        g_files = []
     g_messages.append(msg)
+    g_log.append(msg)
     generate_response()
     save_log()
 
@@ -488,7 +510,7 @@ if __name__ == "__main__":
         os.makedirs(args.log_dir, exist_ok=True)
         g_log_dir = args.log_dir
         g_log_path = os.path.join(g_log_dir, g_log_filename)
-    
+
     # Main chat loop
     while True:
         chat_round()
