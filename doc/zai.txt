@@ -118,7 +118,7 @@ Prefix commands with `:` in input area:
 - `:file <path>` - Attach a text file
 - `:->/` - Change command prefix to `/`
 
-5.3 TALK MODES                                                *zai-talk-modes*
+5.3 TALK MODES                                            
 
 Change the talk_mode in conversation: >
   :talk_mode chain   # Maintain conversation context
