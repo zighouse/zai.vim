@@ -1,5 +1,7 @@
 *zai.txt*    DeepSeek AI Assistant for Vim
 
+ZAI PLUGIN                                              *zai* *zai-plugin*
+
 ==============================================================================
 CONTENTS                                                  *zai-contents*
 
@@ -95,7 +97,7 @@ Switch modes using session commands: >
 ==============================================================================
 5. USAGE                                                       *zai-usage*
 
-5.1 KEY MAPPINGS                                         *zai-key-mappings*
+5.1 KEY MAPPINGS                                         *zai-commands* *zai-key-mappings*
 
 | Key Binding     | Command       | Description                  | Mode          |
 |-----------------|---------------|------------------------------|---------------|
