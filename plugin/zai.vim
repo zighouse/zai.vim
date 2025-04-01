@@ -3,6 +3,12 @@ if exists('g:loaded_zai') || &compatible
 endif
 let g:loaded_zai = 1
 
+" Load helptags
+let s:doc = expand('<sfile>:p:h:h') . '/doc/zai.txt'
+if filereadable(s:doc)
+    execute 'helptags' fnameescape(fnamemodify(s:doc, ':h'))
+endif
+
 " Check and install dependencies
 function! s:CheckDependencies() abort
     if !executable('python3')
@@ -12,7 +18,7 @@ function! s:CheckDependencies() abort
         return
     endif
 
-    let s:install_script = expand('<sfile>:p:h') . '/../install.py'
+    let s:install_script = expand('<sfile>:p:h:h') . '/install.py'
     if filereadable(s:install_script)
         silent! call system('python3 ' . shellescape(s:install_script))
     endif
