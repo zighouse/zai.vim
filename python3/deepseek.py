@@ -100,7 +100,10 @@ g_messages = [ g_system_message, ]
 # {'path': str, 'full_path': str, 'encoding': str, 'content': str}
 g_files = []
 
+g_log = []
+
 # FIM completion (Beta)
+## for chat completion, should use beta base_url, and provide stop parameter, without system message.
 # post to https://api.deepseek.com/beta/completions
 # base_url="https://api.deepseek.com/beta"
 g_config = {
@@ -108,11 +111,28 @@ g_config = {
         'temperature': 0.7,
         }
 
-# Connect to API
-g_client = OpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
-# for chat completion, should use beta base_url, and provide stop parameter, without system message.
-#g_client = OpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com/beta")
-g_log = []
+# Default values
+DEFAULT_API_KEY_NAME = "DEEPSEEK_API_KEY"
+DEFAULT_BASE_URL = "https://api.deepseek.com"
+
+# Global client instance (will be initialized in main)
+g_client = None
+
+def initialize_client(api_key_name=None, base_url=None):
+    """Initialize the global client with given or default parameters"""
+    global g_client
+
+    # Use provided values or fall back to defaults
+    api_key_name = api_key_name or DEFAULT_API_KEY_NAME
+    base_url = base_url or DEFAULT_BASE_URL
+
+    # Get API key from environment
+    api_key = os.getenv(api_key_name)
+    if not api_key:
+        raise ValueError(f"API key not found in environment variable {api_key_name}")
+
+    g_client = OpenAI(api_key=api_key, base_url=base_url)
+    return g_client
 
 def show_help():
     help_text = f"""
@@ -496,6 +516,10 @@ if __name__ == "__main__":
     parser.add_argument('--mode', choices=['json', 'text'], default='text', help='Output mode (json or text)')
     parser.add_argument('--json', action='store_true', help='Use JSON format (equivalent to --mode=json)')
     parser.add_argument('--text', action='store_true',  help='Use Text format (equivalent to --mode=text)')
+    parser.add_argument('--base-url', type=str, default=DEFAULT_BASE_URL,
+                       help=f'Base url for API service (default: {DEFAULT_BASE_URL})')
+    parser.add_argument('--api-key-name', type=str, default=DEFAULT_API_KEY_NAME,
+                       help=f'Environment variable name for API key (default: {DEFAULT_API_KEY_NAME})')
 
     args = parser.parse_args()
     if args.json:
@@ -510,6 +534,9 @@ if __name__ == "__main__":
         os.makedirs(args.log_dir, exist_ok=True)
         g_log_dir = args.log_dir
         g_log_path = os.path.join(g_log_dir, g_log_filename)
+
+    # Initialize the global client
+    initialize_client(api_key_name=args.api_key_name, base_url=args.base_url)
 
     # Main chat loop
     while True:
