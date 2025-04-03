@@ -17,11 +17,13 @@ CONTENTS                                                        *zai-contents*
   5.1 Key Mappings ................................. |zai-key-mappings|
   5.2 Session Commands ............................. |zai-session-commands|
   5.3 Talk Modes ................................... |zai-talk-modes|
-  5.4 Specifying Models ............................ |zai-models|
-  5.5 Creativity Parameters ........................ |zai-creativity|
-  5.6 Multi-line Input ............................. |zai-multiline|
-  5.7 Attaching Files .............................. |zai-attach-files|
-  5.8 Command Prefix ............................... |zai-command-prefix|
+  5.4 Specifying AI Base URL ....................... |zai-base-url|
+  5.5 Specifying API-KEY variable name ............. |zai-api-key-name|
+  5.6 Specifying Models ............................ |zai-models|
+  5.7 Creativity Parameters ........................ |zai-creativity|
+  5.8 Multi-line Input ............................. |zai-multiline|
+  5.9 Attaching Files .............................. |zai-attach-files|
+  5.10 Command Prefix .............................. |zai-command-prefix|
 6. License .......................................... |zai-license|
 
 ==============================================================================
@@ -125,15 +127,42 @@ Change the talk_mode in conversation: >
   :talk_mode instant # Single-turn interactions
 <
 
-5.4 SPECIFYING MODELS                                             *zai-models*
+5.4 SPECIFYING AI BASE URL                                      *zai-base-url*
 
+The default Base-URL is https://api.deepseek.com .
+Available models: deepseek-coder, deepseek-chat, deepseek-reasoner, etc.
+
+Example: >
+  :base_url https://api.deepseek.com
+<
+
+5.5 SPECIFYING API-KEY VARIABLE NAME                        *zai-api-key-name*
+
+You should acquire an API-KEY from your AI service provider, and put it in an
+environment variable, and provide the variable name as `api_key_name`.
+
+Note that you should keep your API-KEY secret.
+
+The default API-KEY variable name is `DEEPSEEK_API_KEY`.
+
+Example: >
+  :api_key_name DEEPSEEK_API_KEY
+<
+
+5.6 SPECIFYING MODELS                                             *zai-models*
+
+The default Base-URL is https://api.deepseek.com .
 Available models: deepseek-coder, deepseek-chat, deepseek-reasoner, etc.
 
 Example: >
   :model deepseek-reasoner
 <
 
-5.5 CREATIVITY PARAMETERS                                     *zai-creativity*
+Note that different AI service provider often use different model names for an
+opensource model. You should pickup the `model` from the models list of your
+AI service provider.
+
+5.7 CREATIVITY PARAMETERS                                     *zai-creativity*
 
 Adjust parameters: >
   :temperature 0.3
@@ -141,7 +170,7 @@ Adjust parameters: >
   :-temperature  # Reset parameter
 <
 
-5.6 MULTI-LINE INPUT                                           *zai-multiline*
+5.8 MULTI-LINE INPUT                                           *zai-multiline*
 
 Multi-line prompt example: >
   :prompt<<TEMPLATE
@@ -152,14 +181,14 @@ Multi-line prompt example: >
   TEMPLATE
 <
 
-5.7 ATTACHING FILES                                         *zai-attach-files*
+5.9 ATTACHING FILES                                         *zai-attach-files*
 
 Attach files: >
   :file path/to/file.txt
   :-file path/to/file.txt  # Remove attachment
 <
 
-5.8 COMMAND PREFIX                                        *zai-command-prefix*
+5.10 COMMAND PREFIX                                        *zai-command-prefix*
 
 Change prefix: >
   :->/  # Now use / as command prefix

@@ -93,13 +93,15 @@ Prefix commands with `:` in input area:
 - `:help` - Show help message
 - `:exit`/`:quit` - Force to exit the background job
 - `:talk_mode` - Set conversation mode (chain, instant)
+- `:base_url <url>` - Change the base-url to a new one
+- `:api_key_name <api-key-name>` - Provide the environment of the API-KEY for new base-url
 - `:model <name>` - Set model (deepseek-coder, deepseek-chat, deepseek-reasoner, etc.)
 - `:temperature <value>` - Set creativity (0-2)
 - `:prompt <text>` - Set system prompt (single line system prompt content)
 - `:file <path>` - Attach a text file
 - `:->/` - Change command prefix to `/`
 
-### Change the talk_mode in conversation
+### Change the talk-mode in conversation
 
 You can change the talk-mode from chain to instant at any time.
 
@@ -126,6 +128,21 @@ To specify a particular model, enter the following command in the input box. For
 :model deepseek-reasoner
 ```  
 You can switch between different models within a single session by including this command in the input box and sending it to Zai's background task. The specified model will then be applied to new conversations.  
+
+### Specifying AI Base URL and Access Parameters
+
+You can choose your AI service provider by setting parameters of `base_url`, `api_key_name` and `model`. The default settings:
+```
+:base_url       https://api.deepseek.com
+:model          deepseek-chat
+:api_key_name   DEEPSEEK_API_KEY
+```
+
+Note that different AI service provider often use different model names for an opensource model. You should pickup the `model` from the models list of your AI service provider.
+
+You should acquire an API-KEY from your AI service provider, and put it in an environment variable, and provide the variable name as `api_key_name`.
+
+Note that you should keep your API-KEY secret.
 
 ### Specifying Creativity Parameters  
 In DeepSeek services, models like `deepseek-coder` and `deepseek-chat` support fine-tuning conversation effects through parameters such as `temperature`. Zai allows you to adjust these parameters by including commands like the following in the input box:  

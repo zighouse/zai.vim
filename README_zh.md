@@ -99,6 +99,8 @@ Zai 会话指令允许和用户发送给 DeepSeek 的咨询内容同时在输入
 - `:help` - 显示帮助信息
 - `:exit`/`:quit` - 强制退出后台任务
 - `:talk_mode` - 设置会话模式（chain链式, instant即时）
+- `:base_url <url>` - 使用新的大模型服务的 base-url
+- `:api_key_name <api-key-name>` - 在一个环境变量上提供 base-url 对应的访问口令
 - `:model <名称>` - 设置模型（deepseek-coder, deepseek-chat, deepseek-reasoner等）
 - `:temperature <值>` - 设置创造性（0-2）
 - `:prompt <文本>` - 设置系统提示词（单行）
@@ -121,9 +123,7 @@ Zai 会话指令允许和用户发送给 DeepSeek 的咨询内容同时在输入
 
 无论选择何种模式，所有会话内容都会记录到同一日志文件。如需新建会话，请使用 `:ZaiClose`/`<Leader>zX` 关闭当前会话以及 Zai 界面。
 
-
 ### 指定 DeepSeek 模型
-
 目前在 DeepSeek 提供的服务中，可以使用的大语言模型有 `deepseek-coder`、`deepseek-chat`、`deepseek-reasoner` 等。
 
 可以在输入框中输入如下指令，指定使用具体的模型，例如指定使用推理模型，应该在输入框中发送如下内容：
@@ -133,6 +133,18 @@ Zai 会话指令允许和用户发送给 DeepSeek 的咨询内容同时在输入
 ```
 
 您可以在一次会话中使用这个方法来回切换不同的模型，只需要在输入框中包含这条指令，并发送给 Zai 的后台任务，就会在新交谈中应用指定模型。
+
+### 指定大模型服务的参数
+
+通过 `base_url`、`api_key_name` 和 `model` 来指定大模型的服务位置。缺省情况下，这三者配置为：
+
+```
+:base_url       https://api.deepseek.com
+:model          deepseek-chat
+:api_key_name   DEEPSEEK_API_KEY
+```
+
+针对不同的 `base_url`，需要查阅对应服务商的相关列表来了解拥有哪些可以使用的聊天大模型。
 
 ### 指定创造性
 
