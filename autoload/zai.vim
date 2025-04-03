@@ -20,13 +20,13 @@ if !exists('g:zai_cmd')
 
     let s:python_cmd = has('win32') ? 'python' : '/usr/bin/env python3' 
     let s:opt_script = ' "' . s:script_path . '"'
-    let s:opt_model = exists('g:zai_default_model') ? ' --model="' . g:zai_default_model . '"' : ''
     let s:opt_dir = ' --log-dir="' . s:log_dir . '"'
     let s:opt_input_mode = ' --' . g:zai_input_mode
     let s:base_url = exists('g:zai_base_url') ? ' --base-url=' . g:zai_base_url : ''
     let s:api_key_name = exists('g:zai_api_key_name') ? ' --api-key-name=' . g:zai_api_key_name : ''
-    let g:zai_cmd = s:python_cmd . s:opt_script . s:opt_dir . s:opt_model . s:opt_input_mode
-                \ . s:base_url . s:api_key_name
+    let s:opt_model = exists('g:zai_default_model') ? ' --model="' . g:zai_default_model . '"' : ''
+    let g:zai_cmd = s:python_cmd . s:opt_script . s:opt_dir . s:opt_input_mode
+                \ . s:base_url . s:api_key_name . s:opt_model 
 endif
 
 if !exists('g:zai_print_prompt')

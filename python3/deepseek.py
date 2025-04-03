@@ -114,13 +114,13 @@ g_config = {
 # Default values
 DEFAULT_API_KEY_NAME = "DEEPSEEK_API_KEY"
 DEFAULT_BASE_URL = "https://api.deepseek.com"
+DEFAULT_MODEL = "deepseek-chat"
 
 # Global client instance (will be initialized in main)
 g_client = None
 
-def initialize_client(api_key_name=None, base_url=None):
-    """Initialize the global client with given or default parameters"""
-    global g_client
+def open_client(api_key_name=None, base_url=None):
+    """Open client with given or default parameters"""
 
     # Use provided values or fall back to defaults
     api_key_name = api_key_name or DEFAULT_API_KEY_NAME
@@ -131,8 +131,7 @@ def initialize_client(api_key_name=None, base_url=None):
     if not api_key:
         raise ValueError(f"API key not found in environment variable {api_key_name}")
 
-    g_client = OpenAI(api_key=api_key, base_url=base_url)
-    return g_client
+    return OpenAI(api_key=api_key, base_url=base_url)
 
 def show_help():
     help_text = f"""
@@ -201,7 +200,7 @@ def save_log():
             log_file.write(f"<small>\n")
             for k in msg:
                 if k not in ['role', 'content', 'files']:
-                    log_file.write(f"  - {k}: {msg[k]}\n")
+                    log_file.write(f"  - {k.replace('_','-')}: {msg[k]}\n")
             if 'files' in msg:
                 log_file.write("  - attachments:\n")
                 for file in msg['files']:
@@ -260,12 +259,12 @@ def get_completion_params():
             # Append request message
             params['messages'].append(request_msg)
 
-    if g_config['model'] == 'deepseek-reasoner':
-        candidates = ['model', 'temperature', 'top_p', 'max_tokens', 'presence_penalty', 'frequency_penalty']
+    if 'deepseek-r' in g_config['model'].lower():
+        valid_opts = ['model', 'max_tokens']
     else:
-        candidates = ['model', 'max_tokens']
+        valid_opts = ['model', 'temperature', 'top_p', 'max_tokens', 'presence_penalty', 'frequency_penalty']
 
-    for k in candidates:
+    for k in valid_opts:
         if k in g_config:
             params[k] = g_config[k]
 
@@ -277,11 +276,18 @@ def generate_response():
     full_response = []
 
     params = get_completion_params()
-    msg = {"role": "assistant", "content": "", "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+    msg = {
+            "role":     "assistant",
+            "content":  "",
+            "time":     datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "base_url": g_config['base_url'],
+            }
     msg.update(params)
     msg.pop('stream', None)
     msg.pop('messages', None)
 
+    if not g_client:
+        g_client = open_client(api_key_name=g_config['api_key_name'], base_url=g_config['base_url'])
     try:
         stream = g_client.chat.completions.create(**params)
 
@@ -298,8 +304,8 @@ def generate_response():
             g_log.append(msg)
             print("\n<small>")
             for k in msg:
-                if k not in ['content']:
-                    print(f"  - {k}: {msg[k]}")
+                if k not in ['role', 'content']:
+                    print(f"  - {k.replace('_','-')}: {msg[k]}")
             print("</small>")
 
     except Exception as e:
@@ -312,8 +318,8 @@ def generate_response():
             print("Rolling back the message which causing error:")
             print("<small>")
             for k in msg:
-                if k not in ['content']:
-                    print(f"  - {k}: {msg[k]}")
+                if k not in ['role', 'content']:
+                    print(f"  - {k.replace('_','-')}: {msg[k]}")
             print("</small>")
 
 def set_prompt(prompt):
@@ -329,7 +335,7 @@ def handle_command(command):
             g_system_message, g_prompt, g_log, g_block_stack, g_files
     argv = command.split()
     argc = len(argv)
-    cmd = argv[0]
+    cmd = argv[0][0] + argv[0][1:].replace('-','_')
 
     # Help command
     if cmd == 'help':
@@ -359,7 +365,10 @@ def handle_command(command):
             g_files = []
             return True
     # String options
-    if cmd in ['model', 'talk_mode'] and argc == 2:
+    if cmd in ['model', 'talk_mode', 'base_url', 'api_key_name'] and argc == 2:
+        if cmd == 'base_url' and cmd != g_config['base_url']:
+            # Should reopen client at the new base_url
+            g_client = None
         g_config[cmd] = argv[1]
         return True
 
@@ -513,30 +522,28 @@ def chat_round():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--log-dir', '-l', type=str, help='Path of dir to save the logfiles')
-    parser.add_argument('--mode', choices=['json', 'text'], default='text', help='Output mode (json or text)')
     parser.add_argument('--json', action='store_true', help='Use JSON format (equivalent to --mode=json)')
     parser.add_argument('--text', action='store_true',  help='Use Text format (equivalent to --mode=text)')
     parser.add_argument('--base-url', type=str, default=DEFAULT_BASE_URL,
                        help=f'Base url for API service (default: {DEFAULT_BASE_URL})')
     parser.add_argument('--api-key-name', type=str, default=DEFAULT_API_KEY_NAME,
                        help=f'Environment variable name for API key (default: {DEFAULT_API_KEY_NAME})')
+    parser.add_argument('--model', type=str, default=DEFAULT_MODEL)
 
     args = parser.parse_args()
     if args.json:
-        args.mode = 'json'
-    elif args.text:
-        args.mode = 'text'
-    if args.mode == 'json':
         g_input_mode = 'json'
-    else:
+    elif args.text:
         g_input_mode = 'text'
     if args.log_dir:
         os.makedirs(args.log_dir, exist_ok=True)
         g_log_dir = args.log_dir
         g_log_path = os.path.join(g_log_dir, g_log_filename)
 
-    # Initialize the global client
-    initialize_client(api_key_name=args.api_key_name, base_url=args.base_url)
+    g_config['base_url'] = args.base_url
+    g_config['model'] = args.model
+    g_config['api_key_name'] = args.api_key_name
+    g_client = open_client(api_key_name=args.api_key_name, base_url=args.base_url)
 
     # Main chat loop
     while True:
