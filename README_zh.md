@@ -1,6 +1,6 @@
 # Zai.Vim DeepSeek AI助手
 
-![插件截图](screenshot.png)
+![插件截图](screenshot.gif)
 
 Zai.Vim 是一款将 DeepSeek AI助手直接集成到您的 Vim 编辑器中的 Vim 插件，当您在使用 Vim 进行代码编辑或文档撰写时，可以在 Vim 中无缝地使用它快速访问 DeepSeek 等大语言模式提供的智能服务，在 Zai 与大模型交互给您带来便利的同时，它并不会打扰您当前的编辑撰写工作。
 

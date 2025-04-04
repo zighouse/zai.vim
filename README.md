@@ -1,6 +1,8 @@
 # Zai.Vim DeepSeek AI Assistant
 
-![Plugin Screenshot](screenshot.png)
+[中文说明](README_zh.md)
+
+![Plugin Screenshot](screenshot.gif)
 
 Zai.Vim is a Vim plugin that seamlessly integrates the DeepSeek AI Assistant into your Vim editor. It allows you to access DeepSeek's intelligent services while coding or writing documents, without interrupting your workflow.
 
