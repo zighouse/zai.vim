@@ -55,6 +55,7 @@
 import argparse
 import json
 import os
+import io
 import random
 import re
 import sys
@@ -64,6 +65,10 @@ from datetime import datetime
 from openai import OpenAI
 from appdirs import user_data_dir
 from pathlib import Path
+
+sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='replace')
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace', line_buffering=True)
 
 # Log directory
 g_log_dir = Path(user_data_dir("zai", "zighouse")) / "log"
@@ -445,11 +450,11 @@ def chat_round():
         user_input = input("")
     except UnicodeDecodeError as e:
         save_log()
-        print(f'get input failure:{e}')
+        print(f'Get input failure, unicode decode error: {e}')
         return
     except EOFError as e:
         save_log()
-        print(f'get input failure:{e}')
+        sys.exit(0)
         return
     if not user_input:
         return # ignore empty
@@ -470,7 +475,7 @@ def chat_round():
             user_request = '\n'.join(json.loads(user_input))
         except json.decoder.JSONDecodeError:
             save_log()
-            print(f'request error with user_input:`{user_input}`')
+            print(f'Request error with user_input:`{user_input}`')
             return
 
     # Check block mode

@@ -2,31 +2,34 @@ let s:home = expand('<sfile>:h:h')
 let s:path_sep = has('win32') ? '\' : '/'
 let g:zai_input_mode = 'text' " json, text
 
-if !exists('g:zai_cmd')
-    let s:path_template = has('win32') ?
-                \ '{home}\python3\deepseek.py':
-                \ '{home}/python3/deepseek.py'
-    let s:script_path = substitute(s:path_template, '{home}', s:home, 'g')
+let s:script_path = s:home . '/python3/deepseek.py'
 
-    if exists('g:zai_log_dir')
-        let s:log_dir = g:zai_log_dir
+if exists('g:zai_log_dir')
+    let s:log_dir = g:zai_log_dir
+else
+    if has('win32')
+        let s:log_dir = expand('~/AppData/Local/Zighouse/Zai/Log')
     else
-        if has('win32')
-            let s:log_dir = expand('~/AppData/Local/zai/log')
-        else
-            let s:log_dir = expand('~/.local/share/zai/log')
-        endif
+        let s:log_dir = expand('~/.local/share/zai/log')
     endif
+endif
 
-    let s:python_cmd = has('win32') ? 'python' : '/usr/bin/env python3' 
+let s:python_cmd = has('win32') ? 'python' : '/usr/bin/env python3' 
+if has('win32')
+    let s:base_url = exists('g:zai_base_url') ? ['--base-url', g:zai_base_url] : []
+    let s:api_key_name = exists('g:zai_api_key_name') ? ['--api-key-name', g:zai_api_key_name] : []
+    let s:opt_model = exists('g:zai_default_model') ? ['--model=', g:zai_default_model] : []
+    let g:zai_cmd = [ s:python_cmd, s:script_path, '--log-dir', s:log_dir,
+                \ '--' . g:zai_input_mode] + s:base_url + s:api_key_name + s:opt_model
+else
     let s:opt_script = ' "' . s:script_path . '"'
     let s:opt_dir = ' --log-dir="' . s:log_dir . '"'
     let s:opt_input_mode = ' --' . g:zai_input_mode
     let s:base_url = exists('g:zai_base_url') ? ' --base-url=' . g:zai_base_url : ''
     let s:api_key_name = exists('g:zai_api_key_name') ? ' --api-key-name=' . g:zai_api_key_name : ''
     let s:opt_model = exists('g:zai_default_model') ? ' --model="' . g:zai_default_model . '"' : ''
-    let g:zai_cmd = s:python_cmd . s:opt_script . s:opt_dir . s:opt_input_mode
-                \ . s:base_url . s:api_key_name . s:opt_model 
+    let g:zai_cmd = [ s:python_cmd . s:opt_script . s:opt_dir . s:opt_input_mode
+                \ . s:base_url . s:api_key_name . s:opt_model ]
 endif
 
 if !exists('g:zai_print_prompt')
@@ -177,7 +180,8 @@ function! zai#task_on_response(channel, msg) abort
     if !bufexists(s:zai_obuf)
         call zai#ui_open()
     endif
-    call zai#print_channel_data(s:zai_obuf, a:msg)
+    let l:out_msg = iconv(a:msg, 'utf-8', &encoding)
+    call zai#print_channel_data(s:zai_obuf, l:out_msg)
 endfunction
 
 " task exit callback
@@ -193,20 +197,30 @@ endfunction
 " start the task
 function! zai#task_start() abort
     if empty(s:zai_task)
+        let l:shell = has('win32') ? ['cmd', '/c'] : ['/bin/sh', '-c']
         if has('nvim')
             " for Neovim
-            let s:zai_task = jobstart(['/bin/sh', '-c', g:zai_cmd], {
+            let s:zai_task = jobstart(l:shell + g:zai_cmd, {
                         \ 'on_stdout': {_, data, __ -> zai#task_on_response(0, data)},
                         \ 'on_stderr': {_, data, __ -> zai#task_on_response(0, data)},
                         \ 'on_exit': {_, status, __ -> zai#task_on_exit(0, status)},
+                        \ 'err_msg': "Zai: There is an error.",
+                        \ 'env': { 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1' },
+                        \ 'in_io': 'pipe',
+                        \ 'out_io': 'pipe',
+                        \ 'err_io': 'pipe',
                         \ })
         else
             " for Vim
-            let s:zai_task = job_start(['/bin/sh', '-c', g:zai_cmd], #{
-                        \ err_msg: "Zai: There is an error.",
-                        \ out_cb: function('zai#task_on_response'),
-                        \ err_cb: function('zai#task_on_response'),
-                        \ exit_cb: function('zai#task_on_exit'),
+            let s:zai_task = job_start(l:shell + g:zai_cmd, {
+                        \ 'out_cb': function('zai#task_on_response'),
+                        \ 'err_cb': function('zai#task_on_response'),
+                        \ 'exit_cb': function('zai#task_on_exit'),
+                        \ 'err_msg': "Zai: There is an error.",
+                        \ 'env': { 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1' },
+                        \ 'in_io': 'pipe',
+                        \ 'out_io': 'pipe',
+                        \ 'err_io': 'pipe',
                         \ })
         endif
     endif
@@ -495,13 +509,14 @@ function! zai#Go() abort
         endif
     endif
 
+    let l:req_msg = iconv(l:request . "\n", &encoding, 'utf-8')
     if has('nvim')
         " for Neovim
-        call jobsend(s:zai_task, l:request .. "\n")
+        call jobsend(s:zai_task, l:req_msg)
     else
         " for Vim
         let l:channel = job_getchannel(s:zai_task)
-        call ch_sendraw(l:channel, l:request .. "\n")
+        call ch_sendraw(l:channel, l:req_msg)
     endif
 
     " Also write to the output box
