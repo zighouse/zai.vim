@@ -70,8 +70,21 @@ Zai.Vim 是一款将 DeepSeek AI 助手直接集成到 Vim 编辑器的插件。
        }
    }
 <
-手动安装: >
-  git -C ~/.vim/plugged clone https://github.com/zighouse/zai.vim
+手动安装:
+在 vim 窗口中使用 `:terminal` 命令打开内嵌的终端命令窗口，在其内执行如下命令:
+
+在 Linux/Mac 上的内嵌终端命令窗口上执行的命令：>
+pip install appdirs chardet openai
+mkdir -p $VIMRUNTIME/pack/plugins/start
+cd $VIMRUNTIME/pack/plugins/start
+git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
+<
+
+在 Windows 上的内嵌终端命令窗口上执行的命令：>
+pip install appdirs chardet openai
+md %VIMRUNTIME%\pack\plugins\start
+cd %VIMRUNTIME%\pack\plugins\start
+git clone -n --depth=1 https://github.com/zighouse/zai.vim
 <
 
 ==============================================================================
@@ -82,6 +95,9 @@ Zai.Vim 是一款将 DeepSeek AI 助手直接集成到 Vim 编辑器的插件。
 - Linux/Mac: `~/.local/share/zai/log`
 - Windows: `%USERPROFILE%\AppData\Local\zai\log`
 - 可通过`g:zai_log_dir`自定义
+
+推荐：在 Windows 上配置新的日志存放路径。Windows 上的默认日志存放路径被系统隐
+藏，使用不便利。
 
 4.2 会话模式                                                   *zai-talk-mode*
 

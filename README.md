@@ -21,7 +21,9 @@ Zai.Vim is a Vim plugin that seamlessly integrates the DeepSeek AI Assistant int
 - Python 3.6+
 - DeepSeek API key (set as `DEEPSEEK_API_KEY` environment variable)
 - Required Python packages:
-  - `openai` (auto-install attempted if missing)
+  - `openai`
+  - `chardet`
+  - `appdirs`
 
 ### Using a plugin manager
 
@@ -53,9 +55,23 @@ return {
 
 Manual Installation:  
 
+Use vim command `:terminal` in a window of vim to open a new terminal window embedded in vim. Type following commands on the terminal window:
+
+When on Linux/Mac:
+```bash
+pip install appdirs chardet openai
+mkdir -p $VIMRUNTIME/pack/plugins/start
+cd $VIMRUNTIME/pack/plugins/start
+git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
 ```
-git -C ~/.vim/plugged clone https://github.com/zighouse/zai.vim
-```  
+
+When on Windows:
+```dos
+pip install appdirs chardet openai
+md %VIMRUNTIME%\pack\plugins\start
+cd %VIMRUNTIME%\pack\plugins\start
+git clone -n --depth=1 https://github.com/zighouse/zai.vim
+```
 
 ## Core Concepts
 ### Session Logs
@@ -63,6 +79,8 @@ Zai automatically saves conversation history. Each session (from opening Zai unt
 - Linux/Mac: `~/.local/share/zai/log`  
 - Windows: `%USERPROFILE%\AppData\Local\zai\log`
 - Or specified by `g:zai_log_dir`
+
+Recommendation: Configure a new log storage path on Windows. The default log storage path on Windows is hidden by the system, making it inconvenient to use.
 
 ### Session Modes
 - **Chain Mode**: Maintains full conversation context (ideal for complex tasks)
