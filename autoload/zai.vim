@@ -275,7 +275,7 @@ function! zai#ui_open() abort
         setlocal nomodifiable
         setlocal wrap
         setlocal syntax=markdown
-        setlocal statusline=[Zai\ Output]\ %m%r%=%-14.(%l,%c%V%)\ %P
+        let &l:statusline = "[Zai-Log]%=%-14.(%l,%c%V%) %P"
         execute 'wincmd L'
         normal! zR
     else
@@ -322,9 +322,10 @@ function! zai#ui_open() abort
         setlocal modifiable
         setlocal wrap
         setlocal syntax=markdown
-        setlocal statusline=[Zai\ Input]\ Commit:ZaiGo\ \ Quit:ZaiClose\ %=%-14.(%l,%c%V%)\ %P
+        let &l:statusline = '[Zai] Submit:normal+[Enter]%=%-14.(%l,%c%V%) %P'
         resize 10  " window height
         normal! G
+        nnoremap <buffer><silent><nowait> <CR> call zai#Go()<CR>
     else
         let l:iwin = bufwinnr(s:zai_ibuf)
         if l:iwin == -1
