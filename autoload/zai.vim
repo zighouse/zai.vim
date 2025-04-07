@@ -325,7 +325,7 @@ function! zai#ui_open() abort
         let &l:statusline = '[Zai] Submit:normal+[Enter]%=%-14.(%l,%c%V%) %P'
         resize 10  " window height
         normal! G
-        nnoremap <buffer><silent><nowait> <CR> call zai#Go()<CR>
+        nnoremap <buffer><silent><nowait> <CR> :call zai#Go()<CR>
     else
         let l:iwin = bufwinnr(s:zai_ibuf)
         if l:iwin == -1
