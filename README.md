@@ -47,7 +47,7 @@ return {
         "zighouse/zai.vim",
         config = function()
             vim.g.zai_default_model = "deepseek-coder"  -- Optional config
-            -- vim.g.zai_log_dir = my-log-dir           -- Optional config
+            vim.g.zai_log_dir = my-log-dir              -- Optional config
         end
     }
 }
@@ -55,23 +55,29 @@ return {
 
 Manual Installation:  
 
-Use vim command `:terminal` in a window of vim to open a new terminal window embedded in vim. Type following commands on the terminal window:
+Type following commands on the terminal window:
 
 When on Linux/Mac:
 ```bash
 pip install appdirs chardet openai
-mkdir -p $VIMRUNTIME/pack/plugins/start
-cd $VIMRUNTIME/pack/plugins/start
+mkdir -p ~/.vim/pack/plugins/start
+cd ~/.vim/pack/plugins/start
 git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
+git checkout
 ```
 
 When on Windows:
 ```dos
 pip install appdirs chardet openai
-md %VIMRUNTIME%\pack\plugins\start
-cd %VIMRUNTIME%\pack\plugins\start
-git clone -n --depth=1 https://github.com/zighouse/zai.vim
+md %USERPROFILE%\vimfiles\pack\plugins\start
+cd %USERPROFILE%\vimfiles\pack\plugins\start
+git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
+git checkout
 ```
+
+Using `git pull` to keep it updated.
+
+Alternatively, you can [download the zip](https://github.com/zighouse/zai.vim/archive/refs/heads/main.zip) file and unzip it in the path.
 
 ## Core Concepts
 ### Session Logs
@@ -95,12 +101,13 @@ Switch modes using session commands:
 ## Usage
 
 ### Key Mappings
-| Key Binding     | Command       | Description                  | Mode          |
-|-----------------|---------------|------------------------------|---------------|
-| `<Leader>zo`    | `:Zai`        | Open Zai interface           | Normal        |
-| `<Leader>zg`    | `:ZaiGo`      | Send query                   | Insert        |
-| `<Leader>zX`    | `:ZaiClose`   | Close session                | Normal        |
-| `<Leader>za`    | `:ZaiAdd`     | Add visual selection to input | Visual        |
+| Key Binding        | Command       | Description                   | Mode    |
+|--------------------|---------------|-------------------------------|---------|
+| `<Leader>zo`       | `:Zai`        | Open Zai interface            | Normal  |
+| `<Leader>zg`       | `:ZaiGo`      | Send query                    | Insert  |
+| `<Leader>zX`       | `:ZaiClose`   | Close session                 | Normal  |
+| `<Leader>za`       | `:ZaiAdd`     | Add visual selection to input | Visual  |
+| `<CR>` (InputArea) | `:ZaiGo`      | Send query                    | Normal  |
 
 ### Session Commands
 

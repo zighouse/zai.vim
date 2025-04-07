@@ -48,7 +48,7 @@ return {
         config = function()
             -- 可选配置
             vim.g.zai_default_model = "deepseek-coder"
-            -- vim.g.zai_log_dir = my-log-dir
+            vim.g.zai_log_dir = my-log-dir
         end
     }
 }
@@ -56,25 +56,29 @@ return {
 
 手动安装:
 
-在 vim 窗口中使用 `:terminal` 命令打开内嵌的终端命令窗口，在其内执行如下命令:
-
-在 Linux/Mac 上的内嵌终端命令窗口上执行的命令：
+在 Linux/Mac 上的终端命令窗口上执行的命令：
 
 ```bash
 pip install appdirs chardet openai
-mkdir -p $VIMRUNTIME/pack/plugins/start
-cd $VIMRUNTIME/pack/plugins/start
+mkdir -p ~/.vim/pack/plugins/start
+cd ~/.vim/pack/plugins/start
 git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
+git checkout
 ```
 
-在 Windows 上的内嵌终端命令窗口上执行的命令：
+在 Windows 上的终端命令窗口上执行的命令：
 
 ```dos
 pip install appdirs chardet openai
-md %VIMRUNTIME%\pack\plugins\start
-cd %VIMRUNTIME%\pack\plugins\start
-git clone -n --depth=1 https://github.com/zighouse/zai.vim
+md %USERPROFILE%\vimfiles\pack\plugins\start
+cd %USERPROFILE%\vimfiles\pack\plugins\start
+git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
+git checkout
 ```
+
+进入安装目录下执行 `git pull` 即可手动更新。
+
+也可以[下载 zip 包](https://github.com/zighouse/zai.vim/archive/refs/heads/main.zip)，解压后把 zai.vim-main 文件夹放到对应的目录下。
 
 ## 基本概念
 
@@ -101,12 +105,13 @@ Zai 会妥善保存和 DeepSeek 大语言模型服务所做的每一次交互。
 
 ### 快捷键映射
 
-| 快捷键          | 命令          | 描述                          | 模式          |
-|-----------------|---------------|-------------------------------|---------------|
-| `<Leader>zo`    | `:Zai`        | 打开Zai交互界面               | 普通模式      |
-| `<Leader>zg`    | `:ZaiGo`      | 发送当前输入到DeepSeek        | 插入模式      |
-| `<Leader>zX`    | `:ZaiClose`   | 关闭当前Zai会话               | 普通模式      |
-| `<Leader>za`    | `:ZaiAdd`     | 添加可视化选区到输入区        | 可视模式      |
+| 快捷键            | 命令          | 描述                          | 模式          |
+|-------------------|---------------|-------------------------------|---------------|
+| `<Leader>zo`      | `:Zai`        | 打开Zai交互界面               | 普通模式      |
+| `<Leader>zg`      | `:ZaiGo`      | 发送当前输入到DeepSeek        | 插入模式      |
+| `<Leader>zX`      | `:ZaiClose`   | 关闭当前Zai会话               | 普通模式      |
+| `<Leader>za`      | `:ZaiAdd`     | 添加可视化选区到输入区        | 可视模式      |
+| `<CR>` (输入窗口) | `:ZaiGo`      | 发送当前输入区内容到 DeepSeek | 普通模式      |
 
 ## Zai会话中使用的指令
 
