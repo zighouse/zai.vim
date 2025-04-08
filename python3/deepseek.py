@@ -279,6 +279,8 @@ def generate_response():
     """Generate and process assistant response"""
     global g_messages, g_config, g_client, g_log
     full_response = []
+    reasoning_content = []
+    tool_calls = []
 
     params = get_completion_params()
     msg = {
@@ -297,10 +299,32 @@ def generate_response():
         stream = g_client.chat.completions.create(**params)
 
         for chunk in stream:
+            if not full_response:
+                if hasattr(chunk.choices[0].delta, 'reasoning_content'):
+                    if think := chunk.choices[0].delta.reasoning_content:
+                        if not reasoning_content:
+                            print('<think>')
+                        print(think, end='', flush=True)
+                        reasoning_content.append(think)
+                        time.sleep(random.uniform(0.01, 0.05))
+                elif hasattr(chunk.choices[0].delta, 'tool_calls'):
+                    if tool := chunk.choices[0].delta.tool_calls:
+                        print(tool, end='', flush=True)
+                        tool_calls.extend(tool)
+                        time.sleep(random.uniform(0.01, 0.05))
+
             if content := chunk.choices[0].delta.content:
+                if not full_response:
+                    if reasoning_content:
+                        print('\n</think>\n')
                 print(content, end='', flush=True)
                 full_response.append(content)
                 time.sleep(random.uniform(0.01, 0.05))
+
+        if reasoning_content:
+            full_response = ['<think>\n'] + reasoning_content + ['\n</think>\n\n'] + full_response
+        elif tool_calls:
+            full_response = ['<tool>\n'] + tool_calls + ['\n</tool>\n\n'] + full_response
 
         if full_response:
             msg['content'] = ''.join(full_response)
