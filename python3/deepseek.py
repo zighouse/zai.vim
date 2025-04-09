@@ -204,13 +204,17 @@ def save_log():
             log_file.write(f"**{msg['role'].capitalize()}:**\n")
             log_file.write(f"<small>\n")
             for k in msg:
-                if k not in ['role', 'content', 'files']:
+                if k not in ['role', 'content', 'files', 'reasoning_content', 'tool_calls']:
                     log_file.write(f"  - {k.replace('_','-')}: {msg[k]}\n")
             if 'files' in msg:
                 log_file.write("  - attachments:\n")
                 for file in msg['files']:
                     log_file.write(f"    - {file['full_path']}\n")
             log_file.write(f"</small>\n")
+            if 'reasoning_content' in msg:
+                log_file.write(f"<think>\n{''.join(msg['reasoning_content'])}\n</think>\n")
+            if 'tool_calls' in msg:
+                log_file.write(f"<tool_calls>\n{''.join(msg['tool_calls'])}\n</tool_calls>\n")
             log_file.write(f"{msg['content']}\n\n")
     print(f"\nSaved log: {g_log_path}")
 
@@ -322,9 +326,9 @@ def generate_response():
                 time.sleep(random.uniform(0.01, 0.05))
 
         if reasoning_content:
-            full_response = ['<think>\n'] + reasoning_content + ['\n</think>\n\n'] + full_response
+            msg['reasoning_content'] = reasoning_content
         elif tool_calls:
-            full_response = ['<tool>\n'] + tool_calls + ['\n</tool>\n\n'] + full_response
+            msg['tool_calls'] = tool_calls
 
         if full_response:
             msg['content'] = ''.join(full_response)
@@ -333,7 +337,7 @@ def generate_response():
             g_log.append(msg)
             print("\n<small>")
             for k in msg:
-                if k not in ['role', 'content']:
+                if k not in ['role', 'content', 'reasoning_content', 'tool_calls']:
                     print(f"  - {k.replace('_','-')}: {msg[k]}")
             print("</small>")
 
