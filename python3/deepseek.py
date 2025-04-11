@@ -314,6 +314,13 @@ def generate_response():
             'content': f"```{g_config['complete_type']}\n{prefix}",
             'prefix': True
             })
+        if not 'max_tokens' in params:
+            # set default max_tokens for completions
+            params['max_tokens'] = 1000
+        if not 'temperature':
+            params['temperature'] = 0.0
+        elif params['temperature'] > 0.5:
+            params['temperature'] = 0.5
 
     msg.update(params)
     msg.pop('stream', None)
