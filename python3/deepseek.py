@@ -51,6 +51,8 @@
 #   :talk_mode  <enum>     - Conversation mode: instant (stateless), chain (context-aware)
 #   :file <file-path>      - Attach a text file.
 #   :-file                 - Remove all attached text files.
+#   :complete_type <file-type>  - File-type to complete.
+#   :prefix <string>       - Set prefix.
 #
 import argparse
 import json
@@ -87,7 +89,7 @@ g_input_mode = 'json'
 g_output_mode = 'text'
 
 g_block_stack = []  # Stack of active blocks, each entry is:
-                    # {'is_prompt': bool, 'signature': str, 'content': str}
+                    # {'type': 'prompt', 'signature': str, 'content': str}
 
 g_prompt="""You are a strict assistant in programming, software engineering and computer science. For each query:
      1. Identify key issues.
@@ -161,6 +163,9 @@ COMMANDS:
     {g_cmd_prefix}max_tokens <int>     - Set response length limit
     {g_cmd_prefix}prompt <text>        - Set prompt or system message content
     {g_cmd_prefix}prompt<<EOF          - Start block mode for prompt, end with EOF (or any marker)
+    {g_cmd_prefix}complete_type <str>  - File-type for completion
+    {g_cmd_prefix}prefix <str>         - Prefix for completion
+    {g_cmd_prefix}prefix<<EOF          - Start block mode for prefix, end with EOF (or any marker)
     {g_cmd_prefix}-<param>             - Reset parameter to default
 
   File Handling:
@@ -197,14 +202,15 @@ def save_log():
 
     # print attachments
     with open(g_log_path, "w", encoding="utf-8") as log_file:
-        sys_msg = g_system_message['content'].strip()
-        if sys_msg:
+        if (sys_msg := g_system_message['content'].strip()):
             log_file.write(f"**System:**\n{sys_msg}\n\n")
         for msg in g_log:
             log_file.write(f"**{msg['role'].capitalize()}:**\n")
             log_file.write(f"<small>\n")
             for k in msg:
-                if k not in ['role', 'content', 'files', 'reasoning_content', 'tool_calls']:
+                if k in ['prefix', 'suffix']:
+                    log_file.write(f"  - {k.replace('_','-')}:\n```\n{msg[k]}\n```\n")
+                elif k not in ['role', 'content', 'files', 'reasoning_content', 'tool_calls', 'stop']:
                     log_file.write(f"  - {k.replace('_','-')}: {msg[k]}\n")
             if 'files' in msg:
                 log_file.write("  - attachments:\n")
@@ -293,6 +299,22 @@ def generate_response():
             "time":     datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             "base_url": g_config['base_url'],
             }
+
+    if 'complete_type' in g_config:
+        messages = params['messages']
+        params['messages'] = [ m for m in messages if m['role'] != 'system' ]
+        params['stop'] = '```'
+        if 'prefix' in g_config:
+            prefix = g_config['prefix']
+            g_config.pop('prefix', None)
+        else:
+            prefix = ''
+        params['messages'].append({
+            'role': 'assistant',
+            'content': f"```{g_config['complete_type']}\n{prefix}",
+            'prefix': True
+            })
+
     msg.update(params)
     msg.pop('stream', None)
     msg.pop('messages', None)
@@ -337,7 +359,7 @@ def generate_response():
             g_log.append(msg)
             print("\n<small>")
             for k in msg:
-                if k not in ['role', 'content', 'reasoning_content', 'tool_calls']:
+                if k not in ['role', 'content', 'reasoning_content', 'tool_calls', 'stop']:
                     print(f"  - {k.replace('_','-')}: {msg[k]}")
             print("</small>")
 
@@ -384,7 +406,8 @@ def handle_command(command):
 
     # Unset options
     if cmd[0] == '-':
-        if cmd[1:] in ['temperature', 'top_p', 'max_tokens', 'logprobs', 'talk_mode']:
+        if cmd[1:] in ['temperature', 'top_p', 'max_tokens', 'logprobs', 'talk_mode',
+                'complete_type', 'prefix']:
             g_config.pop(cmd[1:], None)
             return True
         elif cmd[1:] == 'prompt':
@@ -398,7 +421,8 @@ def handle_command(command):
             g_files = []
             return True
     # String options
-    if cmd in ['model', 'talk_mode', 'base_url', 'api_key_name'] and argc == 2:
+    if cmd in ['model', 'talk_mode', 'base_url', 'api_key_name',
+            'complete_type', 'prefix'] and argc == 2:
         if cmd == 'base_url' and argv[1] != g_config['base_url']:
             # Should reopen client at the new base_url
             g_client = None
@@ -426,7 +450,18 @@ def handle_command(command):
         rest = command[6:].strip()
         if rest.startswith('<<') and len(rest) > 2 and rest[2] != g_cmd_prefix:
             g_block_stack.append({
-                'is_prompt': True,
+                'type': 'prompt',
+                'signature': rest[2:],
+                'content': ''
+            })
+            return True
+
+    # Block prefix
+    if cmd.startswith('prefix'):
+        rest = command[6:].strip()
+        if rest.startswith('<<') and len(rest) > 2 and rest[2] != g_cmd_prefix:
+            g_block_stack.append({
+                'type': 'prefix',
                 'signature': rest[2:],
                 'content': ''
             })
@@ -513,7 +548,7 @@ def chat_round():
             group = match.group(1)
             if group[0] != g_cmd_prefix:
                 g_block_stack.append({
-                    'is_prompt': False,
+                    'type': '',
                     'signature': group,
                     'content': ''
                 })
@@ -527,8 +562,11 @@ def chat_round():
             block_content = current_block['content']
             g_block_stack.pop()
 
-            if current_block['is_prompt']:
+            if current_block['type'] == 'prompt':
                 set_prompt(block_content)
+                return
+            elif current_block['type'] == 'prefix':
+                g_config['prefix'] = block_content
                 return
             else:
                 user_request = block_content
@@ -547,6 +585,10 @@ def chat_round():
     if g_files and len(g_files):
         msg['files'] = g_files
         g_files = []
+    if 'complete_type' in g_config:
+        msg['complete_type'] = g_config['complete_type']
+        if 'prefix' in g_config:
+            msg['prefix'] = g_config['prefix']
     g_messages.append(msg)
     g_log.append(msg)
     generate_response()
