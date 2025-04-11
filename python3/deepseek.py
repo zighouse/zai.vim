@@ -109,13 +109,9 @@ g_files = []
 
 g_log = []
 
-# FIM completion (Beta)
-## for chat completion, should use beta base_url, and provide stop parameter, without system message.
-# post to https://api.deepseek.com/beta/completions
-# base_url="https://api.deepseek.com/beta"
 g_config = {
         'model': 'deepseek-chat', # Verified models: deepseek-coder, deepseek-chat, deepseek-reasoner
-        'temperature': 0.7,
+        # 'temperature': 0.7,
         }
 
 # Default values
@@ -166,6 +162,8 @@ COMMANDS:
     {g_cmd_prefix}complete_type <str>  - File-type for completion
     {g_cmd_prefix}prefix <str>         - Prefix for completion
     {g_cmd_prefix}prefix<<EOF          - Start block mode for prefix, end with EOF (or any marker)
+    {g_cmd_prefix}suffix <str>         - Suffix for FIM-completion
+    {g_cmd_prefix}suffix<<EOF          - Start block mode for suffix, end with EOF (or any marker)
     {g_cmd_prefix}-<param>             - Reset parameter to default
 
   File Handling:
@@ -302,25 +300,31 @@ def generate_response():
 
     if 'complete_type' in g_config:
         messages = params['messages']
-        params['messages'] = [ m for m in messages if m['role'] != 'system' ]
-        params['stop'] = '```'
-        if 'prefix' in g_config:
-            prefix = g_config['prefix']
-            g_config.pop('prefix', None)
+        if 'suffix' in g_config:
+            # FIM-completion
+            if messages[-1]['role'] == 'user':
+                params.pop('messages', None)
+                params['prompt'] = f"```{g_config['complete_type']}\n{messages[-1]['content']}"
+                params['suffix'] = g_config['suffix']
+                g_config.pop('suffix', None)
         else:
-            prefix = ''
-        params['messages'].append({
-            'role': 'assistant',
-            'content': f"```{g_config['complete_type']}\n{prefix}",
-            'prefix': True
-            })
+            # prefix-completion
+            params['messages'] = [ m for m in messages if m['role'] != 'system' ]
+            params['stop'] = '```'
+            if 'prefix' in g_config:
+                prefix = g_config['prefix']
+                g_config.pop('prefix', None)
+            else:
+                prefix = ''
+            params['messages'].append({
+                'role': 'assistant',
+                'content': f"```{g_config['complete_type']}\n{prefix}",
+                'prefix': True
+                })
         if not 'max_tokens' in params:
-            # set default max_tokens for completions
-            params['max_tokens'] = 1000
+            params['max_tokens'] = 400
         if not 'temperature':
             params['temperature'] = 0.0
-        elif params['temperature'] > 0.5:
-            params['temperature'] = 0.5
 
     msg.update(params)
     msg.pop('stream', None)
@@ -414,7 +418,7 @@ def handle_command(command):
     # Unset options
     if cmd[0] == '-':
         if cmd[1:] in ['temperature', 'top_p', 'max_tokens', 'logprobs', 'talk_mode',
-                'complete_type', 'prefix']:
+                'complete_type', 'prefix', 'suffix']:
             g_config.pop(cmd[1:], None)
             return True
         elif cmd[1:] == 'prompt':
@@ -427,13 +431,17 @@ def handle_command(command):
             # TODO: remove files in context messages.
             g_files = []
             return True
+
     # String options
-    if cmd in ['model', 'talk_mode', 'base_url', 'api_key_name',
-            'complete_type', 'prefix'] and argc == 2:
+    if cmd in ['model', 'talk_mode', 'base_url', 'api_key_name', 'complete_type'] and argc == 2:
         if cmd == 'base_url' and argv[1] != g_config['base_url']:
             # Should reopen client at the new base_url
             g_client = None
         g_config[cmd] = argv[1]
+        return True
+
+    if cmd in ['prefix', 'suffix'] and argc > 1:
+        g_config[cmd] = command[len(cmd)+1:]
         return True
 
     # Float options
@@ -469,6 +477,17 @@ def handle_command(command):
         if rest.startswith('<<') and len(rest) > 2 and rest[2] != g_cmd_prefix:
             g_block_stack.append({
                 'type': 'prefix',
+                'signature': rest[2:],
+                'content': ''
+            })
+            return True
+
+    # Block suffix
+    if cmd.startswith('suffix'):
+        rest = command[6:].strip()
+        if rest.startswith('<<') and len(rest) > 2 and rest[2] != g_cmd_prefix:
+            g_block_stack.append({
+                'type': 'suffix',
                 'signature': rest[2:],
                 'content': ''
             })
