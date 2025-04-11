@@ -365,7 +365,7 @@ def set_prompt(prompt):
 
 def handle_command(command):
     global g_messages, g_config, g_cmd_prefix, g_cmd_prefix_chars, \
-            g_system_message, g_prompt, g_log, g_block_stack, g_files
+            g_system_message, g_prompt, g_log, g_block_stack, g_files, g_client
     argv = command.split()
     argc = len(argv)
     cmd = argv[0][0] + argv[0][1:].replace('-','_')
@@ -399,7 +399,7 @@ def handle_command(command):
             return True
     # String options
     if cmd in ['model', 'talk_mode', 'base_url', 'api_key_name'] and argc == 2:
-        if cmd == 'base_url' and cmd != g_config['base_url']:
+        if cmd == 'base_url' and argv[1] != g_config['base_url']:
             # Should reopen client at the new base_url
             g_client = None
         g_config[cmd] = argv[1]
