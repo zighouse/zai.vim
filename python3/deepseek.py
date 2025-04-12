@@ -289,6 +289,7 @@ def generate_response():
     full_response = []
     reasoning_content = []
     tool_calls = []
+    is_FIM = False
 
     params = get_completion_params()
     msg = {
@@ -302,10 +303,12 @@ def generate_response():
         messages = params['messages']
         if 'suffix' in g_config:
             # FIM-completion
+            is_FIM = True
             if messages[-1]['role'] == 'user':
                 params.pop('messages', None)
                 params['prompt'] = f"```{g_config['complete_type']}\n{messages[-1]['content']}"
                 params['suffix'] = g_config['suffix']
+                params['stream'] = False
                 g_config.pop('suffix', None)
         else:
             # prefix-completion
@@ -333,30 +336,35 @@ def generate_response():
     if not g_client:
         g_client = open_client(api_key_name=g_config['api_key_name'], base_url=g_config['base_url'])
     try:
-        stream = g_client.chat.completions.create(**params)
-
-        for chunk in stream:
-            if not full_response:
-                if hasattr(chunk.choices[0].delta, 'reasoning_content'):
-                    if think := chunk.choices[0].delta.reasoning_content:
-                        if not reasoning_content:
-                            print('<think>')
-                        print(think, end='', flush=True)
-                        reasoning_content.append(think)
-                        time.sleep(random.uniform(0.01, 0.05))
-                elif hasattr(chunk.choices[0].delta, 'tool_calls'):
-                    if tool := chunk.choices[0].delta.tool_calls:
-                        print(tool, end='', flush=True)
-                        tool_calls.extend(tool)
-                        time.sleep(random.uniform(0.01, 0.05))
-
-            if content := chunk.choices[0].delta.content:
+        if is_FIM:
+            response = g_client.completions.create(**params)
+            if content := response.choices[0].text:
+                full_response.append(response.choices[0].text)
+                print(response.choices[0].text, flush=True)
+        else:
+            stream = g_client.chat.completions.create(**params)
+            for chunk in stream:
                 if not full_response:
-                    if reasoning_content:
-                        print('\n</think>\n')
-                print(content, end='', flush=True)
-                full_response.append(content)
-                time.sleep(random.uniform(0.01, 0.05))
+                    if hasattr(chunk.choices[0].delta, 'reasoning_content'):
+                        if think := chunk.choices[0].delta.reasoning_content:
+                            if not reasoning_content:
+                                print('<think>')
+                            print(think, end='', flush=True)
+                            reasoning_content.append(think)
+                            time.sleep(random.uniform(0.01, 0.05))
+                    elif hasattr(chunk.choices[0].delta, 'tool_calls'):
+                        if tool := chunk.choices[0].delta.tool_calls:
+                            print(tool, end='', flush=True)
+                            tool_calls.extend(tool)
+                            time.sleep(random.uniform(0.01, 0.05))
+
+                if content := chunk.choices[0].delta.content:
+                    if not full_response:
+                        if reasoning_content:
+                            print('\n</think>\n')
+                    print(content, end='', flush=True)
+                    full_response.append(content)
+                    time.sleep(random.uniform(0.01, 0.05))
 
         if reasoning_content:
             msg['reasoning_content'] = reasoning_content
