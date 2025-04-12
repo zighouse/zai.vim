@@ -174,6 +174,7 @@ COMMANDS:
     {g_cmd_prefix}prefix<<EOF          - Start block mode for prefix, end with EOF (or any marker)
     {g_cmd_prefix}suffix <str>         - Suffix for FIM-completion
     {g_cmd_prefix}suffix<<EOF          - Start block mode for suffix, end with EOF (or any marker)
+    {g_cmd_prefix}no-log               - Disable file logging
     {g_cmd_prefix}-<param>             - Reset parameter to default
 
   File Handling:
@@ -420,7 +421,7 @@ def set_prompt(prompt):
 
 def handle_command(command):
     global g_messages, g_config, g_cmd_prefix, g_cmd_prefix_chars, \
-            g_system_message, g_prompt, g_log, g_block_stack, g_files, g_client
+            g_system_message, g_prompt, g_log_enabled, g_log, g_block_stack, g_files, g_client
     argv = command.split()
     argc = len(argv)
     cmd = argv[0][0] + argv[0][1:].replace('-','_')
@@ -435,6 +436,10 @@ def handle_command(command):
     if cmd in ['exit', 'quit', 'bye']:
         save_log()
         sys.exit(0)
+        return True
+
+    if cmd == 'no_log':
+        g_log_enabled = False
         return True
 
     # Unset options
@@ -452,6 +457,9 @@ def handle_command(command):
             # TODO: if an argument provided, remove the given file.
             # TODO: remove files in context messages.
             g_files = []
+            return True
+        elif cmd[1:] == 'no_log':
+            g_log_enabled = True
             return True
 
     # String options
