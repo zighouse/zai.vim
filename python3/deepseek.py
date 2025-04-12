@@ -72,9 +72,22 @@ sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='replace
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace', line_buffering=True)
 
-# Log directory
-g_log_dir = Path(user_data_dir("zai", "zighouse")) / "log"
-g_log_dir.mkdir(parents=True, exist_ok=True)
+g_verbose = True
+g_log_enabled = True
+g_log_path = None
+def log_init(log_dir=''):
+    global g_log_path, g_log_enabled
+    if not g_log_enabled:
+        g_log_path = None
+        return
+    if not log_dir:
+        log_dir = Path(user_data_dir("zai", "zighouse")) / "log"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_filename = datetime.now().strftime("%Y%m%d_%H%M%S.md")
+        g_log_path = log_dir / log_filename
+    except Exception as e:
+        print(f"Failed initing log file, error: {e}", file=sys.stderr)
 
 g_cmd_prefix = ':'
 g_cmd_prefix_chars = [ ':', '/', '~', '\\', ';', '!', '#', '$', '%', '&', '?',
@@ -82,9 +95,6 @@ g_cmd_prefix_chars = [ ':', '/', '~', '\\', ';', '!', '#', '$', '%', '&', '?',
         '(', ')', '[', ']', '{', '}', ]
 # '-' is not a valid command prefix char, it has a special usage.
 
-# log file name
-g_log_filename = datetime.now().strftime("%Y%m%d_%H%M%S.md")
-g_log_path = g_log_dir / g_log_filename
 g_input_mode = 'json'
 g_output_mode = 'text'
 
@@ -192,7 +202,10 @@ EXAMPLES:
 
 def save_log():
     """Save conversation history to log file"""
-    global g_log_path, g_log
+    global g_log_enabled, g_log_path, g_log
+
+    if not g_log_enabled or not g_log_path:
+        return
 
     # avoid create an empty log
     if not g_log:
@@ -285,7 +298,7 @@ def get_completion_params():
 
 def generate_response():
     """Generate and process assistant response"""
-    global g_messages, g_config, g_client, g_log
+    global g_messages, g_config, g_client, g_verbose, g_log
     full_response = []
     reasoning_content = []
     tool_calls = []
@@ -376,25 +389,26 @@ def generate_response():
             msg['time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             g_messages.append(msg)
             g_log.append(msg)
-            print("\n<small>")
-            for k in msg:
-                if k not in ['role', 'content', 'reasoning_content', 'tool_calls', 'stop']:
-                    print(f"  - {k.replace('_','-')}: {msg[k]}")
-            print("</small>")
+            if g_verbose:
+                print("\n<small>")
+                for k in msg:
+                    if k not in ['role', 'content', 'reasoning_content', 'tool_calls', 'stop']:
+                        print(f"  - {k.replace('_','-')}: {msg[k]}")
+                print("</small>")
 
     except Exception as e:
         # Rollback error-causing message
         if g_messages and g_messages[-1]["role"] == "user":
             m = g_messages.pop()
             l = g_log.pop();
-        print(f"\nFailed generating response, error: {e}")
+        print(f"\nFailed generating response, error: {e}", file=sys.stderr)
         if l and len(l):
-            print("Rolling back the message which causing error:")
-            print("<small>")
+            print("Rolling back the message which causing error:", file=sys.stderr)
+            print("<small>", file=sys.stderr)
             for k in msg:
                 if k not in ['role', 'content']:
-                    print(f"  - {k.replace('_','-')}: {msg[k]}")
-            print("</small>")
+                    print(f"  - {k.replace('_','-')}: {msg[k]}", file=sys.stderr)
+            print("</small>", file=sys.stderr)
 
 def set_prompt(prompt):
     global g_config, g_system_message
@@ -511,32 +525,32 @@ def handle_command(command):
         file_path = argv[1]
         file_obj = Path(file_path).expanduser().resolve()
         if not file_obj.exists():
-            print(f"Error: File `{file_path}` does not exist.")
+            print(f"Error: File `{file_path}` does not exist.", file=sys.stderr)
             return True
         try:
             # Check file_obj size (max 2MB)
             if file_obj.stat().st_size > 2 * 1024 * 1024:
-                print(f"Error: File `{file_path}` exceeds 2MB size limit")
+                print(f"Error: File `{file_path}` exceeds 2MB size limit", file=sys.stderr)
                 return True
 
             # Detect character encoding, and decode
             rawdata = file_obj.read_bytes()
             encoding = chardet.detect(rawdata)['encoding']
             if not encoding:
-                print(f"Error: File `{file_path}` doesn't appear to be a text file, can't determin its character encoding.")
+                print(f"Error: File `{file_path}` doesn't appear to be a text file, can't determin its character encoding.", file=sys.stderr)
                 return True
             content = rawdata.decode(encoding)
             g_files.append({'path': f'{file_path}', 'full_path': f'{file_obj}', 'encoding': encoding, 'content': content})
             print(f"Attached file: `{file_path}`")
         except FileNotFoundError:
-            print(f"Error: File `{file_path}` not found")
+            print(f"Error: File `{file_path}` not found", file=sys.stderr)
         except UnicodeError:
-            print(f"Error: Convert file `{file_path}` to UTF-8 failure")
+            print(f"Error: Convert file `{file_path}` to UTF-8 failure", file=sys.stderr)
         except Exception as e:
-            print(f"Error reading file `{file_path}`: {e}")
+            print(f"Error reading file `{file_path}`: {e}", file=sys.stderr)
         return True
 
-    print(f"unknown command: {command}")
+    print(f"unknown command: {command}", file=sys.stderr)
 
     return False
 
@@ -547,7 +561,7 @@ def chat_round():
         user_input = input("")
     except UnicodeDecodeError as e:
         save_log()
-        print(f'Get input failure, unicode decode error: {e}')
+        print(f'Get input failure, unicode decode error: {e}', file=sys.stderr)
         return
     except EOFError as e:
         save_log()
@@ -572,7 +586,7 @@ def chat_round():
             user_request = '\n'.join(json.loads(user_input))
         except json.decoder.JSONDecodeError:
             save_log()
-            print(f'Request error with user_input:`{user_input}`')
+            print(f'Request error with user_input:`{user_input}`', file=sys.stderr)
             return
 
     # Check block mode
@@ -630,6 +644,7 @@ def chat_round():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument('--no-log', action='store_true', help='No log')
     parser.add_argument('--log-dir', '-l', type=str, help='Path of dir to save the logfiles')
     parser.add_argument('--json', action='store_true', help='Use JSON format (equivalent to --mode=json)')
     parser.add_argument('--text', action='store_true',  help='Use Text format (equivalent to --mode=text)')
@@ -638,16 +653,16 @@ if __name__ == "__main__":
     parser.add_argument('--api-key-name', type=str, default=DEFAULT_API_KEY_NAME,
                        help=f'Environment variable name for API key (default: {DEFAULT_API_KEY_NAME})')
     parser.add_argument('--model', type=str, default=DEFAULT_MODEL)
+    parser.add_argument('--silent', action='store_true', help='No verbose')
 
     args = parser.parse_args()
     if args.json:
         g_input_mode = 'json'
     elif args.text:
         g_input_mode = 'text'
-    if args.log_dir:
-        os.makedirs(args.log_dir, exist_ok=True)
-        g_log_dir = args.log_dir
-        g_log_path = os.path.join(g_log_dir, g_log_filename)
+    g_verbose = False if args.silent else True
+    g_log_enabled = False if args.no_log else True
+    log_init(args.log_dir)
 
     g_config['base_url'] = args.base_url
     g_config['model'] = args.model
