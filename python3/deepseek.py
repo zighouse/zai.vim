@@ -103,7 +103,13 @@ g_output_mode = 'text'
 g_block_stack = []  # Stack of active blocks, each entry is:
                     # {'type': 'prompt', 'signature': str, 'content': str}
 
-g_prompt="""You are a strict assistant in programming, software engineering and computer science. For each query:
+if 'zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', ''):
+    g_prompt="""你是一个擅长计算机、软件以及编程的高水平助手，对于每一个用户的咨询：
+     1. 辩认出关键问题；
+     2. 提出务实的方案；
+     3. 为核心建议一个简洁的标题性总结。"""
+else:
+    g_prompt="""You are a strict assistant in programming, software engineering and computer science. For each query:
      1. Identify key issues.
      2. Propose solutions with pragmatical considerations.
      3. Conclude with a concise title reflecting the core suggestion."""
@@ -142,7 +148,7 @@ def open_client(api_key_name=None, base_url=None):
     base_url = base_url or DEFAULT_BASE_URL
 
     # Get API key from environment
-    api_key = os.getenv(api_key_name)
+    api_key = os.getenv(api_key_name, '')
     if not api_key:
         raise ValueError(f"API key not found in environment variable {api_key_name}")
 
