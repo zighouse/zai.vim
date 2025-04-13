@@ -83,6 +83,8 @@ def log_init(log_dir=''):
     if not log_dir:
         log_dir = Path(user_data_dir("zai", "zighouse")) / "log"
     try:
+        if isinstance(log_dir, str):
+            log_dir = Path(log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
         log_filename = datetime.now().strftime("%Y%m%d_%H%M%S.md")
         g_log_path = log_dir / log_filename
