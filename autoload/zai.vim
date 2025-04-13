@@ -145,22 +145,33 @@ function! zai#print_channel_data(bufnr, channel_data) abort
 
         " iterate through the string array
         let l:nf_count = 0
+        let l:row = 0
+        let l:break = v:false
         for l:line in a:channel_data
-            if l:line == ''
-                let l:nf_count += 1
-                if l:nf_count == 2
-                    " two consecutive ('') count as one empty line
-                    let l:nf_count = 0
-                else
-                    " add an empty line at the end of the buffer
-                    let l:end += 1
-                    call setbufline(a:bufnr, l:end, '')
-                endif
+            let l:row += 1
+            if l:row == 1 && l:line == ''
+                let l:break = v:true
+            endif
+            if l:break
+                let l:end += 1
+                call setbufline(a:bufnr, l:end, l:line)
             else
-                " append to the last line of the buffer
-                let l:cur = getbufline(a:bufnr, l:end)[0]
-                call setbufline(a:bufnr, l:end, l:cur .. l:line)
-                let l:nf_count = 0
+                if l:line == ''
+                    let l:nf_count += 1
+                    if l:nf_count == 2
+                        " two consecutive ('') count as one empty line
+                        let l:nf_count = 0
+                    else
+                        " add an empty line at the end of the buffer
+                        let l:end += 1
+                        call setbufline(a:bufnr, l:end, '')
+                    endif
+                else
+                    " append to the last line of the buffer
+                    let l:cur = getbufline(a:bufnr, l:end)[0]
+                    call setbufline(a:bufnr, l:end, l:cur .. l:line)
+                    let l:nf_count = 0
+                endif
             endif
         endfor
     else
@@ -180,7 +191,14 @@ function! zai#task_on_response(channel, msg) abort
     if !bufexists(s:zai_obuf)
         call zai#ui_open()
     endif
-    let l:out_msg = iconv(a:msg, 'utf-8', &encoding)
+    if type(a:msg) == v:t_list
+        let l:out_msg = []
+        for l:line in a:msg
+            let l:out_msg += [iconv(l:line, 'utf-8', &encoding)]
+        endfor
+    else
+        let l:out_msg = iconv(a:msg, 'utf-8', &encoding)
+    endif
     call zai#print_channel_data(s:zai_obuf, l:out_msg)
 endfunction
 
