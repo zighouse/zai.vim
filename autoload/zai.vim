@@ -40,7 +40,7 @@ let s:chats = {}  " Dictionary to store all chat sessions
 let s:current_chat_id = 0  " ID of the current chat session
 
 " generate a unique chat ID
-function! zai#generate_chat_id()
+function! s:generate_chat_id()
     let s:current_chat_id += 1
     return s:current_chat_id
 endfunction
@@ -50,7 +50,7 @@ let s:zai_obuf = -1  " output buffer
 let s:zai_ibuf = -1  " input buffer
 
 " remove leading and trailing empty strings of a list
-function! zai#strip(lst)
+function! s:strip_list(lst)
 	let l:lst = copy(a:lst)
     " remove leading empty strings
     while !empty(l:lst) && (l:lst[0] ==# '' || matchstr(l:lst[0], '\S') ==# '')
@@ -66,7 +66,7 @@ function! zai#strip(lst)
 endfunction
 
 " move the cursor to the end of a window
-function! zai#move_last(bufnr) abort
+function! s:move_cursor_last(bufnr) abort
     let l:win = bufwinid(a:bufnr)
     if l:win != -1
         call win_execute(l:win, 'normal! G')
@@ -74,7 +74,7 @@ function! zai#move_last(bufnr) abort
 endfunction
 
 " print raw content to the buffer
-function! zai#print_raw(bufnr, raw_lines) abort
+function! s:print_raw(bufnr, raw_lines) abort
     " ensure the buffer is loaded
     if !bufloaded(a:bufnr)
         echoerr "Buffer " .. a:bufnr .. " is not loaded."
@@ -101,11 +101,11 @@ function! zai#print_raw(bufnr, raw_lines) abort
         call setbufvar(a:bufnr, '&modifiable', 0)
     endif
 
-    call zai#move_last(a:bufnr)
+    call s:move_cursor_last(a:bufnr)
 endfunction
 
 " convert content to channel-data format
-function! zai#raw_to_channel_data(content) abort
+function! s:raw_to_channel_data(content) abort
     " Simulate job's channel-lines, need to add line break indicators ('')
     let l:new_content = []
     for l:line in a:content
@@ -119,7 +119,7 @@ function! zai#raw_to_channel_data(content) abort
 endfunction
 
 " print channel data to the buffer
-function! zai#print_channel_data(bufnr, channel_data) abort
+function! s:print_channel_data(bufnr, channel_data) abort
     " ensure the buffer is loaded
     if !bufloaded(a:bufnr)
         echoerr "Buffer " .. a:bufnr .. " is not loaded."
@@ -183,13 +183,13 @@ function! zai#print_channel_data(bufnr, channel_data) abort
         call setbufvar(a:bufnr, '&modifiable', 0)
     endif
 
-    "call zai#move_last(a:bufnr)
+    "call s:move_cursor_last(a:bufnr)
 endfunction
 
 " task response callback
-function! zai#task_on_response(channel, msg) abort
+function! s:task_on_response(channel, msg) abort
     if !bufexists(s:zai_obuf)
-        call zai#ui_open()
+        call s:ui_open()
     endif
     if type(a:msg) == v:t_list
         let l:out_msg = []
@@ -199,41 +199,41 @@ function! zai#task_on_response(channel, msg) abort
     else
         let l:out_msg = iconv(a:msg, 'utf-8', &encoding)
     endif
-    call zai#print_channel_data(s:zai_obuf, l:out_msg)
+    call s:print_channel_data(s:zai_obuf, l:out_msg)
 endfunction
 
 " task exit callback
-function! zai#task_on_exit(job, status) abort
+function! s:task_on_exit(job, status) abort
     if empty(s:zai_task)
         return
     endif
-    call zai#print_raw(s:zai_obuf, 'Zai task is exited, status: ' .. a:status)
-    call zai#task_stop()
+    call s:print_raw(s:zai_obuf, 'Zai task is exited, status: ' .. a:status)
+    call s:task_stop()
     let s:zai_task = 0
 endfunction
 
 " start the task
-function! zai#task_start() abort
+function! s:task_start() abort
     if empty(s:zai_task)
         let l:shell = has('win32') ? ['cmd', '/c'] : ['/bin/sh', '-c']
         if has('nvim')
             " for Neovim
             let s:zai_task = jobstart(l:shell + g:zai_cmd, {
-                        \ 'on_stdout': {_, data, __ -> zai#task_on_response(0, data)},
-                        \ 'on_stderr': {_, data, __ -> zai#task_on_response(0, data)},
-                        \ 'on_exit': {_, status, __ -> zai#task_on_exit(0, status)},
+                        \ 'on_stdout': {_, data, __ -> s:task_on_response(0, data)},
+                        \ 'on_stderr': {_, data, __ -> s:task_on_response(0, data)},
+                        \ 'on_exit': {_, status, __ -> s:task_on_exit(0, status)},
                         \ 'err_msg': "Zai: There is an error.",
                         \ 'env': { 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1' },
-                        \ 'in_io': 'pipe',
+                        \ 'in_io':  'pipe',
                         \ 'out_io': 'pipe',
                         \ 'err_io': 'pipe',
                         \ })
         else
             " for Vim
             let s:zai_task = job_start(l:shell + g:zai_cmd, {
-                        \ 'out_cb': function('zai#task_on_response'),
-                        \ 'err_cb': function('zai#task_on_response'),
-                        \ 'exit_cb': function('zai#task_on_exit'),
+                        \ 'out_cb':  function('s:task_on_response'),
+                        \ 'err_cb':  function('s:task_on_response'),
+                        \ 'exit_cb': function('s:task_on_exit'),
                         \ 'err_msg': "Zai: There is an error.",
                         \ 'env': { 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1' },
                         \ 'in_io': 'pipe',
@@ -245,7 +245,7 @@ function! zai#task_start() abort
 endfunction
 
 " stop the task
-function! zai#task_stop() abort
+function! s:task_stop() abort
     if empty(s:zai_task)
         return
     endif
@@ -280,7 +280,7 @@ function! zai#task_stop() abort
 endfunction
 
 " open the plugin interface
-function! zai#ui_open() abort
+function! s:ui_open() abort
     " Create a new vertical window at the bottom right and take its buffer as
     " the output buffer.
     if s:zai_obuf == -1 || !bufexists(s:zai_obuf)
@@ -360,19 +360,19 @@ function! zai#ui_open() abort
     endif
 
     " register the close operation
-    autocmd WinClosed * call zai#on_ui_closed()
+    autocmd WinClosed * call s:on_ui_closed()
 endfunction
 
 function! zai#Open()
-    call zai#ui_open()
-    call zai#task_start()
+    call s:ui_open()
+    call s:task_start()
 endfunction
 
 " Define available character sets for block markers
 let s:fence_chars = ['`', '\"', "\'", '~', '#', '%', '@', '-', '+', '=', '*', '^', '_']
 
 " Generate a mixed character marker for fenced block quoting
-function! zai#generate_mixed_fence(length)
+function! s:generate_mixed_fence(length)
     let l:marker = ''
     for i in range(a:length)
         let l:marker .= s:fence_chars[rand() % len(s:fence_chars)]
@@ -381,7 +381,7 @@ function! zai#generate_mixed_fence(length)
 endfunction
 
 " Check if the marker conflicts with the quoting text
-function! zai#is_marker_conflicted(text, marker)
+function! s:is_marker_conflicted(text, marker)
     if type(a:text) == v:t_list
         let l:meet = 0
         for l:line in a:text
@@ -397,20 +397,20 @@ function! zai#is_marker_conflicted(text, marker)
 endfunction
 
 " Generate a unique fence marker for markdown code block
-function! zai#generate_unique_fence(text)
+function! s:generate_unique_fence(text)
     let l:length = 3
     while 1
         " First try repeating characters
         for l:char in s:fence_chars
             let l:marker = repeat(l:char, l:length)
-            if !zai#is_marker_conflicted(a:text, l:marker)
+            if !s:is_marker_conflicted(a:text, l:marker)
                 return l:marker
             endif
         endfor
 
         " Secondly, try mixed characters
-        let l:marker = zai#generate_mixed_fence(l:length)
-        if !zai#is_marker_conflicted(a:text, l:marker)
+        let l:marker = s:generate_mixed_fence(l:length)
+        if !s:is_marker_conflicted(a:text, l:marker)
             return l:marker
         endif
 
@@ -425,7 +425,7 @@ let s:sig_chars = [
             \ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
             \ ]
 " Generate a unique signature for shell style block-mode quotation.
-function! zai#generate_unique_signature(text)
+function! s:generate_unique_signature(text)
     let l:length = 5
     while 1
         " Capital the fist letter
@@ -435,7 +435,7 @@ function! zai#generate_unique_signature(text)
             let l:marker .= s:sig_chars[rand() % len(s:sig_chars)]
         endfor
 
-        if !zai#is_marker_conflicted(a:text, l:marker)
+        if !s:is_marker_conflicted(a:text, l:marker)
             return l:marker
         endif
 
@@ -444,23 +444,23 @@ function! zai#generate_unique_signature(text)
     endwhile
 endfunction
 
-function! zai#append(selected) abort
+function! s:append(selected) abort
     " get the extension name before focus moved
     let l:ext = expand('%:e')
 
     " Remove leading and trailing blank lines
     if type(a:selected) == v:t_list
-        let l:content = zai#strip(a:selected)
+        let l:content = s:strip_list(a:selected)
     else
-        let l:content = zai#strip(split(a:selected, '\n'))
+        let l:content = s:strip_list(split(a:selected, '\n'))
     endif
     if empty(l:content)
         return
     endif
 
     " Ensure the window and task are open
-    call zai#ui_open()
-    call zai#task_start()
+    call s:ui_open()
+    call s:task_start()
 
     " Write to the input buffer
     let l:win = win_findbuf(s:zai_ibuf)
@@ -468,7 +468,7 @@ function! zai#append(selected) abort
     let l:end = getbufinfo(s:zai_ibuf)[0].linecount
 
     " Prepare a quoting mark to enclose the copied content
-    let l:fence_marker = zai#generate_unique_fence(l:content)
+    let l:fence_marker = s:generate_unique_fence(l:content)
     call appendbufline(s:zai_ibuf, l:end, l:fence_marker .. l:ext)
     let l:end += 1
     for l:line in l:content
@@ -488,19 +488,19 @@ function! zai#Add() abort
     let l:sel = @"
     let @" = l:saved_register
 
-    call zai#append(l:sel)
+    call s:append(l:sel)
 endfunction
 
 " Get content by line number range to the input box
 function! zai#AddRange(line1, line2) range abort
     let l:sel = getbufline(bufnr('%'), a:line1, a:line2)
-    call zai#append(l:sel)
+    call s:append(l:sel)
 endfunction
 
 function! zai#Go() abort
     " Ensure the windows and task are open
-    call zai#ui_open()
-    call zai#task_start()
+    call s:ui_open()
+    call s:task_start()
 
     " Check if the input window is open
     if s:zai_ibuf == -1 || !bufexists(s:zai_ibuf)
@@ -521,7 +521,7 @@ function! zai#Go() abort
         " for text input mode
         if len(l:content) > 1
             " use quotation signature to make content a quotated block.
-            let l:signature = zai#generate_unique_signature(l:content)
+            let l:signature = s:generate_unique_signature(l:content)
             let l:request = join(['<<' .. l:signature] + l:content + [l:signature], "\n")
         else
             let l:request = join(l:content, "\n")
@@ -540,8 +540,8 @@ function! zai#Go() abort
 
     " Also write to the output box
     let l:content = ['', g:zai_print_prompt[0]] + l:content + ['', g:zai_print_prompt[1]]
-    call zai#ui_open()
-    call zai#print_raw(s:zai_obuf, l:content)
+    call s:ui_open()
+    call s:print_raw(s:zai_obuf, l:content)
 
     " Clear the input buffer
     call deletebufline(s:zai_ibuf, 1, '$')
@@ -552,7 +552,7 @@ function! zai#Close() abort
         return
     endif
 
-    call zai#task_stop()
+    call s:task_stop()
 
     " Close the buffer and related windows of Zai.
     execute 'bdelete! ' .. s:zai_ibuf .. ' ' .. s:zai_obuf
@@ -560,7 +560,7 @@ function! zai#Close() abort
     let s:zai_obuf = -1
 endfunction
 
-function! zai#on_ui_closed()
+function! s:on_ui_closed()
     let l:last = str2nr(expand('<amatch>'))
     if bufwinid(s:zai_obuf) == l:last
         if bufwinid(s:zai_ibuf) != -1
