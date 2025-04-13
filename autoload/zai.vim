@@ -555,9 +555,12 @@ function! zai#Close() abort
     call s:task_stop()
 
     " Close the buffer and related windows of Zai.
-    execute 'bdelete! ' .. s:zai_ibuf .. ' ' .. s:zai_obuf
-    let s:zai_ibuf = -1
-    let s:zai_obuf = -1
+    if bufwinid(s:zai_ibuf) != -1
+        execute bufwinnr(s:zai_ibuf) .. 'wincmd c'
+    endif
+    call setbufvar(s:zai_obuf, '&modifiable', 1)
+    silent! call deletebufline(s:zai_obuf, 1, '$')
+    call setbufvar(s:zai_obuf, '&modifiable', 0)
 endfunction
 
 function! s:on_ui_closed()
