@@ -103,16 +103,12 @@ g_output_mode = 'text'
 g_block_stack = []  # Stack of active blocks, each entry is:
                     # {'type': 'prompt', 'signature': str, 'content': str}
 
+g_prompt = """You are a strict assistant in programming, software engineering and computer science. For each query:
+ 1. Identify key issues.
+ 2. Propose solutions with pragmatical considerations.
+ 3. Conclude with a concise title reflecting the core suggestion."""
 if 'zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', ''):
-    g_prompt="""你是一个擅长计算机、软件以及编程的高水平助手，对于每一个用户的咨询：
-     1. 辩认出关键问题；
-     2. 提出务实的方案；
-     3. 为核心建议一个简洁的标题性总结。"""
-else:
-    g_prompt="""You are a strict assistant in programming, software engineering and computer science. For each query:
-     1. Identify key issues.
-     2. Propose solutions with pragmatical considerations.
-     3. Conclude with a concise title reflecting the core suggestion."""
+    g_prompt = g_prompt + '\n使用中文回答'
 g_system_message={'role': 'system', 'content': g_prompt}
 # List of messages, each entry is:
 # {'role': str, 'content': str, 'time': str,
