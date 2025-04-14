@@ -224,10 +224,11 @@ def save_log():
             log_file.write(f"**{msg['role'].capitalize()}:**\n")
             log_file.write(f"<small>\n")
             for k in msg:
-                if k in ['prefix', 'suffix']:
-                    log_file.write(f"  - {k.replace('_','-')}:\n```\n{msg[k]}\n```\n")
-                elif k not in ['role', 'content', 'files', 'reasoning_content', 'tool_calls', 'stop']:
-                    log_file.write(f"  - {k.replace('_','-')}: {msg[k]}\n")
+                if k not in ['role', 'content', 'files', 'reasoning_content', 'tool_calls', 'stop']:
+                    if isinstance(msg[k], str) and "\n" in msg[k]:
+                        log_file.write(f"  - {k.replace('_','-')}:<<EOF\n{msg[k]}\nEOF\n")
+                    else:
+                        log_file.write(f"  - {k.replace('_','-')}: {msg[k]}\n")
             if 'files' in msg:
                 log_file.write("  - attachments:\n")
                 for file in msg['files']:
@@ -398,7 +399,10 @@ def generate_response():
                 print("\n<small>")
                 for k in msg:
                     if k not in ['role', 'content', 'reasoning_content', 'tool_calls', 'stop']:
-                        print(f"  - {k.replace('_','-')}: {msg[k]}")
+                        if isinstance(msg[k], str) and "\n" in msg[k]:
+                            print(f"  - {k.replace('_','-')}:<<EOF\n{msg[k]}\nEOF\n")
+                        else:
+                            print(f"  - {k.replace('_','-')}: {msg[k]}")
                 print("</small>")
 
     except Exception as e:
@@ -627,6 +631,9 @@ def chat_round():
                 return
             elif current_block['type'] == 'prefix':
                 g_config['prefix'] = block_content
+                return
+            elif current_block['type'] == 'suffix':
+                g_config['suffix'] = block_content
                 return
             else:
                 user_request = block_content
