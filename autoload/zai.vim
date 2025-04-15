@@ -23,12 +23,12 @@ if has('win32')
                 \ '--' . g:zai_input_mode] + s:base_url + s:api_key_name + s:opt_model
 else
     let s:opt_script = ' "' . s:script_path . '"'
-    let s:opt_dir = ' --log-dir="' . s:log_dir . '"'
+    let s:opt_log_dir = ' --log-dir="' . s:log_dir . '"'
     let s:opt_input_mode = ' --' . g:zai_input_mode
     let s:base_url = exists('g:zai_base_url') ? ' --base-url=' . g:zai_base_url : ''
     let s:api_key_name = exists('g:zai_api_key_name') ? ' --api-key-name=' . g:zai_api_key_name : ''
     let s:opt_model = exists('g:zai_default_model') ? ' --model="' . g:zai_default_model . '"' : ''
-    let g:zai_cmd = [ s:python_cmd . s:opt_script . s:opt_dir . s:opt_input_mode
+    let g:zai_cmd = [ s:python_cmd . s:opt_script . s:opt_log_dir . s:opt_input_mode
                 \ . s:base_url . s:api_key_name . s:opt_model ]
 endif
 
@@ -254,8 +254,8 @@ function! s:task_stop() abort
         " for Neovim
         try
             " send the exit command and wait 200ms for its responce
-            call jobsend(s:zai_task, "exit\n")
-            sleep 200m
+            call jobsend(s:zai_task, ":exit\n")
+            sleep 100m
         catch 
             echo 'caught: ' .. v:exception
         endtry
@@ -269,8 +269,8 @@ function! s:task_stop() abort
 
         try
             " send the exit command and wait 200ms for its responce
-            call ch_sendraw(l:channel, "exit\n")
-            sleep 200m
+            call ch_sendraw(l:channel, ":exit\n")
+            sleep 100m
         catch 
             echo 'caught: ' .. v:exception
         endtry
