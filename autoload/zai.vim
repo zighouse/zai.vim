@@ -216,6 +216,10 @@ endfunction
 function! s:task_start() abort
     if empty(s:zai_task)
         let l:shell = has('win32') ? ['cmd', '/c'] : ['/bin/sh', '-c']
+        let l:env = { 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1' }
+        if exists('g:zai_lang')
+            let l:env['LANG'] = g:zai_lang
+        endif
         if has('nvim')
             " for Neovim
             let s:zai_task = jobstart(l:shell + g:zai_cmd, {
@@ -223,7 +227,7 @@ function! s:task_start() abort
                         \ 'on_stderr': {_, data, __ -> s:task_on_response(0, data)},
                         \ 'on_exit': {_, status, __ -> s:task_on_exit(0, status)},
                         \ 'err_msg': "Zai: There is an error.",
-                        \ 'env': { 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1' },
+                        \ 'env': l:env,
                         \ 'in_io':  'pipe',
                         \ 'out_io': 'pipe',
                         \ 'err_io': 'pipe',
@@ -235,7 +239,7 @@ function! s:task_start() abort
                         \ 'err_cb':  function('s:task_on_response'),
                         \ 'exit_cb': function('s:task_on_exit'),
                         \ 'err_msg': "Zai: There is an error.",
-                        \ 'env': { 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1' },
+                        \ 'env': l:env,
                         \ 'in_io': 'pipe',
                         \ 'out_io': 'pipe',
                         \ 'err_io': 'pipe',

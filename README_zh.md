@@ -49,6 +49,7 @@ return {
             -- 可选配置
             vim.g.zai_default_model = "deepseek-coder"
             vim.g.zai_log_dir = my-log-dir
+            vim.g.zai_lang = 'zh_CN.UTF-8'
         end
     }
 }
