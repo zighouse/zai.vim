@@ -18,9 +18,13 @@ let s:python_cmd = has('win32') ? 'python' : '/usr/bin/env python3'
 if has('win32')
     let s:base_url = exists('g:zai_base_url') ? ['--base-url', g:zai_base_url] : []
     let s:api_key_name = exists('g:zai_api_key_name') ? ['--api-key-name', g:zai_api_key_name] : []
-    let s:opt_model = exists('g:zai_default_model') ? ['--model=', g:zai_default_model] : []
+    let s:opt_model = exists('g:zai_default_model') ? ['--model', g:zai_default_model] : []
     let g:zai_cmd = [ s:python_cmd, s:script_path, '--log-dir', s:log_dir,
                 \ '--' . g:zai_input_mode] + s:base_url + s:api_key_name + s:opt_model
+    let g:cmp_cmd = [ s:python_cmd, s:script_path, '--no-log', '--silent',
+                \ '--text', '--base-url', 'https://api.deepseek.com/beta',
+                \ '--model', 'deepseek-chat']
+                \ + s:api_key_name
 else
     let s:opt_script = ' "' . s:script_path . '"'
     let s:opt_log_dir = ' --log-dir="' . s:log_dir . '"'
@@ -30,6 +34,9 @@ else
     let s:opt_model = exists('g:zai_default_model') ? ' --model="' . g:zai_default_model . '"' : ''
     let g:zai_cmd = [ s:python_cmd . s:opt_script . s:opt_log_dir . s:opt_input_mode
                 \ . s:base_url . s:api_key_name . s:opt_model ]
+    let g:cmp_cmd = [ s:python_cmd . s:opt_script . ' --no-log' . ' --silent'
+                \ . ' --text' . ' --base-url=https://api.deepseek.com/beta'
+                \ . ' --model=deepseek-chat' . s:api_key_name ]
 endif
 
 if !exists('g:zai_print_prompt')
@@ -578,4 +585,158 @@ function! s:on_ui_closed()
             execute bufwinnr(s:zai_obuf) .. 'wincmd c'
         endif
     endif
+endfunction
+
+function! s:string_as_list(str)
+    let l:type = type(a:str)
+    if l:type == v:t_string
+        return [a:str]
+    elseif l:type == v:t_list
+        return a:str
+    elseif l:type == v:t_none
+        return []
+    endif
+endfunction
+
+let s:fim_job = v:null
+let s:fim_stop = ''
+let s:fim_is_stop = v:false
+let s:fim_result = []
+let s:fim_win = 0
+
+function! zai#Complete() abort
+    let l:buf = bufnr('%')
+    let l:pos = line('.')
+    let l:col = col('.')
+    let l:charcol = charcol('.')
+    let l:line = getline('.')
+    let l:line_head = slice(l:line, 0, l:charcol-1)
+    let l:line_tail = slice(l:line, l:charcol)
+    let l:prefix_begin = max([1, l:pos - 100])
+    let l:suffix_end   = min([line('$'), l:pos + 100])
+    let l:prefix = s:string_as_list(getline(l:prefix_begin, l:pos - 1))
+    if l:line_head
+        let l:prefix += [l:line_head]
+    endif
+    if l:pos == l:suffix_end
+        let l:suffix = []
+    else
+        let l:suffix = [] + s:string_as_list(getline(l:pos + 1, l:suffix_end))
+        let s:fim_stop = l:suffix[0]
+    endif
+    if l:line_tail
+        let l:suffix = [l:line_tail] + l:suffix
+        let s:fim_stop = l:line_tail
+    endif
+    if s:fim_job == v:null
+        let l:shell = has('win32') ? ['cmd', '/c'] : ['/bin/sh', '-c']
+        let s:fim_job = job_start(l:shell + g:cmp_cmd, {
+                    \ 'out_cb':  function('s:task_on_fim_response'),
+                    \ 'err_cb':  function('s:task_on_fim_response'),
+                    \ 'exit_cb': function('s:task_on_fim_exit'),
+                    \ 'err_msg': "Zai: There is an error.",
+                    \ 'env': { 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1' },
+                    \ 'in_io': 'pipe',
+                    \ 'out_io': 'pipe',
+                    \ 'err_io': 'pipe',
+                    \ })
+    endif
+    let l:ext = expand('%:e')
+    let l:content = [':complete-type ' .. l:ext, ':max-tokens 100']
+    if len(l:suffix) != 0
+        let l:content += [':suffix<<EOF'] +  l:suffix + ['EOF'] + l:prefix
+    else
+        let l:content += [':prefix<<EOF', l:prefix, 'EOF']
+    endif
+    let l:signature = s:generate_unique_signature(l:content)
+    let l:request = join(['<<' .. l:signature] + l:content + [l:signature], "\n")
+    let l:req_msg = iconv(l:request . "\n", &encoding, 'utf-8')
+    let l:channel = job_getchannel(s:fim_job)
+    let s:fim_is_stop = v:false
+    let s:fim_result = []
+    call ch_sendraw(l:channel, l:req_msg)
+endfunction
+
+function! s:task_on_fim_response(channel, msg) abort
+    if s:fim_is_stop
+        return
+    endif
+    if type(a:msg) == v:t_list
+        for l:line in a:msg
+            if l:line == s:fim_stop
+                let s:fim_is_stop = v:true
+                break
+            endif
+            let s:fim_result += [iconv(l:line, 'utf-8', &encoding)]
+        endfor
+    else
+        let s:fim_result += [iconv(a:msg, 'utf-8', &encoding)]
+        if a:msg == s:fim_stop
+            let s:fim_is_stop = v:true
+        endif
+    endif
+    if !s:fim_win
+        let s:fim_win = popup_create(s:fim_result, {
+                    \ 'pos': 'topleft',
+                    \ 'line': 'cursor',
+                    \ 'col': 'cursor+1',
+                    \ 'highlight': 'Comment',
+                    \ 'moved': 'any',
+                    \ 'callback': 's:fim_on_hide_popup',
+                    \ 'filter': 's:fim_popup_filter',
+                    \ 'filter_required': v:true,
+                    \ })
+    else
+        call popup_show(s:fim_win)
+        let l:fim_bufnr = winbufnr(s:fim_win)
+        call appendbufline(l:fim_bufnr, '$', a:msg)
+    endif
+endfunction
+
+function! s:fim_popup_filter(winid, key) abort
+    if a:key == "\<CR>"
+        let l:line = getline('.')
+        let l:col = col('.')
+        
+        let l:before = l:line[:l:col-2]
+        let l:after = l:line[l:col-1:]
+        
+        call setline('.', l:before . s:fim_result[0])
+        
+        if len(s:fim_result) > 1
+            call append('.', s:fim_result[1:])
+        endif
+        
+        if !empty(l:after)
+            call setline(line('.') + len(s:fim_result) - 1, 
+                  \ getline(line('.') + len(s:fim_result) - 1) . l:after)
+        endif
+        
+        call popup_close(a:winid)
+        let s:fim_win = 0
+        let s:fim_result = []
+        return 1
+    else
+        return popup_filter_menu(a:winid, a:key)
+    endif
+endfunction
+
+function! s:fim_on_hide_popup(id, result) abort
+    try
+        let l:channel = job_getchannel(s:fim_job)
+        call ch_sendraw(l:channel, ":exit\n")
+        sleep 100m
+    catch
+        echo 'caught: ' .. v:exception
+    endtry
+    let s:fim_win = 0
+    let s:fim_result = []
+endfunction
+
+function! s:task_on_fim_exit(job, status) abort
+    if s:fim_is_stop
+        return
+    endif
+    let s:fim_job = v:null
+    let s:fim_is_stop = v:true
 endfunction

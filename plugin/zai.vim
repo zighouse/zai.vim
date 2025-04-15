@@ -36,13 +36,17 @@ command! Zai call zai#Open()
 command! -range ZaiAdd call zai#AddRange(<line1>, <line2>)
 command! ZaiGo call zai#Go()
 command! ZaiClose call zai#Close()
+command! ZaiComplete call zai#Complete()
 
 nmap <Plug>Zai :Zai<CR>
 nmap <Plug>ZaiGo :ZaiGo<CR>
 nmap <Plug>ZaiClose :ZaiClose<CR>
 vmap <Plug>ZaiAdd :<C-u>call zai#Add()<CR>
+nmap <Plug>ZaiComplete :ZaiComplete<CR>
 
 nmap <silent> <Leader>zo <Plug>Zai
 nmap <silent> <Leader>zg <Plug>ZaiGo
 nmap <silent> <leader>zX <Plug>ZaiClose
 vmap <silent> <leader>za <Plug>ZaiAdd
+vmap <silent> <leader>zc <Plug>ZaiComplete
+inoremap <silent> <C-F> <C-O>:ZaiComplete<CR>
