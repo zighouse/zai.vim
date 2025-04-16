@@ -14,6 +14,10 @@ else
     endif
 endif
 
+let s:fim_url = exists('g:zai_fim_url') ?  g:zai_fim_url : 'https://api.deepseek.com/beta'
+let s:fim_api_key_name = exists('g:zai_fim_api_key_name') ? g:zai_fim_api_key_name : 'DEEPSEEK_API_KEY'
+let s:fim_model = exists('g:zai_fim_model') ? g:zai_fim_model : 'deepseek-chat'
+
 let s:python_cmd = has('win32') ? 'python' : '/usr/bin/env python3' 
 if has('win32')
     let s:base_url = exists('g:zai_base_url') ? ['--base-url', g:zai_base_url] : []
@@ -21,10 +25,8 @@ if has('win32')
     let s:opt_model = exists('g:zai_default_model') ? ['--model', g:zai_default_model] : []
     let g:zai_cmd = [ s:python_cmd, s:script_path, '--log-dir', s:log_dir,
                 \ '--' . g:zai_input_mode] + s:base_url + s:api_key_name + s:opt_model
-    let g:cmp_cmd = [ s:python_cmd, s:script_path, '--no-log', '--silent',
-                \ '--text', '--base-url', 'https://api.deepseek.com/beta',
-                \ '--model', 'deepseek-chat']
-                \ + s:api_key_name
+    let g:cmp_cmd = [ s:python_cmd, s:script_path, '--text', '--no-log', '--silent',
+                \ '--base-url', s:fim_url, '--api-key-name', s:fim_api_key_name, '--model', s:fim_model]
 else
     let s:opt_script = ' "' . s:script_path . '"'
     let s:opt_log_dir = ' --log-dir="' . s:log_dir . '"'
@@ -34,9 +36,8 @@ else
     let s:opt_model = exists('g:zai_default_model') ? ' --model="' . g:zai_default_model . '"' : ''
     let g:zai_cmd = [ s:python_cmd . s:opt_script . s:opt_log_dir . s:opt_input_mode
                 \ . s:base_url . s:api_key_name . s:opt_model ]
-    let g:cmp_cmd = [ s:python_cmd . s:opt_script . ' --no-log' . ' --silent'
-                \ . ' --text' . ' --base-url=https://api.deepseek.com/beta'
-                \ . ' --model=deepseek-chat' . s:api_key_name ]
+    let g:cmp_cmd = [ s:python_cmd . s:opt_script . ' --text' . ' --no-log' . ' --silent'
+                \ . ' --base-url=' . s:fim_url . ' --api-key-name=' . s:fim_api_key_name . ' --model=' . s:fim_model ]
 endif
 
 if !exists('g:zai_print_prompt')
@@ -455,9 +456,18 @@ function! s:generate_unique_signature(text)
     endwhile
 endfunction
 
+function! s:get_file_type()
+   if !empty(&filetype)
+       return &filetype
+   elseif !empty(&syntax)
+       return &syntax
+   else
+       return expand('%:e')
+   endif
+endfunction
+
 function! s:append(selected) abort
-    " get the extension name before focus moved
-    let l:ext = expand('%:e')
+    let l:file_type = s:get_file_type()
 
     " Remove leading and trailing blank lines
     if type(a:selected) == v:t_list
@@ -480,7 +490,7 @@ function! s:append(selected) abort
 
     " Prepare a quoting mark to enclose the copied content
     let l:fence_marker = s:generate_unique_fence(l:content)
-    call appendbufline(s:zai_ibuf, l:end, l:fence_marker .. l:ext)
+    call appendbufline(s:zai_ibuf, l:end, l:fence_marker .. l:file_type)
     let l:end += 1
     for l:line in l:content
         call appendbufline(s:zai_ibuf, l:end, l:line)
@@ -603,19 +613,23 @@ let s:fim_stop = ''
 let s:fim_is_stop = v:false
 let s:fim_result = []
 let s:fim_win = 0
+let s:fim_charcol = 0
+let s:fim_mode = 0
+let g:zai_fim_result = ''
 
-function! zai#Complete() abort
+function! zai#Complete(mode) abort
     let l:buf = bufnr('%')
     let l:pos = line('.')
     let l:col = col('.')
-    let l:charcol = charcol('.')
+    let s:fim_charcol = charcol('.') - a:mode
+    let s:fim_mode = a:mode
     let l:line = getline('.')
-    let l:line_head = slice(l:line, 0, l:charcol-1)
-    let l:line_tail = slice(l:line, l:charcol)
-    let l:prefix_begin = max([1, l:pos - 100])
-    let l:suffix_end   = min([line('$'), l:pos + 100])
+    let l:line_head = slice(l:line, 0, s:fim_charcol)
+    let l:line_tail = slice(l:line, s:fim_charcol)
+    let l:prefix_begin = max([1, l:pos - 300])
+    let l:suffix_end   = min([line('$'), l:pos + 300])
     let l:prefix = s:string_as_list(getline(l:prefix_begin, l:pos - 1))
-    if l:line_head
+    if l:line_head != ''
         let l:prefix += [l:line_head]
     endif
     if l:pos == l:suffix_end
@@ -624,25 +638,43 @@ function! zai#Complete() abort
         let l:suffix = [] + s:string_as_list(getline(l:pos + 1, l:suffix_end))
         let s:fim_stop = l:suffix[0]
     endif
-    if l:line_tail
+    if l:line_tail != ''
         let l:suffix = [l:line_tail] + l:suffix
         let s:fim_stop = l:line_tail
     endif
+    if exists('g:zai_debug')
+        call appendbufline(g:zai_debug, '$', 'cursor:(' . l:pos . ',' . s:fim_charcol . ')  mode:'
+                    \ . mode() . '  head:{'. l:line_head . '}  tail:{' . l:line_tail . '}')
+        call appendbufline(g:zai_debug, '$', 'prefix<<EOF')
+        for l:line in l:prefix
+            call appendbufline(g:zai_debug, '$', l:line)
+        endfor
+        call appendbufline(g:zai_debug, '$', 'EOF')
+        call appendbufline(g:zai_debug, '$', 'suffix<<EOF')
+        for l:line in l:suffix
+            call appendbufline(g:zai_debug, '$', l:line)
+        endfor
+        call appendbufline(g:zai_debug, '$', 'EOF')
+    endif
     if s:fim_job == v:null
+        let l:env = { 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1' }
+        if exists('g:zai_lang')
+            let l:env['LANG'] = g:zai_lang
+        endif
         let l:shell = has('win32') ? ['cmd', '/c'] : ['/bin/sh', '-c']
         let s:fim_job = job_start(l:shell + g:cmp_cmd, {
                     \ 'out_cb':  function('s:task_on_fim_response'),
                     \ 'err_cb':  function('s:task_on_fim_response'),
                     \ 'exit_cb': function('s:task_on_fim_exit'),
                     \ 'err_msg': "Zai: There is an error.",
-                    \ 'env': { 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1' },
+                    \ 'env': l:env,
                     \ 'in_io': 'pipe',
                     \ 'out_io': 'pipe',
                     \ 'err_io': 'pipe',
                     \ })
     endif
-    let l:ext = expand('%:e')
-    let l:content = [':complete-type ' .. l:ext, ':max-tokens 100']
+    let l:file_type = s:get_file_type()
+    let l:content = [':complete-type ' .. l:file_type, ':max-tokens 400']
     if len(l:suffix) != 0
         let l:content += [':suffix<<EOF'] +  l:suffix + ['EOF'] + l:prefix
     else
@@ -663,7 +695,7 @@ function! s:task_on_fim_response(channel, msg) abort
     endif
     if type(a:msg) == v:t_list
         for l:line in a:msg
-            if l:line == s:fim_stop
+            if l:line == s:fim_stop || l:line == '```'
                 let s:fim_is_stop = v:true
                 break
             endif
@@ -671,7 +703,7 @@ function! s:task_on_fim_response(channel, msg) abort
         endfor
     else
         let s:fim_result += [iconv(a:msg, 'utf-8', &encoding)]
-        if a:msg == s:fim_stop
+        if a:msg == s:fim_stop || a:msg == '```'
             let s:fim_is_stop = v:true
         endif
     endif
@@ -696,10 +728,9 @@ endfunction
 function! s:fim_popup_filter(winid, key) abort
     if a:key == "\<CR>"
         let l:line = getline('.')
-        let l:col = col('.')
-        
-        let l:before = l:line[:l:col-2]
-        let l:after = l:line[l:col-1:]
+        let l:fim_charcol = charcol('.') - s:fim_mode
+        let l:before = slice(l:line, 0, s:fim_charcol)
+        let l:after = slice(l:line, s:fim_charcol)
         
         call setline('.', l:before . s:fim_result[0])
         
@@ -714,6 +745,7 @@ function! s:fim_popup_filter(winid, key) abort
         
         call popup_close(a:winid)
         let s:fim_win = 0
+        let g:zai_fim_result = join(s:fim_result, "\n")
         let s:fim_result = []
         return 1
     else

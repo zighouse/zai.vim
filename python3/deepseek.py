@@ -346,7 +346,7 @@ def generate_response():
         if not 'max_tokens' in params:
             params['max_tokens'] = 400
         if not 'temperature':
-            params['temperature'] = 0.0
+            params['temperature'] = 0.2
 
     msg.update(params)
     msg.pop('stream', None)
