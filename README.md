@@ -108,6 +108,7 @@ Switch modes using session commands:
 | `<Leader>zX`       | `:ZaiClose`   | Close session                 | Normal  |
 | `<Leader>za`       | `:ZaiAdd`     | Add visual selection to input | Visual  |
 | `<CR>` (InputArea) | `:ZaiGo`      | Send query                    | Normal  |
+| `<Leader>zl`       | `:ZaiLoad`    | Load Zai log as new context   | Normal  |
 
 ### Session Commands
 
@@ -126,6 +127,7 @@ Prefix commands with `:` in input area:
 - `:temperature <value>` - Set creativity (0-2)
 - `:prompt <text>` - Set system prompt (single line system prompt content)
 - `:file <path>` - Attach a text file
+- `:load <path>` - Load Zai log file as new context
 - `:->/` - Change command prefix to `/`
 
 ### Change the talk-mode in conversation

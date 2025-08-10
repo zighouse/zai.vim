@@ -453,3 +453,57 @@ function! s:on_ui_closed()
     endif
 endfunction
 
+function! zai#chat#Load() abort
+    if empty(expand('%'))
+        return
+    endif
+    let file_path = expand('%:p')
+    if has('win32')
+        let path = substitute(path, '\\', '/', 'g')
+    endif
+    " Ensure the windows and task are open
+    call s:ui_open()
+    call s:task_start()
+
+    " Check if the input window is open
+    if s:zai_ibuf == -1 || !bufexists(s:zai_ibuf)
+        echo "open chat input buffer failed."
+        return
+    endif
+
+    " Send the content to chat_task
+    let l:content = [ ':load ' . file_path ]
+
+    if g:zai_input_mode == 'json'
+        " for json input mode
+        let l:request = json_encode(l:content)
+    else
+        " for text input mode
+        if len(l:content) > 1
+            " use quotation signature to make content a quotated block.
+            let l:signature = zai#util#get_block_sign(l:content)
+            let l:request = join(['<<' .. l:signature] + l:content + [l:signature], "\n")
+        else
+            let l:request = join(l:content, "\n")
+        endif
+    endif
+
+    let l:req_msg = iconv(l:request . "\n", &encoding, 'utf-8')
+    if has('nvim')
+        " for Neovim
+        call jobsend(s:zai_task, l:req_msg)
+    else
+        " for Vim
+        let l:channel = job_getchannel(s:zai_task)
+        call ch_sendraw(l:channel, l:req_msg)
+    endif
+
+    " Also write to the output box
+    let l:content = ['', g:zai_print_prompt[0]] + l:content + ['', g:zai_print_prompt[1]]
+    call s:ui_open()
+    call s:print_raw(s:zai_obuf, l:content)
+
+    " Clear the input buffer
+    call deletebufline(s:zai_ibuf, 1, '$')
+endfunction
+

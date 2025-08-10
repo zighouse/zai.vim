@@ -179,6 +179,7 @@ COMMANDS:
     {g_cmd_prefix}suffix <str>         - Suffix for FIM-completion
     {g_cmd_prefix}suffix<<EOF          - Start block mode for suffix, end with EOF (or any marker)
     {g_cmd_prefix}no-log               - Disable file logging
+    {g_cmd_prefix}load <log-file>      - Load context from a Zai log file.
     {g_cmd_prefix}-<param>             - Reset parameter to default
 
   File Handling:
@@ -240,6 +241,75 @@ def save_log():
                 log_file.write(f"<tool_calls>\n{''.join(msg['tool_calls'])}\n</tool_calls>\n")
             log_file.write(f"{msg['content']}\n\n")
     print(f"\nSaved log: {g_log_path}")
+
+def load_log(file):
+    """load log file into new context"""
+    global g_log, g_messages, g_files, g_log_path
+    load_messages = []
+    message = {}
+    if not os.path.exists(file):
+        log_dir = os.path.dirname(g_log_path)
+        os.path.join(log_dir, file)
+        if os.path.exists(temp):
+            file = temp
+    with open(file, "r", encoding="utf-8") as log_file:
+        text_list = []
+        caption = ""
+        small_start = 0
+        for line in log_file:
+            text = line.rstrip()
+            print(text)
+            if text == "**System:**":
+                if caption == "":
+                    caption = "System"
+                    message = {'role': 'system'}
+                    text_list = []
+                    small_start = 0
+            elif text == "**User:**":
+                if caption in ["System", "Assistant"]:
+                    message['content'] = '\n'.join(text_list)
+                    load_messages.append(message)
+                    message = {'role': 'user'}
+                    caption = "User"
+                    text_list = []
+                    small_start = 0
+            elif text == "**Assistant:**":
+                if caption == "User":
+                    message['content'] = '\n'.join(text_list)
+                    load_messages.append(message)
+                    message = {'role': 'assistant'}
+                    caption = "Assistant"
+                    text_list = []
+                    small_start = 0
+            elif text == "<small>":
+                small_start = 1
+            elif text == "</small>":
+                small_start = 0
+            elif small_start == 0:
+                text_list.append(text)
+            elif small_start == 1:
+                text = text.strip()
+                if text.startswith("- time: "):
+                    message["time"] = text[8:]
+                elif text.startswith("- base-url: "):
+                    message["base-url"] = text[12:]
+                elif text.startswith("- model: "):
+                    message["model"] = text[9:]
+        if caption != "":
+            message['content'] = '\n'.join(text_list)
+            load_messages.append(message)
+            g_messages = load_messages
+            g_log = []
+            for msg in load_messages:
+                g_log.append(msg)
+            g_files = []
+            log_dir = os.path.dirname(g_log_path)
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+            log_filename = datetime.now().strftime("%Y%m%d_%H%M%S.md")
+            g_log_path = os.path.join(log_dir, log_filename)
+        else:
+            print(f"\n===============\nERROR loading an invalid Zai log file:\n  {file}\n")
 
 def build_instant_messages(messages):
     '''In instant mode, keep only system role and latest user messages'''
@@ -564,6 +634,9 @@ def handle_command(command):
             print(f"Error: Convert file `{file_path}` to UTF-8 failure", file=sys.stderr)
         except Exception as e:
             print(f"Error reading file `{file_path}`: {e}", file=sys.stderr)
+        return True
+    if cmd == 'load' and argc == 2:
+        load_log(argv[1])
         return True
 
     print(f"unknown command: {command}", file=sys.stderr)

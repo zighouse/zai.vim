@@ -77,3 +77,8 @@ endfunction
 function! zai#Complete(mode) abort
     call zai#comp#Complete(a:mode)
 endfunction
+
+function! zai#Load() abort
+    call zai#chat#Load()
+endfunction
+
