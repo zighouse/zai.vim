@@ -1,17 +1,50 @@
 scriptencoding utf-8
 
-let s:chats = {}  " Dictionary to store all chat sessions
-let s:current_chat_id = 0  " ID of the current chat session
+let s:zai_chats = {}  " dictionary to store all chats: {id: {id, obuf, job}}
+let s:zai_chat_id = -1 " id of current showing chat session
+let s:zai_jobs = {}   " dictionary to store all chat jobs: {job: {id}}
+let s:zai_ibuf = -1  " input buffer
 
-" generate a unique chat ID
-function! s:generate_chat_id()
-    let s:current_chat_id += 1
-    return s:current_chat_id
+" get current chat which its obuf is showing.
+function! s:current_chat() abort
+    if has_key(s:zai_chats, s:zai_chat_id)
+        return s:zai_chats[s:zai_chat_id]
+    endif
+    if !empty(s:zai_chats)
+        let l:chat = items(s:zai_chats)[0]
+        let s:zai_chat_id = l:chat.id
+        return l:chat
+    endif
+    let s:zai_chat_id = -1
+    return {}
 endfunction
 
-let s:zai_task = 0
-let s:zai_obuf = -1  " output buffer
-let s:zai_ibuf = -1  " input buffer
+" get chat by id, job, channel.
+function! s:get_chat(id) abort
+    let l:type = type(a:id)
+    if l:type == v:t_number
+        return get(s:zai_chats, a:id, {})
+    elseif l:type == v:t_job
+        if has_key(s:zai_jobs, a:id)
+            let l:id = s:zai_jobs[a:id].id
+            return get(s:zai_chats, l:id, {})
+        endif
+    elseif l:type == v:t_channel
+        let l:job = ch_getjob(a:id)
+        if has_key(s:zai_jobs, l:job)
+            let l:id = s:zai_jobs[l:job].id
+            return get(s:zai_chats, l:id, {})
+        endif
+    endif
+    return {}
+endfunction
+
+" generate a unique chat ID
+let s:next_chat_id = -1
+function! s:generate_chat_id()
+    let s:next_chat_id += 1
+    return s:next_chat_id
+endfunction
 
 " move the cursor to the end of a window
 function! s:move_cursor_last(bufnr) abort
@@ -136,7 +169,12 @@ endfunction
 
 " task response callback
 function! s:task_on_response(channel, msg) abort
-    if !bufexists(s:zai_obuf)
+    let l:chat = s:get_chat(a:channel)
+    if empty(l:chat)
+        return
+    endif
+    let l:obuf = l:chat.obuf
+    if !bufexists(l:obuf)
         call s:ui_open()
     endif
     if type(a:msg) == v:t_list
@@ -147,22 +185,29 @@ function! s:task_on_response(channel, msg) abort
     else
         let l:out_msg = iconv(a:msg, 'utf-8', &encoding)
     endif
-    call s:print_channel_data(s:zai_obuf, l:out_msg)
+    call s:print_channel_data(l:obuf, l:out_msg)
 endfunction
 
 " task exit callback
 function! s:task_on_exit(job, status) abort
-    if empty(s:zai_task)
+    let l:chat = s:get_chat(a:job)
+    if empty(l:chat)
         return
     endif
-    call s:print_raw(s:zai_obuf, 'Zai task is exited, status: ' .. a:status)
+    let l:obuf = l:chat.obuf
+    unlet s:zai_jobs[a:job]
+    if empty(l:chat.job)
+        return
+    endif
+    call s:print_raw(l:obuf, 'Zai task is exited, status: ' .. a:status)
     call s:task_stop()
-    let s:zai_task = 0
+    let l:chat.job = 0
 endfunction
 
 " start the task
 function! s:task_start() abort
-    if empty(s:zai_task)
+    let l:chat = s:current_chat()
+    if empty(l:chat.job)
         let l:shell = has('win32') ? ['cmd', '/c'] : ['/bin/sh', '-c']
         let l:env = { 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1' }
         if exists('g:zai_lang')
@@ -170,7 +215,7 @@ function! s:task_start() abort
         endif
         if has('nvim')
             " for Neovim
-            let s:zai_task = jobstart(l:shell + g:zai_cmd, {
+            let l:task = jobstart(l:shell + g:zai_cmd, {
                         \ 'on_stdout': {_, data, __ -> s:task_on_response(0, data)},
                         \ 'on_stderr': {_, data, __ -> s:task_on_response(0, data)},
                         \ 'on_exit': {_, status, __ -> s:task_on_exit(0, status)},
@@ -182,7 +227,7 @@ function! s:task_start() abort
                         \ })
         else
             " for Vim
-            let s:zai_task = job_start(l:shell + g:zai_cmd, {
+            let l:task = job_start(l:shell + g:zai_cmd, {
                         \ 'out_cb':  function('s:task_on_response'),
                         \ 'err_cb':  function('s:task_on_response'),
                         \ 'exit_cb': function('s:task_on_exit'),
@@ -193,12 +238,15 @@ function! s:task_start() abort
                         \ 'err_io': 'pipe',
                         \ })
         endif
+        let s:zai_jobs[l:task] = {'id': l:chat.id}
+        let l:chat.job = l:task
     endif
 endfunction
 
 " stop the task
 function! s:task_stop() abort
-    if empty(s:zai_task)
+    let l:chat = s:current_chat()
+    if empty(l:chat.job)
         return
     endif
 
@@ -206,15 +254,15 @@ function! s:task_stop() abort
         " for Neovim
         try
             " send the exit command and wait 200ms for its responce
-            call jobsend(s:zai_task, ":exit\n")
+            call jobsend(l:chat.job, ":exit\n")
             sleep 100m
         catch 
             echo 'caught: ' .. v:exception
         endtry
-        call jobstop(s:zai_task)
+        call jobstop(l:chat.job)
     else
         " for Vim
-        let l:channel = job_getchannel(s:zai_task)
+        let l:channel = job_getchannel(l:chat.job)
         if string(l:channel) == 'channel fail'
             return
         endif
@@ -227,7 +275,7 @@ function! s:task_stop() abort
             echo 'caught: ' .. v:exception
         endtry
         " force stop the chat_task
-        call job_stop(s:zai_task)
+        call job_stop(l:chat.job)
     endif
 endfunction
 
@@ -235,11 +283,14 @@ endfunction
 function! s:ui_open() abort
     call zai#init()
 
+    let l:chat = s:current_chat()
+
     " Create a new vertical window at the bottom right and take its buffer as
     " the output buffer.
-    if s:zai_obuf == -1 || !bufexists(s:zai_obuf)
+    if empty(l:chat)
         vertical botright new
-        let s:zai_obuf = bufnr('%')
+        let l:id = s:generate_chat_id()
+        let l:obuf = bufnr('%')
         setlocal buftype=nofile
         setlocal bufhidden=hide
         setlocal noswapfile
@@ -250,9 +301,17 @@ function! s:ui_open() abort
         let &l:statusline = "[Zai-Log]%=%-14.(%l,%c%V%) %P"
         execute 'wincmd L'
         normal! zR
+        let s:zai_chats[l:id] = {
+                    \ 'id': l:id,
+                    \ 'obuf': l:obuf,
+                    \ 'job': 0,
+                    \ }
+        let s:zai_chat_id = l:id
     else
+        let l:id = l:chat.id
+        let l:obuf = l:chat.obuf
         " jump to the output window
-        let l:owin = bufwinnr(s:zai_obuf)
+        let l:owin = bufwinnr(l:obuf)
         if l:owin == -1
             " check if the input window exists
             let l:iwin = -1
@@ -263,13 +322,13 @@ function! s:ui_open() abort
                 " enter the input window and split a window above for output
                 execute l:iwin .. 'wincmd w'
                 aboveleft split
-                execute 'buffer' s:zai_obuf
+                execute 'buffer' l:obuf
                 " adjust the height
                 call win_execute(bufwinid(s:zai_ibuf), 'resize 10')
             else
                 " no input window, create one at right side for output
                 vertical botright split
-                execute 'buffer' s:zai_obuf
+                execute 'buffer' l:obuf
                 execute 'wincmd L'
                 normal! zR
             endif
@@ -378,6 +437,7 @@ function! zai#chat#Go() abort
     " Ensure the windows and task are open
     call s:ui_open()
     call s:task_start()
+    let l:chat = s:current_chat()
 
     " Check if the input window is open
     if s:zai_ibuf == -1 || !bufexists(s:zai_ibuf)
@@ -408,24 +468,25 @@ function! zai#chat#Go() abort
     let l:req_msg = iconv(l:request . "\n", &encoding, 'utf-8')
     if has('nvim')
         " for Neovim
-        call jobsend(s:zai_task, l:req_msg)
+        call jobsend(l:chat.job, l:req_msg)
     else
         " for Vim
-        let l:channel = job_getchannel(s:zai_task)
+        let l:channel = job_getchannel(l:chat.job)
         call ch_sendraw(l:channel, l:req_msg)
     endif
 
     " Also write to the output box
     let l:content = ['', g:zai_print_prompt[0]] + l:content + ['', g:zai_print_prompt[1]]
     call s:ui_open()
-    call s:print_raw(s:zai_obuf, l:content)
+    call s:print_raw(l:chat.obuf, l:content)
 
     " Clear the input buffer
     call deletebufline(s:zai_ibuf, 1, '$')
 endfunction
 
 function! zai#chat#Close() abort
-    if s:zai_obuf == -1 || !bufexists(s:zai_obuf)
+    let l:chat = s:current_chat()
+    if empty(l:chat) || !bufexists(l:chat.obuf)
         return
     endif
 
@@ -435,20 +496,21 @@ function! zai#chat#Close() abort
     if bufwinid(s:zai_ibuf) != -1
         execute bufwinnr(s:zai_ibuf) .. 'wincmd c'
     endif
-    call setbufvar(s:zai_obuf, '&modifiable', 1)
-    silent! call deletebufline(s:zai_obuf, 1, '$')
-    call setbufvar(s:zai_obuf, '&modifiable', 0)
+    call setbufvar(l:chat.obuf, '&modifiable', 1)
+    silent! call deletebufline(l:chat.obuf, 1, '$')
+    call setbufvar(l:chat.obuf, '&modifiable', 0)
 endfunction
 
 function! s:on_ui_closed()
     let l:last = str2nr(expand('<amatch>'))
-    if bufwinid(s:zai_obuf) == l:last
+    let l:chat = s:current_chat()
+    if bufwinid(l:chat.obuf) == l:last
         if bufwinid(s:zai_ibuf) != -1
             execute bufwinnr(s:zai_ibuf) .. 'wincmd c'
         endif
     elseif bufwinid(s:zai_ibuf) == l:last
-        if bufwinid(s:zai_obuf) != -1
-            execute bufwinnr(s:zai_obuf) .. 'wincmd c'
+        if bufwinid(l:chat.obuf) != -1
+            execute bufwinnr(l:chat.obuf) .. 'wincmd c'
         endif
     endif
 endfunction
@@ -464,6 +526,8 @@ function! zai#chat#Load() abort
     " Ensure the windows and task are open
     call s:ui_open()
     call s:task_start()
+
+    let l:chat = s:current_chat()
 
     " Check if the input window is open
     if s:zai_ibuf == -1 || !bufexists(s:zai_ibuf)
@@ -491,17 +555,17 @@ function! zai#chat#Load() abort
     let l:req_msg = iconv(l:request . "\n", &encoding, 'utf-8')
     if has('nvim')
         " for Neovim
-        call jobsend(s:zai_task, l:req_msg)
+        call jobsend(l:chat.job, l:req_msg)
     else
         " for Vim
-        let l:channel = job_getchannel(s:zai_task)
+        let l:channel = job_getchannel(l:chat.job)
         call ch_sendraw(l:channel, l:req_msg)
     endif
 
     " Also write to the output box
     let l:content = ['', g:zai_print_prompt[0]] + l:content + ['', g:zai_print_prompt[1]]
     call s:ui_open()
-    call s:print_raw(s:zai_obuf, l:content)
+    call s:print_raw(l:chat.obuf, l:content)
 
     " Clear the input buffer
     call deletebufline(s:zai_ibuf, 1, '$')
