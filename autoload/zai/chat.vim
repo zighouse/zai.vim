@@ -3,7 +3,8 @@ scriptencoding utf-8
 let s:zai_chats = {}  " dictionary to store all chats: {id: {id, obuf, job}}
 let s:zai_chat_id = -1 " id of current showing chat session
 let s:zai_jobs = {}   " dictionary to store all chat jobs: {job: {id}}
-let s:zai_ibuf = -1  " input buffer
+let s:zai_ibuf = -1   " input buffer (shared by all chats)
+let s:zai_lbuf = -1   " list buffer
 
 " get current chat which its obuf is showing.
 function! s:current_chat() abort
@@ -256,7 +257,7 @@ function! s:task_stop() abort
             " send the exit command and wait 200ms for its responce
             call jobsend(l:chat.job, ":exit\n")
             sleep 100m
-        catch 
+        catch
             echo 'caught: ' .. v:exception
         endtry
         call jobstop(l:chat.job)
@@ -271,7 +272,7 @@ function! s:task_stop() abort
             " send the exit command and wait 200ms for its responce
             call ch_sendraw(l:channel, ":exit\n")
             sleep 100m
-        catch 
+        catch
             echo 'caught: ' .. v:exception
         endtry
         " force stop the chat_task
@@ -305,6 +306,8 @@ function! s:ui_open() abort
                     \ 'id': l:id,
                     \ 'obuf': l:obuf,
                     \ 'job': 0,
+                    \ 'name': strftime("%H:%M:%S"),
+                    \ 'status': 'ready',
                     \ }
         let s:zai_chat_id = l:id
     else
@@ -372,8 +375,54 @@ function! s:ui_open() abort
         endif
     endif
 
+    call s:goto_lwin()
+    call s:goto_iwin()
+
     " register the close operation
     autocmd WinClosed * call s:on_ui_closed()
+endfunction
+
+function! s:goto_owin() abort
+    let l:chat = s:current_chat()
+    if empty(l:chat)
+        call s:ui_open()
+        call s:goto_owin()
+        return
+    endif
+    let l:owin = bufwinnr(l:chat.obuf)
+    if l:owin == -1
+        call s:ui_open()
+        call s:goto_owin()
+    else
+        execute l:owin .. 'wincmd w'
+        normal! zR
+    endif
+endfunction
+
+function! s:goto_iwin() abort
+    let l:iwin = bufwinnr(s:zai_ibuf)
+    if l:iwin == -1
+        call s:ui_open()
+        call s:goto_iwin()
+    else
+        execute l:iwin .. 'wincmd w'
+        normal! zR
+    endif
+endfunction
+
+function! s:goto_lwin() abort
+    let l:lwin = bufwinnr(s:zai_lbuf)
+    if l:lwin == -1
+        call s:goto_owin()
+        aboveleft 5new
+        setlocal buftype=nofile bufhidden=hide noswapfile nobuflisted nomodifiable nowrap
+        let &l:statusline = "[Zai-Chats-List]%=%-14.(%l,%c%V%) %P"
+        let s:zai_lbuf = bufnr('%')
+        nnoremap <buffer> <CR> :call <SID>select_chat()<CR>
+    else
+        execute l:lwin .. 'wincmd w'
+    endif
+    call s:update_chat_list()
 endfunction
 
 function! zai#chat#Open() abort
@@ -505,10 +554,16 @@ function! s:on_ui_closed()
     let l:last = str2nr(expand('<amatch>'))
     let l:chat = s:current_chat()
     if bufwinid(l:chat.obuf) == l:last
+        if bufwinid(s:zai_lbuf) != -1
+            execute bufwinnr(s:zai_lbuf) .. 'wincmd c'
+        endif
         if bufwinid(s:zai_ibuf) != -1
             execute bufwinnr(s:zai_ibuf) .. 'wincmd c'
         endif
     elseif bufwinid(s:zai_ibuf) == l:last
+        if bufwinid(s:zai_lbuf) != -1
+            execute bufwinnr(s:zai_lbuf) .. 'wincmd c'
+        endif
         if bufwinid(l:chat.obuf) != -1
             execute bufwinnr(l:chat.obuf) .. 'wincmd c'
         endif
@@ -571,3 +626,59 @@ function! zai#chat#Load() abort
     call deletebufline(s:zai_ibuf, 1, '$')
 endfunction
 
+function! s:update_chat_list() abort
+    call setbufvar(s:zai_lbuf, '&modifiable', 1)
+    let l:len = line('$', s:zai_lbuf)
+    if l:len > 0
+        call deletebufline(s:zai_lbuf, 1, l:len)
+    endif
+
+    let l:lines = []
+    for id in keys(s:zai_chats)
+        let l:chat = s:zai_chats[id]
+        let l:line = l:chat['name'] . ' [' . l:chat['status'] . ']'
+        call add(lines, line)
+    endfor
+    call setbufline(s:zai_lbuf, 1, lines)
+    call setbufvar(s:zai_lbuf, '&modifiable', 0)
+endfunction
+
+function! s:select_chat() abort
+    " get id: each line maps to a session in order
+    let l:idx = line('.') - 1
+    let l:cur_chat = s:current_chat()
+    let l:chat = s:get_chat(l:idx)
+    if !empty(l:chat) && !empty(l:cur_chat) && l:cur_chat.id != l:chat.id
+        let l:owin = bufwinid(l:cur_chat.obuf)
+        let s:zai_chat_id = l:chat.id
+        call win_execute(l:owin, 'buffer ' . l:chat.obuf)
+    endif
+endfunction
+
+function! s:new_chat() abort
+    " create the first chat
+    if empty(s:zai_chats)
+        call s:goto_iwin()
+        return
+    endif
+    " create more
+    call s:goto_owin()
+    enew
+    setlocal buftype=nofile bufhidden=hide noswapfile nobuflisted nomodifiable wrap
+    let l:obuf = bufnr('%')
+    let l:id = s:generate_chat_id()
+    let s:zai_chats[l:id] = {
+                \ 'id': l:id,
+                \ 'obuf': l:obuf,
+                \ 'job': 0,
+                \ 'name': strftime("%H:%M:%S"),
+                \ 'status': 'ready',
+                \ }
+    let s:zai_chat_id = l:id
+    call s:update_chat_list()
+    call s:goto_iwin()
+endfunction
+
+function! zai#chat#New() abort
+    call s:new_chat()
+endfunction

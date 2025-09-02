@@ -82,3 +82,6 @@ function! zai#Load() abort
     call zai#chat#Load()
 endfunction
 
+function! zai#New() abort
+    call zai#chat#New()
+endfunction

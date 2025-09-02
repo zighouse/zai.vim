@@ -38,6 +38,7 @@ command! ZaiGo call zai#Go()
 command! ZaiClose call zai#Close()
 command! -nargs=1 ZaiComplete call zai#Complete(<arg>)
 command! ZaiLoad call zai#Load()
+command! ZaiNew call zai#New()
 
 nmap <Plug>Zai :Zai<CR>
 nmap <Plug>ZaiGo :ZaiGo<CR>
@@ -45,11 +46,13 @@ nmap <Plug>ZaiClose :ZaiClose<CR>
 vmap <Plug>ZaiAdd :<C-u>call zai#Add()<CR>
 nmap <Plug>ZaiComplete :ZaiComplete<CR>
 nmap <Plug>ZaiLoad :ZaiLoad<CR>
+nmap <Plug>ZaiNew  :ZaiNew<CR>
 
-nmap <silent> <Leader>zo <Plug>Zai
-nmap <silent> <Leader>zg <Plug>ZaiGo
+nmap <silent> <leader>zo <Plug>Zai
+nmap <silent> <leader>zg <Plug>ZaiGo
 nmap <silent> <leader>zX <Plug>ZaiClose
 vmap <silent> <leader>za <Plug>ZaiAdd
 nmap <silent> <leader>zf :call zai#Complete(0)<CR>
 inoremap <silent> <C-F> <C-O>:call zai#Complete(1)<CR>
-nmap <silent> <Leader>zl <Plug>ZaiLoad
+nmap <silent> <leader>zl <Plug>ZaiLoad
+nmap <silent> <leader>zc <Plug>ZaiNew
