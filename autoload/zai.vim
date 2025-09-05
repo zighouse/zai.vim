@@ -85,3 +85,11 @@ endfunction
 function! zai#New() abort
     call zai#chat#New()
 endfunction
+
+function! zai#Next() abort
+    call zai#chat#Next()
+endfunction
+
+function! zai#Prev() abort
+    call zai#chat#Prev()
+endfunction

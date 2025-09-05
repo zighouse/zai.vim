@@ -41,10 +41,10 @@ function! s:get_chat(id) abort
 endfunction
 
 " generate a unique chat ID
-let s:next_chat_id = -1
+let s:zai_last_chat_id = -1
 function! s:generate_chat_id()
-    let s:next_chat_id += 1
-    return s:next_chat_id
+    let s:zai_last_chat_id += 1
+    return s:zai_last_chat_id
 endfunction
 
 " move the cursor to the end of a window
@@ -290,6 +290,7 @@ function! s:ui_open() abort
     " the output buffer.
     if empty(l:chat)
         vertical botright new
+        let b:zai_buffer = 0
         let l:id = s:generate_chat_id()
         let l:obuf = bufnr('%')
         setlocal buftype=nofile
@@ -348,6 +349,7 @@ function! s:ui_open() abort
     " and take its buffer as input
     if s:zai_ibuf == -1 || !bufexists(s:zai_ibuf)
         belowright new
+        let b:zai_buffer = 0
         let s:zai_ibuf = bufnr('%')
         setlocal buftype=nofile
         setlocal bufhidden=hide
@@ -415,10 +417,15 @@ function! s:goto_lwin() abort
     if l:lwin == -1
         call s:goto_owin()
         aboveleft 5new
+        let b:zai_buffer = 0
         setlocal buftype=nofile bufhidden=hide noswapfile nobuflisted nomodifiable nowrap
+
+        let b:zai_highlight = 1
+        call s:highlight_chats()
+
         let &l:statusline = "[Zai-Chats-List]%=%-14.(%l,%c%V%) %P"
         let s:zai_lbuf = bufnr('%')
-        nnoremap <buffer> <CR> :call <SID>select_chat()<CR>
+        nnoremap <buffer> <CR> :call <SID>select_chat_atpos()<CR>
     else
         execute l:lwin .. 'wincmd w'
     endif
@@ -628,31 +635,131 @@ endfunction
 
 function! s:update_chat_list() abort
     call setbufvar(s:zai_lbuf, '&modifiable', 1)
+
+    " clear all signs
+    if exists('s:chat_signs')
+        for l:sign_id in values(s:chat_signs)
+            execute 'sign unplace' l:sign_id 'buffer=' . s:zai_lbuf
+        endfor
+    endif
+    let s:chat_signs = {}
+
     let l:len = line('$', s:zai_lbuf)
     if l:len > 0
         call deletebufline(s:zai_lbuf, 1, l:len)
     endif
 
     let l:lines = []
-    for id in keys(s:zai_chats)
-        let l:chat = s:zai_chats[id]
+    let l:line_num = 1
+    let l:selected_line = 0
+
+    for l:id in keys(s:zai_chats)
+        let l:chat = s:zai_chats[l:id]
         let l:line = l:chat['name'] . ' [' . l:chat['status'] . ']'
-        call add(lines, line)
+        call add(l:lines, l:line)
+
+        if l:id == s:zai_chat_id
+            let l:sign_id = l:line_num + 10000 " avoid conflict
+            execute 'sign place' l:sign_id 'line=' . l:line_num 
+                        \ 'name=ZaiSelected' 
+                        \ 'buffer=' . s:zai_lbuf
+            let s:chat_signs[l:id] = l:sign_id
+            let l:selected_line = l:line_num
+        endif
+        
+        let l:line_num += 1
     endfor
-    call setbufline(s:zai_lbuf, 1, lines)
+    call setbufline(s:zai_lbuf, 1, l:lines)
     call setbufvar(s:zai_lbuf, '&modifiable', 0)
+
+    if l:selected_line > 0
+        call s:ensure_line_visible(s:zai_lbuf, l:selected_line)
+    endif
 endfunction
 
-function! s:select_chat() abort
+function! s:ensure_line_visible(bufnr, line_num) abort
+    let l:winid = bufwinid(a:bufnr)
+    if l:winid == -1
+        return
+    endif
+    
+    let l:win_info = win_execute(l:winid, 'echo winheight(0) . "," . line("w0") . "," . line("w$") . "," . line("$")')
+    let [l:win_height, l:first_line, l:last_line, l:buf_last_line] = split(l:win_info, ',')
+    let l:win_height = str2nr(l:win_height)
+    let l:first_line = str2nr(l:first_line)
+    let l:last_line = str2nr(l:last_line)
+    let l:buf_last_line = str2nr(l:buf_last_line)
+    
+    if a:line_num < l:first_line
+        " above
+        call win_execute(l:winid, 'normal! ' . a:line_num . 'zt')
+    elseif a:line_num > l:last_line
+        " below
+        if a:line_num > l:buf_last_line - l:win_height + 1
+            " at bottom
+            call win_execute(l:winid, 'normal! ' . a:line_num . 'zb')
+        else
+            " normal
+            call win_execute(l:winid, 'normal! ' . a:line_num . 'zz')
+        endif
+    else
+        " in ROI of window, adjust better showing position.
+        let l:middle_pos = l:win_height / 3 " threshold is 1/3 of window height
+        if a:line_num < l:first_line + l:middle_pos || a:line_num > l:last_line - l:middle_pos
+            if a:line_num > l:buf_last_line - l:win_height + 1
+                " near bottom
+                call win_execute(l:winid, 'normal! ' . a:line_num . 'zb')
+            else
+                call win_execute(l:winid, 'normal! ' . a:line_num . 'zz')
+            endif
+        endif
+    endif
+endfunction
+
+function! s:select_chat(chat_id) abort
     " get id: each line maps to a session in order
-    let l:idx = line('.') - 1
     let l:cur_chat = s:current_chat()
-    let l:chat = s:get_chat(l:idx)
+    let l:chat = s:get_chat(a:chat_id)
     if !empty(l:chat) && !empty(l:cur_chat) && l:cur_chat.id != l:chat.id
         let l:owin = bufwinid(l:cur_chat.obuf)
         let s:zai_chat_id = l:chat.id
         call win_execute(l:owin, 'buffer ' . l:chat.obuf)
+        call s:update_chat_list()
     endif
+endfunction
+
+function! s:select_chat_atpos() abort
+    " get id: each line maps to a session in order
+    let l:idx = line('.') - 1
+    call s:select_chat(l:idx)
+endfunction
+
+function! s:get_next_chat() abort
+    if s:zai_chat_id == -1
+        return {}
+    endif
+    let l:next_id = s:zai_chat_id + 1
+    if l:next_id > s:zai_last_chat_id
+        let l:next_id = 0
+    endif
+    while !has_key(s:zai_chats, l:next_id) && l:next_id < s:zai_last_chat_id
+        let l:next_id = l:next_id + 1
+    endwhile
+    return get(s:zai_chats, l:next_id, {})
+endfunction
+
+function! s:get_prev_chat() abort
+    if s:zai_chat_id == -1
+        return {}
+    endif
+    let l:prev_id = s:zai_chat_id - 1
+    if l:prev_id < 0
+        let l:prev_id = s:zai_last_chat_id
+    endif
+    while !has_key(s:zai_chats, l:prev_id) && l:prev_id > 0
+        let l:prev_id = l:prev_id - 1
+    endwhile
+    return get(s:zai_chats, l:prev_id, {})
 endfunction
 
 function! s:new_chat() abort
@@ -664,6 +771,7 @@ function! s:new_chat() abort
     " create more
     call s:goto_owin()
     enew
+    let b:zai_buffer = 0
     setlocal buftype=nofile bufhidden=hide noswapfile nobuflisted nomodifiable wrap
     let l:obuf = bufnr('%')
     let l:id = s:generate_chat_id()
@@ -682,3 +790,77 @@ endfunction
 function! zai#chat#New() abort
     call s:new_chat()
 endfunction
+
+function! zai#chat#Next() abort
+    let l:next = s:get_next_chat()
+    if !empty(l:next)
+        call s:select_chat(l:next.id)
+    endif
+endfunction
+
+function! zai#chat#Prev() abort
+    let l:prev = s:get_prev_chat()
+    if !empty(l:prev)
+        call s:select_chat(l:prev.id)
+    endif
+endfunction
+
+function! s:define_chat_sign() abort
+    if !exists('b:zai_highlight') || !b:zai_highlight
+        return
+    endif
+    
+    execute 'sign define ZaiSelected'
+                \ 'linehl=' . s:zai_highlight
+                \ 'texthl=' . s:zai_highlight
+                \ 'text=' . s:zai_sign_char
+endfunction
+
+function! s:highlight_chats() abort
+    if !exists('b:zai_highlight') || !b:zai_highlight
+        return
+    endif
+
+    function! s:define_highlight() abort
+        if !exists('b:zai_highlight') || !b:zai_highlight
+            return
+        endif
+
+        let s:zai_highlight = 'TabLineSel'
+        if exists('*strdisplaywidth') && strdisplaywidth('➩') == 1
+            let s:zai_sign_char = '➩'
+        else
+            let s:zai_sign_char = '⇨'
+        endif
+
+        call s:define_chat_sign()
+    endfunction
+
+    augroup ZaiHighlights
+        autocmd! * <buffer>
+        autocmd ColorScheme <buffer> call s:define_highlight() | call s:update_chat_list()
+        autocmd BufEnter <buffer> call s:update_chat_list()
+    augroup END
+
+    call s:define_highlight()
+endfunction
+
+function! s:setup_buffer_commands()
+    if !exists('b:zai_buffer') || b:zai_buffer >= 1
+        return
+    endif
+
+    command! -buffer ZaiNew call zai#chat#New()
+    command! -buffer ZaiNext call zai#chat#Next()
+    command! -buffer ZaiPrev call zai#chat#Prev()
+    cnoreabbrev <expr> <buffer> new getcmdtype() == ':' && getcmdline() ==# 'new' ? 'ZaiNew'  : 'new'
+    cnoreabbrev <expr> <buffer> cn  getcmdtype() == ':' && getcmdline() ==# 'cn'  ? 'ZaiNext' : 'cn'
+    cnoreabbrev <expr> <buffer> cp  getcmdtype() == ':' && getcmdline() ==# 'cp'  ? 'ZaiPrev' : 'cp'
+
+    let b:zai_buffer = 1 " already setup buffer commands
+endfunction
+
+augroup ZaiAutoSetup
+    autocmd!
+    autocmd BufEnter * call s:setup_buffer_commands()
+augroup END
