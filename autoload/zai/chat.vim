@@ -59,7 +59,9 @@ endfunction
 function! s:print_raw(bufnr, raw_lines) abort
     " ensure the buffer is loaded
     if !bufloaded(a:bufnr)
-        echoerr "Buffer " .. a:bufnr .. " is not loaded."
+        echohl ErrorMsg
+        echo "Buffer " .. a:bufnr .. " is not loaded."
+        echohl None
         return
     endif
 
@@ -104,7 +106,9 @@ endfunction
 function! s:print_channel_data(bufnr, channel_data) abort
     " ensure the buffer is loaded
     if !bufloaded(a:bufnr)
-        echoerr "Buffer " .. a:bufnr .. " is not loaded."
+        echohl ErrorMsg
+        echo "Buffer " .. a:bufnr .. " is not loaded."
+        echohl None
         return
     endif
 
@@ -660,13 +664,13 @@ function! s:update_chat_list() abort
 
         if l:id == s:zai_chat_id
             let l:sign_id = l:line_num + 10000 " avoid conflict
-            execute 'sign place' l:sign_id 'line=' . l:line_num 
-                        \ 'name=ZaiSelected' 
+            execute 'sign place' l:sign_id 'line=' . l:line_num
+                        \ 'name=ZaiSelected'
                         \ 'buffer=' . s:zai_lbuf
             let s:chat_signs[l:id] = l:sign_id
             let l:selected_line = l:line_num
         endif
-        
+
         let l:line_num += 1
     endfor
     call setbufline(s:zai_lbuf, 1, l:lines)
@@ -682,14 +686,14 @@ function! s:ensure_line_visible(bufnr, line_num) abort
     if l:winid == -1
         return
     endif
-    
+
     let l:win_info = win_execute(l:winid, 'echo winheight(0) . "," . line("w0") . "," . line("w$") . "," . line("$")')
     let [l:win_height, l:first_line, l:last_line, l:buf_last_line] = split(l:win_info, ',')
     let l:win_height = str2nr(l:win_height)
     let l:first_line = str2nr(l:first_line)
     let l:last_line = str2nr(l:last_line)
     let l:buf_last_line = str2nr(l:buf_last_line)
-    
+
     if a:line_num < l:first_line
         " above
         call win_execute(l:winid, 'normal! ' . a:line_num . 'zt')
@@ -734,32 +738,28 @@ function! s:select_chat_atpos() abort
     call s:select_chat(l:idx)
 endfunction
 
-function! s:get_next_chat() abort
+function! s:get_next_chat(count) abort
     if s:zai_chat_id == -1
         return {}
     endif
-    let l:next_id = s:zai_chat_id + 1
-    if l:next_id > s:zai_last_chat_id
-        let l:next_id = 0
-    endif
-    while !has_key(s:zai_chats, l:next_id) && l:next_id < s:zai_last_chat_id
-        let l:next_id = l:next_id + 1
+    let l:count = a:count > 0 ? a:count : 1
+    let l:target_id = (s:zai_chat_id + l:count) % (s:zai_last_chat_id + 1)
+    while !has_key(s:zai_chats, l:target_id) && l:target_id < s:zai_last_chat_id
+        let l:target_id = l:target_id + 1
     endwhile
-    return get(s:zai_chats, l:next_id, {})
+    return get(s:zai_chats, l:target_id, {})
 endfunction
 
-function! s:get_prev_chat() abort
+function! s:get_prev_chat(count) abort
     if s:zai_chat_id == -1
         return {}
     endif
-    let l:prev_id = s:zai_chat_id - 1
-    if l:prev_id < 0
-        let l:prev_id = s:zai_last_chat_id
-    endif
-    while !has_key(s:zai_chats, l:prev_id) && l:prev_id > 0
-        let l:prev_id = l:prev_id - 1
+    let l:count = a:count > 0 ? a:count : 1
+    let l:target_id = (s:zai_chat_id - l:count) % (s:zai_last_chat_id + 1)
+    while !has_key(s:zai_chats, l:target_id) && l:target_id > 0
+        let l:target_id = l:target_id - 1
     endwhile
-    return get(s:zai_chats, l:prev_id, {})
+    return get(s:zai_chats, l:target_id, {})
 endfunction
 
 function! s:new_chat() abort
@@ -791,25 +791,45 @@ function! zai#chat#New() abort
     call s:new_chat()
 endfunction
 
-function! zai#chat#Next() abort
-    let l:next = s:get_next_chat()
+function! zai#chat#Next(count) abort
+    let l:next = s:get_next_chat(a:count)
     if !empty(l:next)
         call s:select_chat(l:next.id)
     endif
 endfunction
 
-function! zai#chat#Prev() abort
-    let l:prev = s:get_prev_chat()
+function! zai#chat#Prev(count) abort
+    let l:prev = s:get_prev_chat(a:count)
     if !empty(l:prev)
         call s:select_chat(l:prev.id)
     endif
+endfunction
+
+function! zai#chat#Goto(nr) abort
+    try
+        let l:target_nr = str2nr(a:nr)
+        if l:target_nr < 0
+            throw "invalid parameter for :ZaiGoto."
+            return
+        endif
+
+        if has_key(s:zai_chats, l:target_nr)
+            call s:select_chat(l:target_nr)
+        else
+            throw "ZaiChat " . l:target_nr . " does not exists."
+        endif
+    catch
+        echohl ErrorMsg
+        echo v:exception
+        echohl None
+    endtry
 endfunction
 
 function! s:define_chat_sign() abort
     if !exists('b:zai_highlight') || !b:zai_highlight
         return
     endif
-    
+
     execute 'sign define ZaiSelected'
                 \ 'linehl=' . s:zai_highlight
                 \ 'texthl=' . s:zai_highlight
@@ -845,17 +865,44 @@ function! s:highlight_chats() abort
     call s:define_highlight()
 endfunction
 
+function! zai#chat#FiltCmd(cmdline) abort
+    let l:command_map = {
+        \ 'new': 'ZaiNew',
+        \ 'cn': 'ZaiNext',
+        \ 'cp': 'ZaiPrev',
+        \ 'cc': 'ZaiGoto'
+        \ }
+
+    for [abbr, full_cmd] in items(l:command_map)
+        " match -count commands (2cn, 3cp)
+        if a:cmdline =~# '^\d*' . abbr . '$'
+            return substitute(a:cmdline, abbr, full_cmd, '')
+        endif
+
+        " match -nargs commands (cc3, cc 3)
+        if abbr ==# 'cc' && a:cmdline =~# '^cc\s*\d\+$'
+            let l:param = substitute(a:cmdline, '^cc\s*\(\d\+\)$', '\1', '')
+            return full_cmd . ' ' . l:param
+        endif
+    endfor
+
+    " or restore original
+    return a:cmdline
+endfunction
+
 function! s:setup_buffer_commands()
     if !exists('b:zai_buffer') || b:zai_buffer >= 1
         return
     endif
 
     command! -buffer ZaiNew call zai#chat#New()
-    command! -buffer ZaiNext call zai#chat#Next()
-    command! -buffer ZaiPrev call zai#chat#Prev()
-    cnoreabbrev <expr> <buffer> new getcmdtype() == ':' && getcmdline() ==# 'new' ? 'ZaiNew'  : 'new'
-    cnoreabbrev <expr> <buffer> cn  getcmdtype() == ':' && getcmdline() ==# 'cn'  ? 'ZaiNext' : 'cn'
-    cnoreabbrev <expr> <buffer> cp  getcmdtype() == ':' && getcmdline() ==# 'cp'  ? 'ZaiPrev' : 'cp'
+    command! -buffer -count ZaiNext call zai#chat#Next(<count>)
+    command! -buffer -count ZaiPrev call zai#chat#Prev(<count>)
+    command! -buffer -nargs=1 ZaiGoto call zai#chat#Goto(<args>)
+    cnoremap <expr> <buffer> <CR>
+                \ getcmdtype() == ':' ?
+                \ "\<C-u>" . zai#chat#FiltCmd(getcmdline()) . "\<CR>" :
+                \ "\<CR>"
 
     let b:zai_buffer = 1 " already setup buffer commands
 endfunction
