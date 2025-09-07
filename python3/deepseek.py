@@ -109,6 +109,10 @@ g_prompt = """You are a strict assistant in programming, software engineering an
  3. Conclude with a concise title reflecting the core suggestion."""
 if 'zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', ''):
     g_prompt = g_prompt + '\n使用中文回答'
+    g_prompt = g_prompt + '\n此外，请在你的回答末尾，单独一行以“### 建议标题：[简洁标题]”的格式提供一个标题总结本次对话的核心，越短越好，尽量不要超过 30 字。'
+else:
+    g_prompt = g_prompt + '\nAdditionally, please provide a line for title in English at the end of your response in the format "### Title: [concise title]" to summarize the core suggestion.'
+
 g_system_message={'role': 'system', 'content': g_prompt}
 # List of messages, each entry is:
 # {'role': str, 'content': str, 'time': str,

@@ -13,6 +13,7 @@ elseif match(get(environ(), 'LANG', ''), 'zh') != -1 || match(get(environ(), 'LA
 else
     let s:zh_lang = 0
 endif
+let s:title_exp = '^### \(建议标题：\|Title: \)\[\(.\+\)\]\s*$'
 
 let s:zai_status_name = {
             \ 'ready':     s:zh_lang ? '就绪' : 'listen',
@@ -145,6 +146,12 @@ function! s:update_status_on_channel_data(chat, line) abort
             let a:chat.status = l:status
             call s:update_chat_status(a:chat)
             return
+        else
+            let l:title_match = matchlist(a:line, s:title_exp)
+            if !empty(l:title_match)
+                let a:chat.title = l:title_match[2]
+                call s:update_chat_status(a:chat)
+            endif
         endif
     endfor
 endfunction
@@ -368,6 +375,8 @@ function! s:ui_open() abort
                     \ 'job': 0,
                     \ 'name': strftime("%H:%M:%S"),
                     \ 'status': s:zai_status_name.ready,
+                    \ 'title': '',
+                    \ 'usertitle': '',
                     \ }
         let s:zai_chat_id = l:id
     else
@@ -548,6 +557,30 @@ function! zai#chat#AddRange(line1, line2) range abort
     call s:append(l:sel)
 endfunction
 
+function! s:extract_user_title(lines) abort
+    let l:symbol_pattern = '^[[:space:]]*[#*\-+>!@$%^&()\[\]{}|;:,.<>?/\\`_~=]'
+    let l:first_line = ''
+    
+    for l:line in a:lines
+        if l:line =~? '^\s*$'
+            continue
+        endif
+        
+        if l:line =~? l:symbol_pattern
+            continue
+        endif
+        
+        if empty(l:first_line)
+            let l:first_line = l:line
+        endif
+        if strchars(l:line) > 30
+            return strcharpart(l:line, 0, 30)
+        endif
+    endfor
+    
+    return l:first_line
+endfunction
+
 function! zai#chat#Go() abort
     " Ensure the windows and task are open
     call s:ui_open()
@@ -561,10 +594,11 @@ function! zai#chat#Go() abort
     endif
 
     " Send the content to chat_task
-    let l:content = getbufline(s:zai_ibuf, 0, line('$'))
+    let l:content = getbufline(s:zai_ibuf, 1, line('$'))
     if empty(l:content)
         return
     endif
+    let l:chat.usertitle = s:extract_user_title(l:content)
 
     if g:zai_input_mode == 'json'
         " for json input mode
@@ -699,11 +733,19 @@ endfunction
 let s:chat_title_id_format = '%d '
 let s:chat_title_id_max = 0
 function! s:format_chat_title(chat)
+    if !empty(a:chat.title)
+        let l:title = ' ' . a:chat.title
+    elseif !empty(a:chat.usertitle)
+        let l:title = ' ' . a:chat.usertitle
+    else
+        let l:title = ''
+    endif
     if s:zai_last_chat_id > s:chat_title_id_max
         let s:chat_title_id_format = '%' . len(string(s:zai_last_chat_id)) . 'd '
         let s:chat_title_id_max = s:zai_last_chat_id
     endif
-    return printf(s:chat_title_id_format, a:chat.id) . '[' . a:chat.status . '] ' . a:chat.name
+    return printf(s:chat_title_id_format, a:chat.id) . '[' . a:chat.status . '] ' .
+                \  a:chat.name . l:title
 endfunction
 
 function! s:update_chat_status(chat)
@@ -868,6 +910,8 @@ function! s:new_chat() abort
                 \ 'job': 0,
                 \ 'name': strftime("%H:%M:%S"),
                 \ 'status': s:zai_status_name.ready,
+                \ 'title': '',
+                \ 'usertitle': '',
                 \ }
     let s:zai_chat_id = l:id
     call s:update_chat_list()
