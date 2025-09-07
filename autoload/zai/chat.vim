@@ -23,6 +23,20 @@ let s:zai_status_name = {
             \ 'complete':  s:zh_lang ? '完成' : 'complt',
             \ }
 
+" for debug
+function! s:GetVar(var_name) abort
+    return get(s:, a:var_name, 'UNDEFINED')
+endfunction
+command! -nargs=1 ZaiShowVar echo s:GetVar(<f-args>)
+function! ZaiGetVar(var_name) abort
+    return s:GetVar(a:var_name)
+endfunction
+function! s:EchoError(msg) abort
+    echohl ErrorMsg
+    echo a:msg
+    echohl None
+endfunction
+
 " get current chat which its obuf is showing.
 function! s:current_chat() abort
     if has_key(s:zai_chats, s:zai_chat_id)
@@ -337,6 +351,7 @@ function! s:ui_open() abort
         let b:zai_buffer = 0
         let l:id = s:generate_chat_id()
         let l:obuf = bufnr('%')
+        call setbufline('%', 1, 'chat-id:' . l:id)
         setlocal buftype=nofile
         setlocal bufhidden=hide
         setlocal noswapfile
@@ -704,7 +719,9 @@ function! s:update_chat_list() abort
     " clear all signs
     if exists('s:chat_signs')
         for l:sign_id in values(s:chat_signs)
-            execute 'sign unplace' l:sign_id 'buffer=' . s:zai_lbuf
+            if l:sign_id != -1
+                execute 'sign unplace' l:sign_id 'buffer=' . s:zai_lbuf
+            endif
         endfor
     endif
     let s:chat_signs = {}
@@ -834,9 +851,17 @@ function! s:new_chat() abort
     call s:goto_owin()
     enew
     let b:zai_buffer = 0
-    setlocal buftype=nofile bufhidden=hide noswapfile nobuflisted nomodifiable wrap
-    let l:obuf = bufnr('%')
     let l:id = s:generate_chat_id()
+    let l:obuf = bufnr('%')
+    call setbufline('%', 1, 'chat-id:' . l:id)
+    setlocal buftype=nofile
+    setlocal bufhidden=hide
+    setlocal noswapfile
+    setlocal nobuflisted
+    setlocal nomodifiable
+    setlocal wrap
+    setlocal syntax=markdown
+    let &l:statusline = "[Zai-Log]%=%-14.(%l,%c%V%) %P"
     let s:zai_chats[l:id] = {
                 \ 'id': l:id,
                 \ 'obuf': l:obuf,
@@ -868,23 +893,17 @@ function! zai#chat#Prev(count) abort
 endfunction
 
 function! zai#chat#Goto(nr) abort
-    try
-        let l:target_nr = str2nr(a:nr)
-        if l:target_nr < 0
-            throw "invalid parameter for :ZaiGoto."
-            return
-        endif
+    let l:target_nr = str2nr(a:nr)
+    if l:target_nr < 0
+        call s:EchoError("invalid parameter for :ZaiGoto.")
+        return
+    endif
 
-        if has_key(s:zai_chats, l:target_nr)
-            call s:select_chat(l:target_nr)
-        else
-            throw "ZaiChat " . l:target_nr . " does not exists."
-        endif
-    catch
-        echohl ErrorMsg
-        echo v:exception
-        echohl None
-    endtry
+    if has_key(s:zai_chats, l:target_nr)
+        call s:select_chat(l:target_nr)
+    else
+        call s:EchoError("ZaiChat " . l:target_nr . " does not exists.")
+    endif
 endfunction
 
 function! s:define_chat_sign() abort
