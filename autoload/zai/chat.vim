@@ -1,10 +1,27 @@
 scriptencoding utf-8
 
-let s:zai_chats = {}  " dictionary to store all chats: {id: {id, obuf, job}}
+let s:zai_chats = {}  " dictionary to store all chats: {id: {id, obuf, job, name, status}}
 let s:zai_chat_id = -1 " id of current showing chat session
 let s:zai_jobs = {}   " dictionary to store all chat jobs: {job: {id}}
 let s:zai_ibuf = -1   " input buffer (shared by all chats)
 let s:zai_lbuf = -1   " list buffer
+
+if exists('g:zai_lang') && match(g:zai_lang, 'zh') != -1
+    let s:zh_lang = 1
+elseif match(get(environ(), 'LANG', ''), 'zh') != -1 || match(get(environ(), 'LANGUAGE', ''), 'zh') != -1
+    let s:zh_lang = 1
+else
+    let s:zh_lang = 0
+endif
+
+let s:zai_status_name = {
+            \ 'ready':     s:zh_lang ? '就绪' : 'listen',
+            \ 'asking':    s:zh_lang ? '请求' : 'asking',
+            \ 'waiting':   s:zh_lang ? '等待' : 'waitng',
+            \ 'thinking':  s:zh_lang ? '思考' : 'thnkng',
+            \ 'answering': s:zh_lang ? '回答' : 'answer',
+            \ 'complete':  s:zh_lang ? '完成' : 'complt',
+            \ }
 
 " get current chat which its obuf is showing.
 function! s:current_chat() abort
@@ -102,8 +119,24 @@ function! s:raw_to_channel_data(content) abort
     return l:new_content
 endfunction
 
+function! s:update_status_on_channel_data(chat, line) abort
+    let l:status_map = {
+        \ '^<think>\s*$':  s:zai_status_name.thinking,
+        \ '^</think>\s*$': s:zai_status_name.answering,
+        \ '^</small>\s*$': s:zai_status_name.complete
+    \ }
+
+    for [l:pattern, l:status] in items(l:status_map)
+        if a:line =~# l:pattern
+            let a:chat.status = l:status
+            call s:update_chat_status(a:chat)
+            return
+        endif
+    endfor
+endfunction
+
 " print channel data to the buffer
-function! s:print_channel_data(bufnr, channel_data) abort
+function! s:print_channel_data(chat, bufnr, channel_data) abort
     " ensure the buffer is loaded
     if !bufloaded(a:bufnr)
         echohl ErrorMsg
@@ -158,10 +191,12 @@ function! s:print_channel_data(bufnr, channel_data) abort
                     call setbufline(a:bufnr, l:end, l:cur .. l:line)
                     let l:nf_count = 0
                 endif
+                call s:update_status_on_channel_data(a:chat, l:line)
             endif
         endfor
     else
         call appendbufline(a:bufnr, l:end, a:channel_data)
+        call s:update_status_on_channel_data(a:chat, a:channel_data)
     endif
 
     " restore read-only mode
@@ -190,7 +225,11 @@ function! s:task_on_response(channel, msg) abort
     else
         let l:out_msg = iconv(a:msg, 'utf-8', &encoding)
     endif
-    call s:print_channel_data(l:obuf, l:out_msg)
+    if l:chat.status ==# s:zai_status_name.waiting
+        let l:chat.status = s:zai_status_name.answering
+        call s:update_chat_status(l:chat)
+    endif
+    call s:print_channel_data(l:chat, l:obuf, l:out_msg)
 endfunction
 
 " task exit callback
@@ -245,6 +284,7 @@ function! s:task_start() abort
         endif
         let s:zai_jobs[l:task] = {'id': l:chat.id}
         let l:chat.job = l:task
+        let l:chat.status = s:zai_status_name.ready
     endif
 endfunction
 
@@ -312,7 +352,7 @@ function! s:ui_open() abort
                     \ 'obuf': l:obuf,
                     \ 'job': 0,
                     \ 'name': strftime("%H:%M:%S"),
-                    \ 'status': 'ready',
+                    \ 'status': s:zai_status_name.ready,
                     \ }
         let s:zai_chat_id = l:id
     else
@@ -526,6 +566,8 @@ function! zai#chat#Go() abort
     endif
 
     let l:req_msg = iconv(l:request . "\n", &encoding, 'utf-8')
+    let l:chat.status = s:zai_status_name.asking
+    call s:update_chat_status(l:chat)
     if has('nvim')
         " for Neovim
         call jobsend(l:chat.job, l:req_msg)
@@ -539,6 +581,8 @@ function! zai#chat#Go() abort
     let l:content = ['', g:zai_print_prompt[0]] + l:content + ['', g:zai_print_prompt[1]]
     call s:ui_open()
     call s:print_raw(l:chat.obuf, l:content)
+    let l:chat.status = s:zai_status_name.waiting
+    call s:update_chat_status(l:chat)
 
     " Clear the input buffer
     call deletebufline(s:zai_ibuf, 1, '$')
@@ -637,6 +681,23 @@ function! zai#chat#Load() abort
     call deletebufline(s:zai_ibuf, 1, '$')
 endfunction
 
+let s:chat_title_id_format = '%d '
+let s:chat_title_id_max = 0
+function! s:format_chat_title(chat)
+    if s:zai_last_chat_id > s:chat_title_id_max
+        let s:chat_title_id_format = '%' . len(string(s:zai_last_chat_id)) . 'd '
+        let s:chat_title_id_max = s:zai_last_chat_id
+    endif
+    return printf(s:chat_title_id_format, a:chat.id) . '[' . a:chat.status . '] ' . a:chat.name
+endfunction
+
+function! s:update_chat_status(chat)
+    let l:line = s:format_chat_title(a:chat)
+    call setbufvar(s:zai_lbuf, '&modifiable', 1)
+    call setbufline(s:zai_lbuf, a:chat.id + 1, l:line)
+    call setbufvar(s:zai_lbuf, '&modifiable', 0)
+endfunction
+
 function! s:update_chat_list() abort
     call setbufvar(s:zai_lbuf, '&modifiable', 1)
 
@@ -659,7 +720,7 @@ function! s:update_chat_list() abort
 
     for l:id in keys(s:zai_chats)
         let l:chat = s:zai_chats[l:id]
-        let l:line = l:chat['name'] . ' [' . l:chat['status'] . ']'
+        let l:line = s:format_chat_title(l:chat)
         call add(l:lines, l:line)
 
         if l:id == s:zai_chat_id
@@ -687,7 +748,8 @@ function! s:ensure_line_visible(bufnr, line_num) abort
         return
     endif
 
-    let l:win_info = win_execute(l:winid, 'echo winheight(0) . "," . line("w0") . "," . line("w$") . "," . line("$")')
+    let l:win_info = win_execute(l:winid, 'echo winheight(0) . "," .
+                \ line("w0") . "," . line("w$") . "," . line("$")')
     let [l:win_height, l:first_line, l:last_line, l:buf_last_line] = split(l:win_info, ',')
     let l:win_height = str2nr(l:win_height)
     let l:first_line = str2nr(l:first_line)
@@ -780,7 +842,7 @@ function! s:new_chat() abort
                 \ 'obuf': l:obuf,
                 \ 'job': 0,
                 \ 'name': strftime("%H:%M:%S"),
-                \ 'status': 'ready',
+                \ 'status': s:zai_status_name.ready,
                 \ }
     let s:zai_chat_id = l:id
     call s:update_chat_list()
