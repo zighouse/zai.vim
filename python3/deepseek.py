@@ -103,15 +103,15 @@ g_output_mode = 'text'
 g_block_stack = []  # Stack of active blocks, each entry is:
                     # {'type': 'prompt', 'signature': str, 'content': str}
 
-g_prompt = """You are a strict assistant in programming, software engineering and computer science. For each query:
- 1. Identify key issues.
- 2. Propose solutions with pragmatical considerations.
- 3. Conclude with a concise title reflecting the core suggestion."""
 if 'zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', ''):
-    g_prompt = g_prompt + '\n使用中文回答'
-    g_prompt = g_prompt + '\n此外，请在你的回答末尾，单独一行以“### 建议标题：[简洁标题]”的格式提供一个标题总结本次对话的核心，越短越好，尽量不要超过 30 字。'
+    g_prompt = '作为一名严格的编程、软件工程与计算机科学助手，将遵循以下步骤处理每个问题：\n 1. 识别核心问题；\n 2. 提供兼顾可行性与工程实践的解决方案。'
+    # 3. 用简洁的标题总结核心建议。
+    #g_prompt_for_title = '\n使用中文回答'
+    g_prompt_for_title = '\n此外，请在你的回答末尾，单独一行以“### 建议标题：[简洁标题]”的格式提供一个标题总结本次对话的核心，越短越好，尽量不要超过 30 字。'
 else:
-    g_prompt = g_prompt + '\nAdditionally, please provide a line for title in English at the end of your response in the format "### Title: [concise title]" to summarize the core suggestion.'
+    g_prompt = 'You are a strict assistant in programming, software engineering and computer science. For each query:\n 1. Identify key issues.\n 2. Propose solutions with pragmatical considerations.'
+    # 3. Conclude with a concise title reflecting the core suggestion.
+    g_prompt_for_title = '\nAdditionally, please provide a line for title in English at the end of your response in the format "### Title: [concise title]" to summarize the core suggestion.'
 
 g_system_message={'role': 'system', 'content': g_prompt}
 # List of messages, each entry is:
@@ -378,7 +378,7 @@ def get_completion_params():
 
 def generate_response():
     """Generate and process assistant response"""
-    global g_messages, g_config, g_client, g_verbose, g_log
+    global g_messages, g_config, g_client, g_verbose, g_log, g_prompt_for_title
     full_response = []
     reasoning_content = []
     tool_calls = []
@@ -435,6 +435,8 @@ def generate_response():
                 full_response.append(response.choices[0].text)
                 print(response.choices[0].text, flush=True)
         else:
+            if params['messages'][0]['role'] == 'system':
+                params['messages'][0]['content'] = params['messages'][0]['content'] + g_prompt_for_title
             stream = g_client.chat.completions.create(**params)
             for chunk in stream:
                 if not full_response:

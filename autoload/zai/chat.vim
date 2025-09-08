@@ -13,7 +13,7 @@ elseif match(get(environ(), 'LANG', ''), 'zh') != -1 || match(get(environ(), 'LA
 else
     let s:zh_lang = 0
 endif
-let s:title_exp = '^### \(建议标题：\|Title: \)\[\(.\+\)\]\s*$'
+let s:title_exp = '^### \(建议标题：\|Title: \)\s*\(.\+\)\s*$'
 
 let s:zai_status_name = {
             \ 'ready':     s:zh_lang ? '就绪' : 'listen',
@@ -149,7 +149,7 @@ function! s:update_status_on_channel_data(chat, line) abort
         else
             let l:title_match = matchlist(a:line, s:title_exp)
             if !empty(l:title_match)
-                let a:chat.title = l:title_match[2]
+                let a:chat.title = substitute(l:title_match[2], '^\[\+\(.*\)\]\+$', '\1', '')
                 call s:update_chat_status(a:chat)
             endif
         endif
