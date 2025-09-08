@@ -278,9 +278,15 @@ function! s:task_start() abort
         if exists('g:zai_lang')
             let l:env['LANG'] = g:zai_lang
         endif
+        if has('win32')
+            let l:cmd = g:zai_cmd + [ ' --log-filename=' . l:chat.filename ]
+        else
+            let l:cmd = [ g:zai_cmd[0] . ' --log-filename=' . l:chat.filename ]
+        endif
+
         if has('nvim')
             " for Neovim
-            let l:task = jobstart(l:shell + g:zai_cmd, {
+            let l:task = jobstart(l:shell + l:cmd, {
                         \ 'on_stdout': {_, data, __ -> s:task_on_response(0, data)},
                         \ 'on_stderr': {_, data, __ -> s:task_on_response(0, data)},
                         \ 'on_exit': {_, status, __ -> s:task_on_exit(0, status)},
@@ -292,7 +298,7 @@ function! s:task_start() abort
                         \ })
         else
             " for Vim
-            let l:task = job_start(l:shell + g:zai_cmd, {
+            let l:task = job_start(l:shell + l:cmd, {
                         \ 'out_cb':  function('s:task_on_response'),
                         \ 'err_cb':  function('s:task_on_response'),
                         \ 'exit_cb': function('s:task_on_exit'),
@@ -374,6 +380,7 @@ function! s:ui_open() abort
                     \ 'obuf': l:obuf,
                     \ 'job': 0,
                     \ 'name': strftime("%H:%M:%S"),
+                    \ 'filename': strftime('%Y%m%d_%H%M%S.md'),
                     \ 'status': s:zai_status_name.ready,
                     \ 'title': '',
                     \ 'usertitle': '',
@@ -909,6 +916,7 @@ function! s:new_chat() abort
                 \ 'obuf': l:obuf,
                 \ 'job': 0,
                 \ 'name': strftime("%H:%M:%S"),
+                \ 'filename': strftime('%Y%m%d_%H%M%S.md'),
                 \ 'status': s:zai_status_name.ready,
                 \ 'title': '',
                 \ 'usertitle': '',

@@ -75,7 +75,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='repla
 g_verbose = True
 g_log_enabled = True
 g_log_path = None
-def log_init(log_dir=''):
+def log_init(log_dir='', filename=''):
     global g_log_path, g_log_enabled
     if not g_log_enabled:
         g_log_path = None
@@ -86,7 +86,10 @@ def log_init(log_dir=''):
         if isinstance(log_dir, str):
             log_dir = Path(log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_filename = datetime.now().strftime("%Y%m%d_%H%M%S.md")
+        if not filename:
+            log_filename = datetime.now().strftime("%Y%m%d_%H%M%S") + '.md'
+        else:
+            log_filename = filename
         g_log_path = log_dir / log_filename
     except Exception as e:
         print(f"Failed initing log file, error: {e}", file=sys.stderr)
@@ -744,6 +747,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--no-log', action='store_true', help='No log')
     parser.add_argument('--log-dir', '-l', type=str, help='Path of dir to save the logfiles')
+    parser.add_argument('--log-filename', type=str, help='Base name of the logfile')
     parser.add_argument('--json', action='store_true', help='Use JSON format (equivalent to --mode=json)')
     parser.add_argument('--text', action='store_true',  help='Use Text format (equivalent to --mode=text)')
     parser.add_argument('--base-url', type=str, default=DEFAULT_BASE_URL,
@@ -760,7 +764,7 @@ if __name__ == "__main__":
         g_input_mode = 'text'
     g_verbose = False if args.silent else True
     g_log_enabled = False if args.no_log else True
-    log_init(args.log_dir)
+    log_init(args.log_dir, args.log_filename)
 
     g_config['base_url'] = args.base_url
     g_config['model'] = args.model
