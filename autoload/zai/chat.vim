@@ -649,7 +649,7 @@ function! zai#chat#Go() abort
     call deletebufline(s:zai_ibuf, 1, '$')
 endfunction
 
-function! zai#chat#Close() abort
+function! zai#chat#Stop() abort
     let l:chat = s:current_chat()
     if empty(l:chat) || !bufexists(l:chat.obuf)
         return
@@ -1019,6 +1019,43 @@ function! zai#chat#FiltCmd(cmdline) abort
     return a:cmdline
 endfunction
 
+function! zai#chat#Preview() abort
+    let l:chat = s:current_chat()
+    if empty(l:chat)
+        return;
+    endif
+    if has('win32')
+        let l:idx = index(g:zai_cmd, '--log-dir')
+        if l:idx != -1 && l:idx + 1 < len(g:zai_cmd)
+            let l:logdir = g:zai_cmd[l:idx + 1]
+            let l:full_path = l:logdir . '\\' . l:chat.filename
+        endif
+    else
+        let l:cmd = join(g:zai_cmd, ' ')
+        let l:match = matchlist(l:cmd, '--log-dir="\([^ ]\+\)"')
+        if !empty(l:match)
+            let l:logdir = l:match[1]
+            let l:full_path = l:logdir . '/' . l:chat.filename
+        endif
+    endif
+    if empty(l:full_path) || !filereadable(l:full_path)
+        call s:EchoError('Locate log file failed.')
+        return
+    endif
+    execute 'silent! 5split ' . fnameescape(l:full_path)
+    setlocal readonly
+    setlocal buftype=nowrite
+    setlocal bufhidden=hide
+    setlocal noswapfile
+
+    if exists(':MarkdownPreview') == 2
+        let $NODE_NO_WARNINGS = '1'
+        silent! MarkdownPreview
+    else
+        call s:EchoError('MarkdownPreview command not available')
+    endif
+endfunction
+
 function! s:setup_buffer_commands()
     if !exists('b:zai_buffer') || b:zai_buffer >= 1
         return
@@ -1028,10 +1065,13 @@ function! s:setup_buffer_commands()
     command! -buffer -count ZaiNext call zai#chat#Next(<count>)
     command! -buffer -count ZaiPrev call zai#chat#Prev(<count>)
     command! -buffer -nargs=1 ZaiGoto call zai#chat#Goto(<args>)
-    cnoremap <expr> <buffer> <CR>
+    command! -buffer ZaiPreview call zai#chat#Preview()
+    command! -buffer ZaiStop call zai#chat#Stop()
+    cnoremap <silent> <expr> <buffer> <CR>
                 \ getcmdtype() == ':' ?
                 \ "\<C-u>" . zai#chat#FiltCmd(getcmdline()) . "\<CR>" :
                 \ "\<CR>"
+    nnoremap <silent> <buffer> <leader>dp :ZaiPreview<CR>
 
     let b:zai_buffer = 1 " already setup buffer commands
 endfunction

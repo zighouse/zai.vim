@@ -70,10 +70,6 @@ function! zai#Go() abort
     call zai#chat#Go()
 endfunction
 
-function! zai#Close() abort
-    call zai#chat#Close()
-endfunction
-
 function! zai#Complete(mode) abort
     call zai#comp#Complete(a:mode)
 endfunction
@@ -82,14 +78,3 @@ function! zai#Load() abort
     call zai#chat#Load()
 endfunction
 
-function! zai#New() abort
-    call zai#chat#New()
-endfunction
-
-function! zai#Next() abort
-    call zai#chat#Next()
-endfunction
-
-function! zai#Prev() abort
-    call zai#chat#Prev()
-endfunction
