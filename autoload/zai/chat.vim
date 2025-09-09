@@ -17,11 +17,12 @@ let s:title_exp = '^### \(建议标题：\|Title: \)\s*\(.\+\)\s*$'
 
 let s:zai_status_name = {
             \ 'ready':     s:zh_lang ? '就绪' : 'listen',
-            \ 'asking':    s:zh_lang ? '请求' : 'asking',
-            \ 'waiting':   s:zh_lang ? '等待' : 'waitng',
-            \ 'thinking':  s:zh_lang ? '思考' : 'thnkng',
-            \ 'answering': s:zh_lang ? '回答' : 'answer',
-            \ 'complete':  s:zh_lang ? '完成' : 'complt',
+            \ 'ask':       s:zh_lang ? '请求' : 'ask...',
+            \ 'wait':      s:zh_lang ? '等待' : 'wait..',
+            \ 'think':     s:zh_lang ? '思考' : 'think.',
+            \ 'answer':    s:zh_lang ? '回答' : 'answer',
+            \ 'complet':   s:zh_lang ? '完成' : 'finish',
+            \ 'cancel':    s:zh_lang ? '取消' : 'cancel',
             \ }
 
 " for debug
@@ -136,9 +137,9 @@ endfunction
 
 function! s:update_status_on_channel_data(chat, line) abort
     let l:status_map = {
-        \ '^<think>\s*$':  s:zai_status_name.thinking,
-        \ '^</think>\s*$': s:zai_status_name.answering,
-        \ '^</small>\s*$': s:zai_status_name.complete
+        \ '^<think>\s*$':  s:zai_status_name.think,
+        \ '^</think>\s*$': s:zai_status_name.answer,
+        \ '^</small>\s*$': s:zai_status_name.complet
     \ }
 
     for [l:pattern, l:status] in items(l:status_map)
@@ -246,8 +247,8 @@ function! s:task_on_response(channel, msg) abort
     else
         let l:out_msg = iconv(a:msg, 'utf-8', &encoding)
     endif
-    if l:chat.status ==# s:zai_status_name.waiting
-        let l:chat.status = s:zai_status_name.answering
+    if l:chat.status ==# s:zai_status_name.wait
+        let l:chat.status = s:zai_status_name.answer
         call s:update_chat_status(l:chat)
     endif
     call s:print_channel_data(l:chat, l:obuf, l:out_msg)
@@ -264,7 +265,6 @@ function! s:task_on_exit(job, status) abort
     if empty(l:chat.job)
         return
     endif
-    call s:print_raw(l:obuf, 'Zai task is exited, status: ' .. a:status)
     call s:task_stop()
     let l:chat.job = 0
 endfunction
@@ -322,6 +322,8 @@ function! s:task_stop() abort
         return
     endif
 
+    let l:chat.status = s:zai_status_name.cancel
+    call s:update_chat_status(l:chat)
     if has('nvim')
         " for Neovim
         try
@@ -329,7 +331,7 @@ function! s:task_stop() abort
             call jobsend(l:chat.job, ":exit\n")
             sleep 100m
         catch
-            echo 'caught: ' .. v:exception
+            call s:EchoError('caught: ' .. v:exception)
         endtry
         call jobstop(l:chat.job)
     else
@@ -344,11 +346,14 @@ function! s:task_stop() abort
             call ch_sendraw(l:channel, ":exit\n")
             sleep 100m
         catch
-            echo 'caught: ' .. v:exception
+            call s:EchoError('caught: ' .. v:exception)
         endtry
         " force stop the chat_task
         call job_stop(l:chat.job)
     endif
+    let l:chat.job = 0
+    let l:chat.status = s:zai_status_name.ready
+    call s:update_chat_status(l:chat)
 endfunction
 
 " open the plugin interface
@@ -567,16 +572,16 @@ endfunction
 function! s:extract_user_title(lines) abort
     let l:symbol_pattern = '^[[:space:]]*[#*\-+>!@$%^&()\[\]{}|;:,.<>?/\\`_~=]'
     let l:first_line = ''
-    
+
     for l:line in a:lines
         if l:line =~? '^\s*$'
             continue
         endif
-        
+
         if l:line =~? l:symbol_pattern
             continue
         endif
-        
+
         if empty(l:first_line)
             let l:first_line = l:line
         endif
@@ -584,7 +589,7 @@ function! s:extract_user_title(lines) abort
             return strcharpart(l:line, 0, 30)
         endif
     endfor
-    
+
     return l:first_line
 endfunction
 
@@ -622,7 +627,7 @@ function! zai#chat#Go() abort
     endif
 
     let l:req_msg = iconv(l:request . "\n", &encoding, 'utf-8')
-    let l:chat.status = s:zai_status_name.asking
+    let l:chat.status = s:zai_status_name.ask
     call s:update_chat_status(l:chat)
     if has('nvim')
         " for Neovim
@@ -637,7 +642,7 @@ function! zai#chat#Go() abort
     let l:content = ['', g:zai_print_prompt[0]] + l:content + ['', g:zai_print_prompt[1]]
     call s:ui_open()
     call s:print_raw(l:chat.obuf, l:content)
-    let l:chat.status = s:zai_status_name.waiting
+    let l:chat.status = s:zai_status_name.wait
     call s:update_chat_status(l:chat)
 
     " Clear the input buffer
@@ -649,16 +654,7 @@ function! zai#chat#Close() abort
     if empty(l:chat) || !bufexists(l:chat.obuf)
         return
     endif
-
     call s:task_stop()
-
-    " Close the buffer and related windows of Zai.
-    if bufwinid(s:zai_ibuf) != -1
-        execute bufwinnr(s:zai_ibuf) .. 'wincmd c'
-    endif
-    call setbufvar(l:chat.obuf, '&modifiable', 1)
-    silent! call deletebufline(l:chat.obuf, 1, '$')
-    call setbufvar(l:chat.obuf, '&modifiable', 0)
 endfunction
 
 function! s:on_ui_closed()
