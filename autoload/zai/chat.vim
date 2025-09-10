@@ -377,10 +377,9 @@ function! s:ui_open() abort
         setlocal nomodifiable
         setlocal wrap
         setlocal syntax=markdown
-        let &l:statusline = "[Zai-Log]%=%-14.(%l,%c%V%) %P"
         execute 'wincmd L'
         normal! zR
-        let s:zai_chats[l:id] = {
+        let l:chat = {
                     \ 'id': l:id,
                     \ 'obuf': l:obuf,
                     \ 'job': 0,
@@ -391,6 +390,12 @@ function! s:ui_open() abort
                     \ 'usertitle': '',
                     \ }
         let s:zai_chat_id = l:id
+        let s:zai_chats[l:id] = l:chat
+        call setbufvar(l:chat.obuf, '&statusline', '[Zai-Log]' .
+                    \ '[' . l:chat.id . ']' .
+                    \ '[%#ZaiStBold#' . l:chat.status . '%##]' .
+                    \ '[' . l:chat.name . ']' .
+                    \ '%=%-14.(%l,%c%V%) %P')
     else
         let l:id = l:chat.id
         let l:obuf = l:chat.obuf
@@ -753,6 +758,11 @@ endfunction
 
 function! s:update_chat_status(chat)
     let l:line = s:format_chat_title(a:chat)
+    call setbufvar(a:chat.obuf, '&statusline', '[Zai-Log]' .
+                \ '[' . a:chat.id . ']' .
+                \ '[%#ZaiStBold#' . a:chat.status . '%##]' .
+                \ '[' . a:chat.name . ']' .
+                \ '%=%-14.(%l,%c%V%) %P')
     call setbufvar(s:zai_lbuf, '&modifiable', 1)
     call setbufline(s:zai_lbuf, a:chat.id + 1, l:line)
     call setbufvar(s:zai_lbuf, '&modifiable', 0)
@@ -783,6 +793,11 @@ function! s:update_chat_list() abort
     for l:id in keys(s:zai_chats)
         let l:chat = s:zai_chats[l:id]
         let l:line = s:format_chat_title(l:chat)
+        call setbufvar(l:chat.obuf, '&statusline', '[Zai-Log]' .
+                    \ '[' . l:chat.id . ']' .
+                    \ '[%#ZaiStBold#' . l:chat.status . '%##]' .
+                    \ '[' . l:chat.name . ']' .
+                    \ '%=%-14.(%l,%c%V%) %P')
         call add(l:lines, l:line)
 
         if l:id == s:zai_chat_id
@@ -880,6 +895,9 @@ function! s:get_prev_chat(count) abort
     endif
     let l:count = a:count > 0 ? a:count : 1
     let l:target_id = (s:zai_chat_id - l:count) % (s:zai_last_chat_id + 1)
+    if l:target_id < 0
+        let l:target_id = l:target_id + s:zai_last_chat_id + 1
+    endif
     while !has_key(s:zai_chats, l:target_id) && l:target_id > 0
         let l:target_id = l:target_id - 1
     endwhile
@@ -906,8 +924,7 @@ function! s:new_chat() abort
     setlocal nomodifiable
     setlocal wrap
     setlocal syntax=markdown
-    let &l:statusline = "[Zai-Log]%=%-14.(%l,%c%V%) %P"
-    let s:zai_chats[l:id] = {
+    let l:chat = {
                 \ 'id': l:id,
                 \ 'obuf': l:obuf,
                 \ 'job': 0,
@@ -918,6 +935,12 @@ function! s:new_chat() abort
                 \ 'usertitle': '',
                 \ }
     let s:zai_chat_id = l:id
+    let s:zai_chats[l:id] = l:chat
+    call setbufvar(l:chat.obuf, '&statusline', '[Zai-Log]' .
+                \ '[' . l:chat.id . ']' .
+                \ '[%#ZaiStBold#' . l:chat.status . '%##]' .
+                \ '[' . l:chat.name . ']' .
+                \ '%=%-14.(%l,%c%V%) %P')
     call s:update_chat_list()
     call s:goto_iwin()
 endfunction
@@ -1080,3 +1103,5 @@ augroup ZaiAutoSetup
     autocmd!
     autocmd BufEnter * call s:setup_buffer_commands()
 augroup END
+
+highlight ZaiStBold term=inverse,bold cterm=inverse,bold
