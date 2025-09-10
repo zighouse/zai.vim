@@ -201,6 +201,9 @@ COMMANDS:
     {g_cmd_prefix}-><char>             - Change command prefix character
     Valid prefix chars: : / ~ \\ ; ! # $ % & ? @ ^ _ * + = , . < > ` ' " ( ) [ ] {{ }}
 
+  Utility:
+    {g_cmd_prefix}show <config>        - Display configurations or parameters.
+
 EXAMPLES:
   {g_cmd_prefix}model deepseek-coder
   {g_cmd_prefix}temperature 0.5
@@ -644,9 +647,34 @@ def handle_command(command):
         except Exception as e:
             print(f"Error reading file `{file_path}`: {e}", file=sys.stderr)
         return True
+
     if cmd == 'load' and argc == 2:
         load_log(argv[1])
         return True
+
+    # Show options
+    if cmd == 'show' and argc == 2:
+        opt = argv[1].replace('-', '_')
+        if opt in g_config.keys():
+            value = g_config[opt]
+        elif opt == 'prompt':
+            value = g_system_message['content']
+        elif opt == 'log_file':
+            value = g_log_path.absolute()
+        elif argv[1] == '->':
+            value = g_cmd_prefix
+        else:
+            value = ''
+            print(f"Option `{argv[1]}` is unspecified.")
+            return True
+        if isinstance(value, str) and '\n' in value:
+            print(f"{argv[1]} = <<EOF")
+            print(value)
+            print("EOF")
+        else:
+            print(f"{argv[1]} = {value}")
+        return True
+
 
     print(f"unknown command: {command}", file=sys.stderr)
 
