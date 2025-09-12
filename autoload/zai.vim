@@ -49,8 +49,19 @@ function! zai#init() abort
                     \ . ' --base-url=' . s:fim_url . ' --api-key-name=' . s:fim_api_key_name . ' --model=' . s:fim_model ]
     endif
 
+    if exists('g:zai_lang') && match(g:zai_lang, 'zh') != -1
+      let s:zh_lang = 1
+    elseif match(get(environ(), 'LANG', ''), 'zh') != -1 || match(get(environ(), 'LANGUAGE', ''), 'zh') != -1
+      let s:zh_lang = 1
+    else
+      let s:zh_lang = 0
+    endif
     if !exists('g:zai_print_prompt')
+      if s:zh_lang
+        let g:zai_print_prompt = ['**用户：**', '**助手：**']
+      else
         let g:zai_print_prompt = ['**User:**', '**Assistant:**']
+      endif
     endif
 endfunction
 

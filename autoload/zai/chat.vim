@@ -137,9 +137,10 @@ endfunction
 
 function! s:update_status_on_channel_data(chat, line) abort
     let l:status_map = {
-        \ '^<think>\s*$':  s:zai_status_name.think,
-        \ '^</think>\s*$': s:zai_status_name.answer,
-        \ '^</small>\s*$': s:zai_status_name.complet
+        \ '^<think>':  s:zai_status_name.think,
+        \ '^\V' . g:zai_print_prompt[1] . '<think>':  s:zai_status_name.think,
+        \ '^</think>': s:zai_status_name.answer,
+        \ '^</small>': s:zai_status_name.complet
     \ }
 
     for [l:pattern, l:status] in items(l:status_map)
@@ -196,6 +197,7 @@ function! s:print_channel_data(chat, bufnr, channel_data) abort
             if l:break
                 let l:end += 1
                 call setbufline(a:bufnr, l:end, l:line)
+                call s:update_status_on_channel_data(a:chat, l:line)
             else
                 if l:line == ''
                     let l:nf_count += 1
@@ -211,9 +213,9 @@ function! s:print_channel_data(chat, bufnr, channel_data) abort
                     " append to the last line of the buffer
                     let l:cur = getbufline(a:bufnr, l:end)[0]
                     call setbufline(a:bufnr, l:end, l:cur .. l:line)
+                    call s:update_status_on_channel_data(a:chat, getbufline(a:bufnr,l:end)[0])
                     let l:nf_count = 0
                 endif
-                call s:update_status_on_channel_data(a:chat, l:line)
             endif
         endfor
     else
