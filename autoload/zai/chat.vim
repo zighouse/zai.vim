@@ -859,6 +859,8 @@ function! s:ensure_line_visible(bufnr, line_num) abort
             endif
         endif
     endif
+    " Move cursor to line_num at column 1 without changing window focus
+    call win_execute(l:winid, 'call cursor(' . a:line_num . ', 1)')
 endfunction
 
 function! s:select_chat(chat_id) abort
