@@ -661,7 +661,7 @@ def handle_command(command):
             value = g_system_message['content']
         elif opt == 'log_file':
             value = g_log_path.absolute()
-        elif argv[1] == '->':
+        elif argv[1] == 'prefix':
             value = g_cmd_prefix
         else:
             value = ''

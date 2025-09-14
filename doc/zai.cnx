@@ -1,58 +1,45 @@
-*zai.txt*      Zai.Vim DeepSeek AI助手使用手册
+*zai.txt*      Zai.Vim AI 助手 1.0      最近更新: 2025-09-14
 
-ZAI 插件                                                    *zai* *zai-plugin*
 
-==============================================================================
-目录                                                            *zai-contents*
+                    Zai.Vim AI 助手   使用手册
+
+
+ZAI.Vim 插件                                            *zai* *zai-plugin*
+
 
 1. 简介 ................................................ |zai-intro|
-2. 功能特性 ............................................ |zai-features|
-3. 安装指南 ............................................ |zai-installation|
-   3.1 环境要求 ........................................ |zai-requirements|
-   3.1 通过插件管理器安装  ............................. |zai-plugin-managers|
-4. 基本概念 ............................................ |zai-concepts|
-   4.1 日志系统 ........................................ |zai-log|
-   4.2 会话模式 ........................................ |zai-talk-mode|
-5. 使用说明 ............................................ |zai-usage|
-   5.1 快捷键映射 ...................................... |zai-keymaps|
-   5.2 会话指令 ........................................ |zai-commands|
-   5.3 模型参数设置 .................................... |zai-parameters|
-   5.4 提示词系统 ...................................... |zai-prompts|
-   5.5 文件附件功能 .................................... |zai-files|
+2. 安装指南 ............................................ |zai-installation|
+3. Zai 配置 ............................................ |zai-config|
+4. VIM 命令............................................. |zai-commands|
+5. 会话命令 ............................................ |zai-chat-commands|
 6. 许可证 .............................................. |zai-license|
 
 ==============================================================================
-1. 简介                                                            *zai-intro*
+1. 简介                                                 *zai-intro*
 
-Zai.Vim 是一款将 DeepSeek AI 助手直接集成到 Vim 编辑器的插件。有以下核心功能：
+Zai.Vim 是一款将 AI 助手直接集成到 Vim 编辑器的插件，管理着同时打开的多个 AI
+聊天会话，记录日志，也可以加载日志继续曾经的聊天。切换随意，控制随心。
 
-- 双窗格交互界面
 - 灵活切换模型和提示词
-- 上下文文件附件支持
-- 完整的会话日志记录
+- 附件支持
+- 多会话支持
+- 会话日志保存、加载以及预览
 
 ==============================================================================
-2. 功能特性                                                     *zai-features*
+2. 安装指南                                             *zai-installation*
 
-- 双窗格界面：独立的输入/输出窗口实现无缝交互
-- 动态配置：支持会话中途变更模型、提示词等参数
-- 文件上下文：支持附加文本文件作为对话背景
-- 会话模式：提供链式/即时两种对话模式
-- 历史记录：自动保存完整对话日志
-
-==============================================================================
-3. 安装指南                                                 *zai-installation*
-
-3.1 环境要求                                                *zai-requirements*
+2.1 环境要求                                            *zai-requirements*
 >
    - Vim 8.0+ 或 Neovim
    - Python 3.6+
-   - DeepSeek API密钥（设置到`DEEPSEEK_API_KEY`环境变量）
+   - AI API KEY
+     - 例如: DeepSeek API 密钥（设置到`DEEPSEEK_API_KEY`环境变量）
    - 必需Python包：
      - `openai`（缺失时自动安装）
+   - 可选 iamcco/markdown-preview.nvim
 <
 
-3.2 通过插件管理器安装                                   *zai-plugin-managers*
+2.2 通过插件管理器安装                                  *zai-plugin-managers*
 
 使用 vim-plug: >
    Plug 'zighouse/zai'
@@ -65,135 +52,321 @@ Zai.Vim 是一款将 DeepSeek AI 助手直接集成到 Vim 编辑器的插件。
        {
            "zighouse/zai.vim",
            config = function()
-               vim.g.zai_default_model = "deepseek-coder"
+            MarkdownPreview.vim   vim.g.zai_default_model = "deepseek-chat"
            end
        }
    }
 <
 手动安装:
 
-在 Linux/Mac 上的内嵌终端命令窗口上执行的命令：>
-pip install appdirs chardet openai
-mkdir -p ~/.vim/pack/plugins/start
-cd ~/.vim/pack/plugins/start
-git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
-git checkout
+在 Linux/Mac 上的内嵌终端命令窗口上执行的命令：
+>
+    pip install appdirs chardet openai
+    mkdir -p ~/.vim/pack/plugins/start
+    cd ~/.vim/pack/plugins/start
+    git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
+    git checkout
 <
 
-在 Windows 上的内嵌终端命令窗口上执行的命令：>
-pip install appdirs chardet openai
-md %USERPROFILE%\vimfiles\pack\plugins\start
-cd %USERPROFILE%\vimfiles\pack\plugins\start
-git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
-git checkout
+在 Windows 上的内嵌终端命令窗口上执行的命令：
+>
+    pip install appdirs chardet openai
+    md %USERPROFILE%\vimfiles\pack\plugins\start
+    cd %USERPROFILE%\vimfiles\pack\plugins\start
+    git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
+    git checkout
 <
 
 进入安装目录下执行 `git pull` 即可手动更新。
 
-也可以[下载 zip 包](https://github.com/zighouse/zai.vim/archive/refs/heads/main.zip)，解压后把 zai.vim-main 文件夹放到对应的目录下。
+也可以下载 zip 包
+[Zai.Vim](https://github.com/zighouse/zai.vim/archive/refs/heads/main.zip)，
+解压后把 zai.vim-main 文件夹放到对应的目录下。
 
 ==============================================================================
-4. 基本概念                                                     *zai-concepts*
+3. Zai 配置                                             *zai-config*
+                                                        *zai-conf-logdir*
+g:zai_log_dir           配置日志文件保存路径。
 
-4.1 日志系统                                                         *zai-log*
-日志文件保存路径：
-- Linux/Mac: `~/.local/share/zai/log`
-- Windows: `%USERPROFILE%\AppData\Local\zai\log`
-- 可通过`g:zai_log_dir`自定义
+                        默认配置为:
+                        * Linux/Mac: `~/.local/share/zai/log`
+                        * Windows: `%USERPROFILE%\AppData\Local\zai\log`
 
+                                                        *zai-lang*
+g:zai_lang              配置 Zai 的界面语言。
+                        默认使用英语，或者按用户环境自行选择。
+                        如果希望指定使用中文，需要配置为：
+>
+ let g:zai_lang = 'zh_CN.UTF-8'
+<
 推荐：在 Windows 上配置新的日志存放路径。Windows 上的默认日志存放路径被系统隐
 藏，使用不便利。
 
-4.2 会话模式                                                   *zai-talk-mode*
+                                                        *zai-conf-url*
+g:zai_base_url          配置 AI 服务的 `base-url`。见 |zai-chatcmd-model|.
 
-两种会话模式：
-- *链式模式*：携带完整历史上下文（适合复杂问题）
-- *即时模式*：仅发送当前内容（适合简单问答）
+                                                        *zai-conf-apikey*
+g:zai_api_key_name      配置 AI 服务的 `api-key-name`。见 |zai-chatcmd-model|.
+                        连接 AI 服务时需要提供服务接口访问密钥。用户需要在操作
+                        系统的环境变量中预先设置可以访问到这个密钥的环境变量。
+                        这里的 `api-key-name` 就是这个环境变量的名称。
 
-切换方式（输入框中发送）：
+                  例如: linux 上可在 `~/.bashrc` 中设置环境变量：
 >
-   :talk_mode chain    " 链式模式
-   :talk_mode instant  " 即时模式
+ DEEPSEEK_API_KEY=sk-********************************
 <
+                        然后就可以使用 `DEEPSEEK_API_KEY` 来完成这项配置。
+
+                                                        *zai-conf-model*
+g:zai_default_model     配置 AI 服务的缺省模型`。见 |zai-chatcmd-model|.
 
 ==============================================================================
-5. 使用说明                                                        *zai-usage*
+4. VIM 命令                                             *zai-commands*
 
-5.1 快捷键映射                                                   *zai-keymaps*
+                                                        *:Zai*
+:Zai                    打开 Zai 聊天交互界面。全 VIM 可用。
+<leader>zo              normal 模式可用 <leader>zo, 命令模式可用 :Zai.
 
-     快捷键      命令         描述                      模式    ~
-     `<Leader>zo`  `:Zai`         打开交互界面              普通模式
-     `<Leader>zg`  `:ZaiGo`       发送当前输入              插入模式
-     `<Leader>zX`  `:ZaiClose`    关闭当前会话              普通模式
-     `<Leader>za`  `:ZaiAdd`      添加选区到输入区          可视模式
-     `<CR>` 输入窗口 `:ZaiGo`     发送当前输入区内容        普通模式
+:q                      关闭 Zai 聊天交互界面。仅 Zai 聊天交互界面可用。
 
-5.2 会话指令                                                    *zai-commands*
+                                                        *:ZaiGo*
+:ZaiGo                  发送输入窗口中的内容。全 VIM 可用。
+<CR>                    输入窗口 normal 模式可用。
 
-在输入框中使用以下指令（需通过ZaiGo发送）：
+                                                        *zai-ui*
+Zai 聊天交互界面由三部分构成：
+ - 顶部: 列表窗口，管理聊天会话列表；
+ - 中间: 展示窗口，显示聊天交互内容；
+ - 底部: 输入窗口，提问及发送命令。
+在 Zai 界面上可以使用 Zai 的编辑命令，聊天会话列表以及聊天内容禁止用户做变更。
 
->
-   :help               " 显示帮助信息
-   :exit/:quit         " 强制退出后台任务
-   :model <名称>       " 设置使用模型
-   :temperature <值>   " 设置创造性参数(0-2)
-   :prompt <文本>      " 设置系统提示词
-   :file <路径>        " 附加文本文件
-   :->/                " 更改指令前缀为/
-<
+打开交互界面默认创建第一个 Zai 聊天会话，会话标识从 0 开始。
 
-5.3 模型参数设置                                              *zai-parameters*
+当用户在输入窗口中编辑好请求内容后，退出 insert 模式后，通过<CR>(回车键)发送。
+发送内容后，输入窗口自动清空并等待用户的再次输入。
 
-参数设置示例：
->
-   :model deepseek-reasoner  " 切换推理模型
-   :temperature 0.3          " 设置生成温度系数
-   :-temperature             " 清除温度设置
-<
+Zai 会在展示窗口中同时展示用户发送的请求，以及远程助手服务响应或者错误消息。
+默认 Zai 打开了日志记录，会在展示内容的最下面提示记录了当前聊天的日志文件的具
+体路径。
 
-支持参数列表：
-- top_p
-- max_tokens
-- presence_penalty
-- frequency_penalty
-- logprobs
+Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 VIM 中加载的其它内容。
+用户可以通过 :q 关闭 Zai 界面恢复它所占用的屏幕面积，这时 Zai 并没有暂停而是在
+后台继续工作，例如继续接收还没有结束的回答。用户可以在任何时候再次通过 :Zai 命
+令打开后台的 Zai 交互界面。
 
-5.4 提示词系统                                                   *zai-prompts*
+                                                        *:ZaiAdd*
+:ZaiAdd                 添加选中内容到输入窗口。全 VIM 可用。
+<leader>za              visual 模式可用 <leader>za, 从 visual 进入命令模式可用
+                        :ZaiAdd.
 
-单行提示词设置：
->
-   :prompt 请分三个角度分析问题
-<
+                        把用户在当前编辑的 VIM 窗口中选中的内容作为一个内容块
+                        追加到输入窗口的底部，并把编辑焦点切换到输入窗口的内容
+                        块插入处。用户可以在输入窗口做任意编辑或者补充，待描述
+                        完整后再发送。
 
-多行提示词（块状语法）：
->
-   :prompt<<PROMPT
-   - 作为代码专家AI，请分步分析问题
-   - 解决方案格式：
-     ### [标题]
-     [分步说明]
-   PROMPT
-<
+                                                        *:ZaiNew*
+:ZaiNew                 新建聊天。仅 Zai 聊天交互界面可用。
+:new                    创建一个新的 Zai 聊天会话，并选中这个新聊天，输入窗口
+                        中的内容不清除，可以直接发送到新聊天。
 
-清除提示词：
->
-   :-prompt
-<
+                                                        *:ZaiPrev*
+:[count]ZaiPrev         选中前面的聊天。仅 Zai 聊天交互界面可用。
+:[count]cp              count 是可选参数，表示要选中聊天列表中当前选中项的前面
+                        第几项，缺省选中前一项。
 
-5.5 文件附件功能                                                   *zai-files*
+                        在列表项中也可以通过移动光标到待选项上，然后通过 <CR>
+                        (回车键) 来选中它。
 
-附加文件：
->
-   :file relative/path.txt
-<
+                        当一项聊天会话被选中时，展示窗口将替换为选中聊天的内容，
+                        输入窗口中的内容不清除，直接发送给被选中的聊天。
 
-清除附件：
->
-   :-file
-<
+                                                        *:ZaiNext*
+:[count]ZaiNext         选中后面的聊天。仅 Zai 聊天交互界面可用。
+:[count]cn              count 是可选参数，作用类似于 |:ZaiPrev|。
+
+                                                        *:ZaiGoto*
+:ZaiGoto id             选中 id 指定的聊天。仅 Zai 聊天交互界面可用。
+:cn id                  id 是必选参数，是列表窗口中列出的聊天的索引。
+
+                                                        *:ZaiPreview*
+:ZaiPreview             在浏览器中展示聊天内容。仅 Zai 聊天交互界面可用。
+<leader>dp              Zai 聊天交互界面的 normal 模式可用。
+
+                        依赖于 |:MarkdownPreview| 命令，需要插件
+                        `iamcco/markdown-preview.nvim`.
+
+                        依赖于聊天的日志功能，关闭了日志的聊天不可用。
+
+                                                        *:ZaiLoad*
+:ZaiLoad                把在当前窗口中打开的 Zai 聊天日志加载成聊天上下文。
+<leader>zl              全 VIM 可用。
+
+                        Zai 可以把曾经记录的聊天会话日志加载到新的聊天中作为上
+                        下文，这将会使这个聊天中的 AI 助手在接下来的回答中利用
+                        这些信息。用户可以通过这种方式来继续之前没有达到预期的
+                        聊天。聊天日志的路径参见 |zai-ui| |zai-log|.
 
 ==============================================================================
-6. 许可证                                                        *zai-license*
+5. 会话命令                                             *zai-chat-commands*
+
+除了在 Zai 交互界面窗口中使用的 VIM 命令 |zai-commands| 之外，还可以在输入窗口
+的待发送内容中使用会话命令 |zai-chat-commands|。
+
+会话命令主要涉及 AI 助手的工作配置。
+
+和 VIM 命令不同，会话命令不由 VIM 的窗口或者缓冲区处理，而是发送给 Zai AI 助手
+让它在后台处理的。会话命令可以单独发送给 Zai AI 助手，也可以和用户的请求合并在
+一起发送。
+
+会话命令由命令前缀、命令名称、命令参数三部分构成，例如：
+>
+ :file my-sort.cpp
+ |-+-- -+---------
+ | |    |
+ | |    命令参数
+ | |
+ | 命令名称
+ |
+ 会话命令前缀字符
+<
+默认情况下，类似于 VIM 的命令模式类型，使用半角冒号作会话命令前缀，用户可以通
+过 |zai-chat-command-prefix| 变更当前会话的命令前缀。
+
+                                                        *zai-chatcmd-preifx*
+:->?                    设置当前会话的命令前缀。会话命令 |zai-chat-commands|.
+                        仅影响当前会话。把会话命令前缀字符变更为新的字符。
+                        
+                        默认会话命令前缀字符是 `:`，可以充当前缀的字符有:
+>
+      : / ~ \ ; ! # $ % & ? @ ^ _ * + = , . < > ` ' " ( ) [ ] { }
+<
+
+                                                        *zai-chatcmd-help*
+:help                   显示会话命令帮助。会话命令 |zai-chat-commands|.
+                        在展示窗口打印会话命令的帮助信息。
+
+                                                        *zai-chatcmd-exit*
+:exit                   强制退出远程 AI 服务。会话命令 |zai-chat-commands|.
+:quit                   当希望取消连接到远程的 AI 服务时，可以使用 exit 或者
+                        quit 会话命令。
+
+                                                        *zai-chatcmd-show*
+:show `config`            显示 AI 助手的配置项。会话命令 |zai-chat-commands|.
+                        显示内容在展示窗口打印。如果用户没有设置过某项配置，系
+                        统可能会打印配置项不存在。
+
+                        可以显示的配置项(config)有:
+
+    `api-key-name`      AI API Key Name                  |zai-apikey|
+    `base-url`          AI API Base URL                  |zai-baseurl|
+    `model`             AI 系统模型                      |zai-chatcmd-model|
+    `prompt`            AI 系统提示词                    |zai-chatcmd-prompt|
+    `temperature`       创造性参数，浮点，范围 [0,2]     |zai-chatcmd-params|
+    `max-tokens`        AI 最大词元，整数
+    `logprobs`          顶部词元概率，浮点，范围[0,20]
+    `top-p`             Top-P词元，浮点，范围[0,1]
+    `presence-penalty`  重复惩罚，浮点，范围[-2,2]
+    `frequence-panelty` 高频惩罚，浮点，范围[-2,2]
+    `log-file`          记录当前聊天的日志文件全路径     |zai-log|
+    `prefix`            会话命令前缀                     |zai-chatcmd-prefix|
+
+                                                        *zai-chatcmd-file*
+:file `file-path`         附加 `file-path` 指定的文本文件到当前聊天的输入请求中用
+                        作参考。会话命令 |zai-chat-commands|.
+:-file                  清除所有附件。
+
+                  注意: 附加的文本文件会作为 AI 请求输入的一部分，会在 AI 服务
+                        中计入输入词元计费。当在聊天中曾经附加过某个文件时，如
+                        果想在新的提问中引用它，不必重复附加，只需提及文件名。
+
+                                                        *zai-chatcmd-model*
+:model `model-name`       指定当前聊天的 AI 模型。会话命令 |zai-chat-commands|.
+                        改变当前聊天中使用的 AI 系统模型。
+
+                  注意: 当前的版本不支持在当前聊天中改变 `base-url`、`api-key-name`
+                        等配置项，所以允许改变的模型名称依赖于当前 `base-url`
+                        提供的 AI 服务，这不是 Zai 提供的。
+
+                        以 deepseek 提供的服务为例，
+                        对应的 `base-url` 为 https://api.deepseek.com ，提供了
+                        两种可选的模型：`deepseek-chat` 和 `deepseek-reasoner`.
+
+                        `base-url` 目前只提供全局的配置，比如在 `~/.vimrc` 中
+                        做如下设置: (见 |zai-config|)
+>
+ let g:zai_base_url = "https://api.deepseek.com"
+ let g:zai_api_key_name = "DEEPSEEK_API_KEY"
+ let g:zai_default_model = "deepseek-chat"
+<
+                        以上配置了当创建新聊天时使用的 `base-url` 和
+                        `api-key-name` 以及缺省的 AI 模型。
+                        之后可以使用 `:model` 会话命令来改变当前聊天的内容，即
+                        使已经使用了 `deepseek-chat` 模型做过了一轮交互，也可
+                        以继续变更为使用 `deepseek-reasoner` 作为新一轮交
+                        互的模型。
+>
+ :model deepseek-reasoner
+<
+                        当使用其它 `base-url` 时一般会有不同的模型名称，具体参
+                        见服务提供商的 API 文档。又例如，以下为硅基流动做的配
+                        置:
+>
+ let g:zai_base_url = "https://api.siliconflow.cn"
+ let g:zai_api_key_name = "SILICONFLOW_API_KEY"
+ let g:zai_default_model = "deepseek-ai/DeepSeek-R1"
+<
+                  注意: 硅基流动的同一模型对应的名称与 deepseek 的并不一致。
+                        已经测试并确认过的硅基流动的模型有:
+                         * `deepseek-ai/DeepSeek-R1`
+                         * `deepseek-ai/DeepSeek-V3`
+                         * `Qwen/QwQ-32B`
+
+                                                        *zai-chatcmd-prompt*
+:prompt `text`            设置当前聊天新的提示词。会话命令 |zai-chat-commands|.
+:-prompt                取消设置过的提示词 (使用 Zai 默认的提示词)。
+
+                        提示词是十分重要的 AI 模型配置，直接影响到 AI 助手提供
+                        答案的质量。
+
+                        当需要设置的提示词仅有一行时，可以直接使用单行提示词设
+                        置方式来设置，例如：
+>
+ :prompt 请作为熟悉计算机科技领域的专业翻译为用户提供帮助。
+<
+                        当需要设置的提示词超过一行时，需要使用块状语法来设置，
+                        例如：
+>
+ :prompt<<EOF
+ 作为代码专家助手，请按步骤来分析问题。
+ 在提供解决方案时，请套用格式：
+   ### [标题]
+   [分步说明]
+   ### 总结: [一句话总结核心]
+ EOF
+<
+                                                        *zai-chatcmd-params*
+:temperature `float`      设置当前聊天的创造性参数。会话命令 |zai-chat-commands|.
+                        浮点，范围[0,2]. 此参数越低，获得的 AI 响应越精准。
+
+:-temperature           取消之前设置过的创造性参数。会话命令 |zai-chat-commands|.
+
+除了 `temperature` 之外，还支持如下模型参数的设置或者取消设置:
+    * `top_p`              Top-P词元，浮点，范围[0,1]
+    * `max_tokens`         AI 最大词元，整数
+    * `presence_penalty`   重复惩罚，浮点，范围[-2,2]
+    * `frequency_penalty`  高频惩罚，浮点，范围[-2,2]
+    * `logprobs`           顶部词元概率，浮点，范围[0,20]
+
+                                                        *zai-chatcmd-nolog*
+:no-log                  关闭聊天日志。会话命令 |zai-chat-commands|.
+:-no-log                 取消关闭，即打开聊天日志。
+                         关闭了聊天日志之后，将不再把新的内容存入日志。
+
+                   注意: 当前版本关闭了聊天日志之后，不能进行预览。
+                         见 |:ZaiPreview|.
+
+==============================================================================
+6. 许可证                                               *zai-license*
 
 MIT 许可证发布，详情见：
 https://github.com/zighouse/zai/blob/main/LICENSE

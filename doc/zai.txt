@@ -1,231 +1,446 @@
-*zai.txt*    DeepSeek AI Assistant for Vim
+*zai.txt*      Zai.Vim AI Assistant 1.0      Last Updated: 2025-09-14
 
-ZAI PLUGIN                                                  *zai* *zai-plugin*
 
-==============================================================================
-CONTENTS                                                        *zai-contents*
+                    Zai.Vim AI Assistant   User Manual
 
-1. Introduction ..................................... |zai-intro|
-2. Features ......................................... |zai-features|
-3. Installation ..................................... |zai-installation|
-  3.1 Requirements ................................. |zai-requirements|
-  3.2 Plugin Managers .............................. |zai-plugin-managers|
-4. Core Concepts .................................... |zai-core-concepts|
-  4.1 Session Logs ................................. |zai-logs|
-  4.2 Session Modes ................................ |zai-talk-modes|
-5. Usage ............................................ |zai-usage|
-  5.1 Key Mappings ................................. |zai-key-mappings|
-  5.2 Session Commands ............................. |zai-session-commands|
-  5.3 Talk Modes ................................... |zai-talk-modes|
-  5.4 Specifying AI Base URL ....................... |zai-base-url|
-  5.5 Specifying API-KEY variable name ............. |zai-api-key-name|
-  5.6 Specifying Models ............................ |zai-models|
-  5.7 Creativity Parameters ........................ |zai-creativity|
-  5.8 Multi-line Input ............................. |zai-multiline|
-  5.9 Attaching Files .............................. |zai-attach-files|
-  5.10 Command Prefix .............................. |zai-command-prefix|
-6. License .......................................... |zai-license|
+
+ZAI.Vim PLUGIN                                          *zai* *zai-plugin*
+
+
+1. Introduction .......................................  |zai-intro|
+2. Installation Guide .................................  |zai-installation|
+3. Zai Configuration ..................................  |zai-config|
+4. VIM Commands .......................................  |zai-commands|
+5. Chat Commands ......................................  |zai-chat-commands|
+6. License ............................................  |zai-license|
 
 ==============================================================================
-1. INTRODUCTION                                                    *zai-intro*
+1. INTRODUCTION                                         *zai-intro*
 
-Zai.Vim is a Vim plugin that seamlessly integrates the DeepSeek AI Assistant
-into your Vim editor. It allows you to access DeepSeek's intelligent services
-while coding or writing documents, without interrupting your workflow.
+Zai.Vim is a plugin that integrates an AI assistant directly into the Vim
+editor, managing multiple simultaneously open AI chat sessions, logging
+conversations, and allowing loading of logs to resume previous chats. Switch
+freely, control at will.
 
-==============================================================================
-2. FEATURES                                                     *zai-features*
-
-- Dual-pane Interface: Independent input/output windows for smooth interaction
-- Flexible Configuration: Switch models/prompts mid-conversation
-- File Attachments: Attach text files as conversation context
-- Session Logging: Automatic conversation history preservation
+- Flexible model and prompt switching
+- Attachment support
+- Multi-session support
+- Session log saving, loading, and previewing
 
 ==============================================================================
-3. INSTALLATION                                             *zai-installation*
+2. INSTALLATION GUIDE                                   *zai-installation*
 
-3.1 REQUIREMENTS                                            *zai-requirements*
-
-- Vim 8.0+ or Neovim
-- Python 3.6+
-- DeepSeek API key (set as `DEEPSEEK_API_KEY` environment variable)
-- Required Python packages:
-  - `openai` (auto-install attempted if missing)
-
-3.2 PLUGIN MANAGERS                                      *zai-plugin-managers*
-
-With vim-plug: >
-  Plug 'zighouse/zai'
-<
-With Vundle: >
-  Plugin 'zighouse/zai'
-<
-With lazy.nvim: >
-  return {
-      {
-          "zighouse/zai.vim",
-          config = function()
-              vim.g.zai_default_model = "deepseek-coder"
-          end
-      }
-  }
+2.1 Requirements                                        *zai-requirements*
+>
+   - Vim 8.0+ or Neovim
+   - Python 3.6+
+   - AI API KEY
+     - e.g., DeepSeek API Key (set in the `DEEPSEEK_API_KEY` environment variable)
+   - Required Python packages:
+     - `openai` (automatically installed if missing)
+   - Optional iamcco/markdown-preview.nvim
 <
 
-Manual Installation: 
+2.2 Installation via Plugin Manager                     *zai-plugin-managers*
 
-Type following commands on the terminal window:
+Using vim-plug: >
+   Plug 'zighouse/zai'
+<
+Using Vundle: >
+   Plugin 'zighouse/zai'
+<
+Using lazy.nvim (Neovim configuration example): >
+   return {
+       {
+           "zighouse/zai.vim",
+           config = function()
+            MarkdownPreview.vim   vim.g.zai_default_model = "deepseek-chat"
+           end
+       }
+   }
+<
+Manual Installation:
 
-When on Linux/Mac: >
-pip install appdirs chardet openai
-mkdir -p ~/.vim/pack/plugins/start
-cd ~/.vim/pack/plugins/start
-git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
-git checkout
+Commands to execute in the embedded terminal on Linux/Mac:>
+    pip install appdirs chardet openai
+    mkdir -p ~/.vim/pack/plugins/start
+    cd ~/.vim/pack/plugins/start
+    git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
+    git checkout
 <
 
-When on Windows: >
-pip install appdirs chardet openai
-md %USERPROFILE%\vimfiles\pack\plugins\start
-cd %USERPROFILE%\vimfiles\pack\plugins\start
-git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
-git checkout
+Commands to execute in the embedded terminal on Windows:>
+    pip install appdirs chardet openai
+    md %USERPROFILE%\vimfiles\pack\plugins\start
+    cd %USERPROFILE%\vimfiles\pack\plugins\start
+    git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
+    git checkout
 <
 
-Using `git pull` to keep it updated.
+Navigate to the installation directory and execute `git pull` to manually update.
 
-Alternatively, you can [download the zip](https://github.com/zighouse/zai.vim/archive/refs/heads/main.zip) file and unzip it in the path.
+Alternatively, download the zip package
+[Zai.Vim](https://github.com/zighouse/zai.vim/archive/refs/heads/main.zip),
+extract it, and place the zai.vim-main folder into the corresponding directory.
 
 ==============================================================================
-4. CORE CONCEPTS                                           *zai-core-concepts*
+3. ZAI CONFIGURATION                                    *zai-config*
+                                                        *zai-conf-logdir*
+g:zai_log_dir           Configures the save path for log files.
 
-4.1 SESSION LOGS                                                    *zai-logs*
+                        Default configuration:
+                        * Linux/Mac: `~/.local/share/zai/log`
+                        * Windows: `%USERPROFILE%\AppData\Local\zai\log`
 
-Zai automatically saves conversation history. Each session (from opening Zai
-until closing with `:ZaiClose`) generates a log file:
-
-- Linux/Mac: `~/.local/share/zai/log`
-- Windows: `%USERPROFILE%\AppData\Local\zai\log`
-- Or specified by `g:zai_log_dir`
-
+                                                        *zai-lang*
+g:zai_lang              Configures the UI language for Zai.
+                        Defaults to English, or auto-selects based on the user environment.
+                        To specify Chinese, configure as follows:
+>
+ let g:zai_lang = 'zh_CN.UTF-8'
+<
 Recommendation: Configure a new log storage path on Windows. The default log
-storage path on Windows is hidden by the system, making it inconvenient to
-use.
+path on Windows is hidden by the system and is inconvenient to use.
 
-4.2 SESSION MODES                                             *zai-talk-modes*
+                                                        *zai-conf-url*
+g:zai_base_url          Configures the `base-url` for the AI service.
+                        See |zai-chatcmd-model|.
 
-- Chain Mode: Maintains full conversation context (ideal for complex tasks)
-- Instant Mode: Single-turn interactions (ideal for simple Q&A)
+                                                        *zai-conf-apikey*
+g:zai_api_key_name      Configures the `api-key-name` for the AI service.
+                        See |zai-chatcmd-model|.
+                        An API access key is required to connect to the AI
+                        service. Users must pre-set an environment variable in
+                        the operating system that contains this key.
 
-Switch modes using session commands: >
-  :talk_mode chain   # Enable chain mode
-  :talk_mode instant # Enable instant mode
+                        The `api-key-name` here is the name of that environment
+                        variable.
+
+                  e.g.: On Linux, set the environment variable in `~/.bashrc`:
+>
+ DEEPSEEK_API_KEY=sk-********************************
 <
+                        Then you can use `DEEPSEEK_API_KEY` to complete this
+                        configuration.
+
+                                                        *zai-conf-model*
+g:zai_default_model     Configures the default model for the AI service.
+                        See |zai-chatcmd-model|.
 
 ==============================================================================
-5. USAGE                                                           *zai-usage*
+4. VIM COMMANDS                                         *zai-commands*
 
-5.1 KEY MAPPINGS                             *zai-commands* *zai-key-mappings*
+                                                        *:Zai*
+:Zai                    Open the Zai chat interaction interface.
+                        Available throughout VIM.
+<leader>zo              Available in normal mode: <leader>zo;
+                        available in command mode: :Zai.
 
-  Key Binding    Command      Description                     Mode   ~
-  `<Leader>zo`     `:Zai      `   Open Zai interface              Normal 
-  `<Leader>zg`     `:ZaiGo    `   Send query                      Insert 
-  `<Leader>zX`     `:ZaiClose `   Close session                   Normal 
-  `<Leader>za`     `:ZaiAdd   `   Add visual selection to input   Visual 
-  `<CR>` InputArea `:ZaiGo    `   Send query                      Normal
+:q                      Close the Zai chat interaction interface.
+                        Only available within the Zai chat interface.
 
-5.2 SESSION COMMANDS                                    *zai-session-commands*
+                                                        *:ZaiGo*
+:ZaiGo                  Send the content in the input window.
+                        Available throughout VIM.
+<CR>                    Available in normal mode of the input window.
 
-Prefix commands with `:` in input area:
+                                                        *zai-ui*
+The Zai chat interaction interface consists of three parts:
+ - Top: List window, managing the chat session list;
+ - Middle: Display window, showing the chat interaction content;
+ - Bottom: Input window, for questions and sending commands.
+On the Zai interface, Zai's editing commands can be used. The chat session
+list and chat content are prohibited from user modification.
 
-- `:help` - Show help message
-- `:exit`/`:quit` - Force to exit the background job
-- `:talk_mode` - Set conversation mode (chain, instant)
-- `:model <name>` - Set model (deepseek-coder, deepseek-chat, etc.)
-- `:temperature <value>` - Set creativity (0-2)
-- `:prompt <text>` - Set system prompt
-- `:file <path>` - Attach a text file
-- `:->/` - Change command prefix to `/`
+Opening the interface defaults to creating the first Zai chat session, with
+session IDs starting from 0.
 
-5.3 TALK MODES                                            
+After the user edits the request content in the input window and exits insert
+mode, send it via <CR> (Enter key).  After sending, the input window is
+automatically cleared and waits for the user's next input.
 
-Change the talk_mode in conversation: >
-  :talk_mode chain   # Maintain conversation context
-  :talk_mode instant # Single-turn interactions
-<
+Zai displays both the user's sent requests and the remote assistant service's
+responses or error messages in the display window.
+By default, Zai enables logging and prompts the specific path of the current
+chat's log file at the bottom of the displayed content.
 
-5.4 SPECIFYING AI BASE URL                                      *zai-base-url*
+Apart from occupying screen space for the interaction interface, Zai is
+completely independent of other content loaded in VIM.
+Users can close the Zai interface with :q to reclaim its screen space. At this
+time, Zai does not pause but continues working in the background, e.g.,
+continuing to receive unfinished responses. Users can reopen the background
+Zai interaction interface at any time via the :Zai command.
 
-The default Base-URL is https://api.deepseek.com .
-Available models: deepseek-coder, deepseek-chat, deepseek-reasoner, etc.
+                                                        *:ZaiAdd*
+:ZaiAdd                 Add selected content to the input window.
+                        Available throughout VIM.
+<leader>za              Available in visual mode: <leader>za; available from
+                        visual mode entering command mode: :ZaiAdd.
 
-Example: >
-  :base_url https://api.deepseek.com
-<
+                        Appends the content selected by the user in the
+                        current VIM editing window as a content block to the
+                        bottom of the input window and switches the editing
+                        focus to the insertion point of the content block in
+                        the input window. The user can perform any editing or
+                        supplementation in the input window and send it after
+                        the description is complete.
 
-5.5 SPECIFYING API-KEY VARIABLE NAME                        *zai-api-key-name*
+                                                        *:ZaiNew*
+:ZaiNew                 Create a new chat. Only available in the Zai chat UI.
+:new                    Creates a new Zai chat session and selects this new
+                        chat. The content in the input window is not cleared
+                        and can be sent directly to the new chat.
 
-You should acquire an API-KEY from your AI service provider, and put it in an
-environment variable, and provide the variable name as `api_key_name`.
+                                                        *:ZaiPrev*
+:[count]ZaiPrev         Select the previous chat. Only available in the Zai
+:[count]cp              chat interface.
+                        count is an optional parameter, indicating the number
+                        of items ahead of the currently selected item in the
+                        chat list to select.  Defaults to selecting the
+                        previous item.
 
-Note that you should keep your API-KEY secret.
+                        In the list items, you can also move the cursor to the
+                        desired item and select it via <CR> (Enter key).
 
-The default API-KEY variable name is `DEEPSEEK_API_KEY`.
+                        When a chat session is selected, the display window is
+                        replaced with the content of the selected chat. The
+                        content in the input window is not cleared and is sent
+                        directly to the selected chat.
 
-Example: >
-  :api_key_name DEEPSEEK_API_KEY
-<
+                                                        *:ZaiNext*
+:[count]ZaiNext         Select the next chat.
+:[count]cn              Only available in the Zai chat interface.
+                        count is an optional parameter,
+                        functioning similarly to |:ZaiPrev|.
 
-5.6 SPECIFYING MODELS                                             *zai-models*
+                                                        *:ZaiGoto*
+:ZaiGoto id             Select the chat specified by id.
+:cn id                  Only available in the Zai chat interface.
+                        id is a required parameter, the index of the chat
+                        listed in the list window.
 
-The default Base-URL is https://api.deepseek.com .
-Available models: deepseek-coder, deepseek-chat, deepseek-reasoner, etc.
+                                                        *:ZaiPreview*
+:ZaiPreview             Display chat content in a browser.
+                        Only available in the Zai chat interface.
+<leader>dp              Available in normal mode of the Zai chat interface.
 
-Example: >
-  :model deepseek-reasoner
-<
+                        Depends on the |:MarkdownPreview| command, requires
+                        the plugin `iamcco/markdown-preview.nvim`.
 
-Note that different AI service provider often use different model names for an
-opensource model. You should pickup the `model` from the models list of your
-AI service provider.
+                        Depends on the chat's logging functionality; chats
+                        with logging disabled are not available.
 
-5.7 CREATIVITY PARAMETERS                                     *zai-creativity*
+                                                        *:ZaiLoad*
+:ZaiLoad                Load the Zai chat log opened in the current window as
+                        chat context.
+<leader>zl              Available throughout VIM.
 
-Adjust parameters: >
-  :temperature 0.3
-  :top_p 0.9
-  :-temperature  # Reset parameter
-<
-
-5.8 MULTI-LINE INPUT                                           *zai-multiline*
-
-Multi-line prompt example: >
-  :prompt<<TEMPLATE
-   - "As a code-specialized AI..."
-   - Example output format:
-     ### [Solution Summary]
-     [Step-by-Step Explanation]
-  TEMPLATE
-<
-
-5.9 ATTACHING FILES                                         *zai-attach-files*
-
-Attach files: >
-  :file path/to/file.txt
-  :-file path/to/file.txt  # Remove attachment
-<
-
-5.10 COMMAND PREFIX                                        *zai-command-prefix*
-
-Change prefix: >
-  :->/  # Now use / as command prefix
-<
-Escape colons: >
-  ::text  # Outputs :text
-<
+                        Zai can load previously recorded chat session logs
+                        into a new chat as context, which will enable the AI
+                        assistant in this chat to utilize this information in
+                        subsequent responses. Users can use this method to
+                        continue chats that did not meet expectations before.
+                        For the chat log path, see |zai-ui| |zai-log|.
 
 ==============================================================================
-6. LICENSE                                                       *zai-license*
+5. CHAT COMMANDS                                        *zai-chat-commands*
 
-MIT License. See |zai-license| for details.
+In addition to the VIM commands |zai-commands| used in the Zai interaction
+interface window, chat commands |zai-chat-commands| can also be used in the
+to-be-sent content of the input window.
+
+Chat commands primarily involve the working configuration of the AI assistant.
+
+Unlike VIM commands, chat commands are not handled by VIM's windows or buffers
+but are sent to the Zai AI assistant for processing in the background. Chat
+commands can be sent to the Zai AI assistant alone or merged with the user's
+request.
+
+A chat command consists of three parts: the command prefix, the command name,
+and the command parameters, for example:
+>
+ :file my-sort.cpp
+ |-+-- -+---------
+ | |    |
+ | |    Command parameters
+ | |
+ | Command name
+ |
+ Chat command prefix character
+<
+By default, similar to VIM's command mode type, a half-width colon is used as
+the chat command prefix. Users can change the current session's command prefix
+via |zai-chat-command-prefix|.
+
+                                                        *zai-chatcmd-preifx*
+:->?                    Set the chat command prefix for the current session.
+                        Chat command |zai-chat-commands|.
+                        Only affects the current session. Changes the chat
+                        command prefix character to a new character.
+
+                        The default chat command prefix character is `:`.
+                        Characters that can serve as prefixes include:
+>
+      : / ~ \ ; ! # $ % & ? @ ^ _ * + = , . < > ` ' " ( ) [ ] { }
+<
+
+                                                        *zai-chatcmd-help*
+:help                   Display chat command help.
+                        Chat command |zai-chat-commands|.
+                        Prints help information for chat commands in the
+                        display window.
+
+                                                        *zai-chatcmd-exit*
+:exit                   Force exit the remote AI service.
+:quit                   Chat command |zai-chat-commands|.
+                        When you want to cancel the connection to the remote
+                        AI service, you can use the exit or quit chat command.
+
+                                                        *zai-chatcmd-show*
+:show `config`            Display the configuration items of the AI assistant.
+                        Chat command |zai-chat-commands|.
+                        The display content is printed in the display window.
+                        If the user has not set a certain configuration item,
+                        the system may print that the configuration item does
+                        not exist.
+
+                        Configurable items (config) that can be displayed are:
+
+    `api-key-name`      AI API Key Name                  |zai-apikey|
+    `base-url`          AI API Base URL                  |zai-baseurl|
+    `model`             AI System Model                  |zai-chatcmd-model|
+    `prompt`            AI System Prompt                 |zai-chatcmd-prompt|
+    `temperature`       Creativity parameter, float,     |zai-chatcmd-params|
+                      range [0,2].
+    `max-tokens`        AI Max Tokens, integer
+    `logprobs`          Top Token Probability, float, range [0,20]
+    `top-p`             Top-P Tokens, float, range [0,1]
+    `presence-penalty`  Repetition Penalty, float, range [-2,2]
+    `frequence-panelty` Frequency Penalty, float, range [-2,2]
+    `log-file`          Full path of the log file for    |zai-log|
+                      the current chat
+    `prefix`            Chat Command Prefix              |zai-chatcmd-prefix|
+
+                                                        *zai-chatcmd-file*
+:file `file-path`         Attach the text file specified by `file-path` to the
+                        current chat's input request for reference.
+                        Chat command |zai-chat-commands|.
+:-file                  Clear all attachments.
+
+                  Note: Attached text files will be part of the AI request
+                        input and will be counted towards input token billing
+                        by the AI service. When a file has been attached in a
+                        chat, if you want to reference it in a new question,
+                        you do not need to re-attach it; just mention the file
+                        name.
+
+                                                        *zai-chatcmd-model*
+:model `model-name`       Specify the AI model for the current chat.
+                        Chat command |zai-chat-commands|.
+                        Change the AI system model used in the current chat.
+
+                  Note: The current version does not support changing
+                        configuration items such as `base-url` and
+                        `api-key-name` within the current chat, so the allowed
+                        model names depend on the AI service provided by the
+                        current `base-url`, which is not provided by Zai.
+
+                        Taking the service provided by deepseek as an example,
+                        the corresponding `base-url` is https://api.deepseek.com,
+                        which provides two optional models: `deepseek-chat`
+                        and `deepseek-reasoner`.
+
+                        `base-url` currently only provides global
+                        configuration, for example, set the following in
+                        `~/.vimrc`: (See |zai-config|)
+>
+ let g:zai_base_url = "https://api.deepseek.com"
+ let g:zai_api_key_name = "DEEPSEEK_API_KEY"
+ let g:zai_default_model = "deepseek-chat"
+<
+                        The above configures the `base-url`, `api-key-name`,
+                        and default AI model used when creating a new chat.
+                        Afterwards, you can use the `:model` chat command to
+                        change the content of the current chat. Even if you
+                        have already used the `deepseek-chat` model for one
+                        round of interaction, you can continue to change to
+                        using `deepseek-reasoner` as the model for a new round
+                        of interaction.
+>
+ :model deepseek-reasoner
+<
+                        When using other `base-url`s, there will generally be
+                        different model names. For details, refer to the
+                        service provider's API documentation. For another
+                        example, here is the configuration for Silicon Flow:
+>
+ let g:zai_base_url = "https://api.siliconflow.cn"
+ let g:zai_api_key_name = "SILICONFLOW_API_KEY"
+ let g:zai_default_model = "deepseek-ai/DeepSeek-R1"
+<
+                  Note: The names corresponding to the same model on Silicon
+                        Flow are not consistent with those on deepseek.
+                        Tested and confirmed models on Silicon Flow include:
+                         * `deepseek-ai/DeepSeek-R1`
+                         * `deepseek-ai/DeepSeek-V3`
+                         * `Qwen/QwQ-32B`
+
+                                                        *zai-chatcmd-prompt*
+:prompt `text`            Set a new prompt for the current chat.
+                        Chat command |zai-chat-commands|.
+:-prompt                Unset the previously set prompt
+                        (use Zai's default prompt).
+
+                        The prompt is a very important AI model configuration
+                        that directly affects the quality of the answers
+                        provided by the AI assistant.
+
+                        When the prompt to be set is only one line, you can
+                        use the single-line prompt setting method, for example:
+>
+ :prompt Act as a professional translator familiar with computer science.
+<
+                        When the prompt to be set exceeds one line, you need
+                        to use block syntax to set it, for example:
+>
+ :prompt<<EOF
+ As a code expert assistant, please analyze the problem step by step.
+ When providing solutions, please use the format:
+   ### [Title]
+   [Step-by-step instructions]
+   ### Summary: [One-sentence summary of the core]
+ EOF
+<
+
+                                                        *zai-chatcmd-params*
+:temperature `float`      Set the creativity parameter for the current chat.
+                        Chat command |zai-chat-commands|.
+                        Float, range [0,2]. The lower this parameter, the more
+                        precise the AI response obtained.
+
+:-temperature           Unset the previously set creativity parameter.
+                        Chat command |zai-chat-commands|.
+
+In addition to `temperature`, the following model parameters are also
+supported for setting or unsetting:
+    * `top_p`              Top-P Tokens, float, range [0,1]
+    * `max_tokens`         AI Max Tokens, integer
+    * `presence_penalty`   Repetition Penalty, float, range [-2,2]
+    * `frequency_penalty`  Frequency Penalty, float, range [-2,2]
+    * `logprobs`           Top Token Probability, float, range [0,20]
+
+                                                        *zai-chatcmd-nolog*
+:no-log                  Close chat logging. Chat command |zai-chat-commands|.
+:-no-log                 After chat logging is disabled, new content will no
+                         longer be saved to the log.
+
+                   Note: In the current version, preview is not available
+                         after chat logging is disabled.  See |:ZaiPreview|.
+
+==============================================================================
+6. LICENSE                                              *zai-license*
+
+Released under the MIT License. For details, see:
+https://github.com/zighouse/zai/blob/main/LICENSE
 
  vim:tw=78:ts=8:ft=help:norl:

@@ -1,17 +1,17 @@
-# Zai.Vim DeepSeek AI Assistant
+# Zai.Vim AI Assistant
 
 [中文说明](README_zh.md)
 
 ![Plugin Screenshot](screenshot.gif)
 
-Zai.Vim is a Vim plugin that seamlessly integrates the DeepSeek AI Assistant into your Vim editor. It allows you to access DeepSeek's intelligent services while coding or writing documents, without interrupting your workflow.
+Zai.Vim is a Vim plugin that integrates AI assistants directly into your Vim editor. It manages multiple AI chat sessions simultaneously, records conversation logs, and allows loading logs to continue previous conversations. Switch freely and control at will.
 
 ## Features
 
-- **Dual-pane Interface**: Independent input/output windows for smooth interaction
-- **Flexible Configuration**: Switch models/prompts mid-conversation
-- **File Attachments**: Attach text files as conversation context
-- **Session Logging**: Automatic conversation history preservation
+- **Flexible model and prompt switching**: Change models and prompts mid-conversation
+- **File attachment support**: Attach text files as conversation context
+- **Multiple session support**: Handle multiple chat sessions concurrently
+- **Session logging**: Save, load, and preview conversation history
 
 ## Installation
 
@@ -19,35 +19,31 @@ Zai.Vim is a Vim plugin that seamlessly integrates the DeepSeek AI Assistant int
 
 - Vim 8.0+ or Neovim
 - Python 3.6+
-- DeepSeek API key (set as `DEEPSEEK_API_KEY` environment variable)
+- AI API KEY
+  - Example: DeepSeek API key (set as `DEEPSEEK_API_KEY` environment variable)
 - Required Python packages:
-  - `openai`
-  - `chardet`
-  - `appdirs`
+  - `openai` (automatically installed if missing)
+- Optional: iamcco/markdown-preview.nvim
 
 ### Using a plugin manager
 
-With [vim-plug](https://github.com/junegunn/vim-plug):
-
+With vim-plug:
 ```vim
 Plug 'zighouse/zai'
 ```
 
-With [Vundle](https://github.com/VundleVim/Vundle.vim):
-
+With Vundle:
 ```vim
 Plugin 'zighouse/zai'
 ```
 
-[lazy.nvim](https://github.com/folke/lazy.nvim):
+With lazy.nvim:
 ```lua
--- Create zai-vim.lua in .config/nvim/lua/plugins/
 return {
     {
         "zighouse/zai.vim",
         config = function()
-            vim.g.zai_default_model = "deepseek-coder"  -- Optional config
-            vim.g.zai_log_dir = my-log-dir              -- Optional config
+            vim.g.zai_default_model = "deepseek-chat"
         end
     }
 }
@@ -55,9 +51,7 @@ return {
 
 Manual Installation:  
 
-Type following commands on the terminal window:
-
-When on Linux/Mac:
+Linux/Mac:
 ```bash
 pip install appdirs chardet openai
 mkdir -p ~/.vim/pack/plugins/start
@@ -66,7 +60,7 @@ git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
 git checkout
 ```
 
-When on Windows:
+Windows:
 ```dos
 pip install appdirs chardet openai
 md %USERPROFILE%\vimfiles\pack\plugins\start
@@ -75,219 +69,184 @@ git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
 git checkout
 ```
 
-Using `git pull` to keep it updated.
+Run `git pull` in the installation directory to update manually.
 
-Alternatively, you can [download the zip](https://github.com/zighouse/zai.vim/archive/refs/heads/main.zip) file and unzip it in the path.
+Alternatively, [download the zip](https://github.com/zighouse/zai.vim/archive/refs/heads/main.zip) and extract the zai.vim-main folder to the appropriate directory.
 
-## Core Concepts
-### Session Logs
-Zai automatically saves conversation history. Each session (from opening Zai until closing with `:ZaiClose`) generates a log file:
-- Linux/Mac: `~/.local/share/zai/log`  
+## Configuration
+
+### Log Directory
+
+`g:zai_log_dir` configures the log file storage path.
+
+Default paths:
+- Linux/Mac: `~/.local/share/zai/log`
 - Windows: `%USERPROFILE%\AppData\Local\zai\log`
-- Or specified by `g:zai_log_dir`
 
-Recommendation: Configure a new log storage path on Windows. The default log storage path on Windows is hidden by the system, making it inconvenient to use.
+Recommendation: Configure a custom log path on Windows as the default path is system-hidden.
 
-### Session Modes
-- **Chain Mode**: Maintains full conversation context (ideal for complex tasks)
-- **Instant Mode**: Single-turn interactions (ideal for simple Q&A)
+### Interface Language
 
-Switch modes using session commands:
+`g:zai_lang` configures Zai's interface language.
+Defaults to English or based on user environment.
+Set to Chinese:
+```vim
+let g:zai_lang = 'zh_CN.UTF-8'
 ```
-:talk_mode chain   # Enable chain mode
-:talk_mode instant # Enable instant mode
+
+### API Configuration
+
+`g:zai_base_url` configures the AI service's base URL.
+
+`g:zai_api_key_name` configures the API key environment variable name.
+The API key must be set in the system environment variables.
+
+Example (Linux ~/.bashrc):
+```bash
+DEEPSEEK_API_KEY=sk-********************************
 ```
+
+`g:zai_default_model` configures the default AI model.
 
 ## Usage
 
-### Key Mappings
-| Key Binding        | Command       | Description                   | Mode    |
-|--------------------|---------------|-------------------------------|---------|
-| `<Leader>zo`       | `:Zai`        | Open Zai interface            | Normal  |
-| `<Leader>zg`       | `:ZaiGo`      | Send query                    | Insert  |
-| `<Leader>zX`       | `:ZaiClose`   | Close session                 | Normal  |
-| `<Leader>za`       | `:ZaiAdd`     | Add visual selection to input | Visual  |
-| `<CR>` (InputArea) | `:ZaiGo`      | Send query                    | Normal  |
-| `<Leader>zl`       | `:ZaiLoad`    | Load Zai log as new context   | Normal  |
+### VIM Commands
 
-### Session Commands
+| Command                | Description                          | Mode          |
+|------------------------|--------------------------------------|---------------|
+| `:Zai`                 | Open Zai interface                   | All VIM modes |
+| `<leader>zo`           | Open Zai interface                   | Normal mode   |
+| `:ZaiGo`               | Send input content                   | All VIM modes |
+| `<CR>`                 | Send input content                   | Input window normal mode |
+| `:ZaiAdd`              | Add selection to input               | All VIM modes |
+| `<leader>za`           | Add selection to input               | Visual mode   |
+| `:ZaiNew`              | Create new chat                      | Zai interface only |
+| `:[count]ZaiPrev`      | Select previous chat                 | Zai interface only |
+| `:[count]cp`           | Select previous chat                 | Zai interface only |
+| `:[count]ZaiNext`      | Select next chat                     | Zai interface only |
+| `:[count]cn`           | Select next chat                     | Zai interface only |
+| `:ZaiGoto id`          | Select chat by ID                    | Zai interface only |
+| `:cn id`               | Select chat by ID                    | Zai interface only |
+| `:ZaiPreview`          | Preview chat in browser              | Zai interface only |
+| `<leader>dp`           | Preview chat in browser              | Zai interface normal mode |
+| `:ZaiLoad`             | Load Zai log as context              | All VIM modes |
+| `<leader>zl`           | Load Zai log as context              | All VIM modes |
 
-At any time you can use following commands Zai input pane to change the mode or parameters of following conversation. You can select a new model or a new system prompt for a new request.
+### Interface Overview
 
-Note that the session commands here are entered in the Zai input box, not as Vim commands in command mode. Enter the following instructions in the input box and use `:ZaiGo`/`<Leader>zg` to send them.
+Zai interface consists of three parts:
+- Top: Session list window
+- Middle: Display window showing conversation content
+- Bottom: Input window for questions and commands
 
-Prefix commands with `:` in input area:
+The interface opens with the first chat session (ID starts from 0). Press `<CR>` in input window to send content. Responses and errors appear in the display window with log file path notifications.
 
-- `:help` - Show help message
-- `:exit`/`:quit` - Force to exit the background job
-- `:talk_mode` - Set conversation mode (chain, instant)
-- `:base_url <url>` - Change the base-url to a new one
-- `:api_key_name <api-key-name>` - Provide the environment of the API-KEY for new base-url
-- `:model <name>` - Set model (deepseek-coder, deepseek-chat, deepseek-reasoner, etc.)
-- `:temperature <value>` - Set creativity (0-2)
-- `:prompt <text>` - Set system prompt (single line system prompt content)
-- `:file <path>` - Attach a text file
-- `:load <path>` - Load Zai log file as new context
-- `:->/` - Change command prefix to `/`
+## Session Commands
 
-### Change the talk-mode in conversation
+Session commands configure AI assistant settings and are processed by Zai's background task. They can be sent alone or mixed with user queries.
 
-You can change the talk-mode from chain to instant at any time.
+### Available Commands
 
-When in chain talk-mode, you chain all your history conversation as context along with you last request content and send to DeepSeek service. 
+- `:->?` - Change command prefix
+- `:help` - Show help information
+- `:exit`/`:quit` - Force exit remote AI service
+- `:show config` - Display configuration items
+- `:file file-path` - Attach text file
+- `:-file` - Clear all attachments
+- `:model model-name` - Set AI model
+- `:prompt text` - Set system prompt
+- `:-prompt` - Clear custom prompt
+- `:temperature float` - Set creativity parameter (0-2)
+- `:-temperature` - Clear temperature setting
+- `:no-log` - Disable logging
+- `:-no-log` - Enable logging
 
+### Configuration Items
+
+Displayable configuration items:
+- `api-key-name` - AI API Key Name
+- `base-url` - AI API Base URL
+- `model` - AI system model
+- `prompt` - AI system prompt
+- `temperature` - Creativity parameter (0-2)
+- `max-tokens` - Maximum tokens
+- `logprobs` - Top token probabilities (0-20)
+- `top-p` - Top-P sampling (0-1)
+- `presence-penalty` - Repetition penalty (-2 to 2)
+- `frequency-penalty` - Frequency penalty (-2 to 2)
+- `log-file` - Log file path
+- `prefix` - Command prefix
+
+### Model Configuration Examples
+
+DeepSeek configuration:
+```vim
+let g:zai_base_url = "https://api.deepseek.com"
+let g:zai_api_key_name = "DEEPSEEK_API_KEY"
+let g:zai_default_model = "deepseek-chat"
 ```
-:talk_mode chain
-```
 
-When in instant talk-mode, you only send the last request content without previous conversation context.  
-
-```
-:talk_mode instant
-```
-
-Inspite which mode you choose, all conversation contents in a Zai session are logged into one file. If you want to start a new session, close it with `ZaiClose` command or `<Leader>zX`.
-
-
-### Specifying DeepSeek Models  
-Currently in DeepSeek's services, available large language models (LLMs) include `deepseek-coder`, `deepseek-chat`, `deepseek-reasoner`, etc.  
-
-To specify a particular model, enter the following command in the input box. For example, to use the reasoning model, send this instruction:  
+Change model during conversation:
 ```
 :model deepseek-reasoner
-```  
-You can switch between different models within a single session by including this command in the input box and sending it to Zai's background task. The specified model will then be applied to new conversations.  
-
-### Specifying AI Base URL and Access Parameters
-
-You can choose your AI service provider by setting parameters of `base_url`, `api_key_name` and `model`. The default settings:
-```
-:base_url       https://api.deepseek.com
-:model          deepseek-chat
-:api_key_name   DEEPSEEK_API_KEY
 ```
 
-Note that different AI service provider often use different model names for an opensource model. You should pickup the `model` from the models list of your AI service provider.
+SiliconFlow configuration:
+```vim
+let g:zai_base_url = "https://api.siliconflow.cn"
+let g:zai_api_key_name = "SILICONFLOW_API_KEY"
+let g:zai_default_model = "deepseek-ai/DeepSeek-R1"
+```
 
-You should acquire an API-KEY from your AI service provider, and put it in an environment variable, and provide the variable name as `api_key_name`.
+### Prompt Settings
 
-Note that you should keep your API-KEY secret.
+Single-line prompt:
+```
+:prompt Please provide professional translation assistance as a computer technology expert.
+```
 
-### Specifying Creativity Parameters  
-In DeepSeek services, models like `deepseek-coder` and `deepseek-chat` support fine-tuning conversation effects through parameters such as `temperature`. Zai allows you to adjust these parameters by including commands like the following in the input box:  
+Multi-line prompt (block syntax):
+```
+:prompt<<EOF
+As a code expert assistant, please analyze problems step by step.
+When providing solutions, use the format:
+  ### [Title]
+  [Step-by-step explanation]
+  ### Summary: [One-sentence summary]
+EOF
+```
 
+### Parameter Settings
+
+Set creativity parameter:
 ```
 :temperature 0.3
 ```  
 
-Other available parameters in Zai include `top_p`, `max_tokens`, `presence_penalty`, `frequency_penalty`, and `logprobs`. For detailed usage, refer to [Chat Completion Documentation](https://api-docs.deepseek.com/api/create-chat-completion).  
+Supported parameter commands:
+- `:top_p float` - Top-P sampling (0-1)
+- `:max_tokens integer` - Maximum tokens
+- `:presence_penalty float` - Repetition penalty (-2 to 2)
+- `:frequency_penalty float` - Frequency penalty (-2 to 2)
+- `:logprobs float` - Top token probabilities (0-20)
 
-To clear previously set parameters, insert a minus `-` between the command prefix and parameter name. For example, to reset the `temperature` setting:  
+Clear settings with minus prefix:
 ```
 :-temperature
 ```  
 
-### Multi-line Input in Zai Interface and Block :prompt Syntax
+### Command Prefix
 
-Zai supports multi-line input through a special block syntax, making it easy to submit complex prompts or code examples to DeepSeek. All you need is to write your request content in input pane and send it to DeepSeek.
-
-You also can override the default one with well considered and a multi-line block of text. The block input system makes it easy to have structured conversations with DeepSeek while maintaining clean, readable prompts in your Vim workflow.
-
-To make multiple lines as a system prompt:
-1. Start with `:prompt<<EOF` (or any unique marker)
-2. Enter your well defined content line by line for new prompt
-3. End with `EOF` (or your chosen marker)
-
-You can structure your prompt to get well-formatted:
-
+Default command prefix is `:`. Available prefix characters:
 ```
-:model deepseek-reasoner
-:prompt<<TEMPLATE
- - "As a code-specialized AI, analyze the problem step-by-step. Always start your final answer with a bolded title summarizing the solution."  
- - Example output format:  
-   ### [Solution Summary]
-   [Step-by-Step Explanation]  
-TEMPLATE
-
-I want to show inline thumbnail pictures in vim window when I open my markdown documents with picture tags. How to?
+: / ~ \ ; ! # $ % & ? @ ^ _ * + = , . < > ` ' " ( ) [ ] { }
 ```
 
-Or
-
+Change prefix example:
 ```
-:model deepseek-chat
-:temperature 0.3
-:prompt<<CODE
- - Sample Interaction:  
-
-   User: How to reverse a linked list?  
-
-   Assistant:  
-   ### Title: Iterative Linked List Reversal
-   1. Initialize prev/current/next pointers.  
-   2. Loop: Update next, reverse link, shift pointers.  
-   3. Return new head.  
-
-   Code: [Python/Java snippet]
-CODE
-
-I have a map of a city, how to find the shortest path between two places in it?
+:->/
 ```
-
-#### Clearing Custom Prompts  
-Use the following command to clear user-configured prompts (restoring Zai's default prompts):  
-
-```
-:-prompt
-```  
-
-### Attaching Files  
-You can conveniently attach multiple text files as context for consultation in Zai. Include the following command in the input box to attach a file (one attachment command per line):  
-```  
-:file path/to/file.txt  
-```  
-- Supports relative paths based on Vim's `:pwd`  
-- Only text files can be attached  
-- The number of files and content length depend on the model's context token limit (currently 64K tokens max for DeepSeek API services). Avoid attaching excessive/large files.  
-
-Use this command to remove previously attached files:  
-```  
-:-file path/to/file.txt  
-```  
-
-### Command Prefix and Escaping  
-
-Zai uses colon `:` as the default command prefix.  
-
-When a line starting with this prefix appears in the input, it will be interpreted as a session command rather than query content. The command format is:  
-```
-:command_name [arguments]
-```  
-
-**Two escape methods for colon-prefixed content**:  
-1. **Prefix Escaping**  
-
-For occasional colon-prefixed lines, escape by doubling the colon:  
-```
-::quit my asm program  
-```  
-Output as normal text: `:quit my asm program`  
-
-2. **Prefix Replacement**  
-For bulk colon-prefixed content, change the command prefix using:  
-```
-:->/  
-```  
-Now `/` becomes the new command prefix (e.g. `/attach file.txt`), freeing `:` for normal use.  
-
-**Available command prefix characters**:  
-```  
-: / ~ \ ; ! # $ % & ? @ ^ _ * + = , . < > ` ' " ( ) [ ] { }  
-```  
-
-*Note: Hyphen/minus `-` is excluded due to its special "clear" semantics.*  
-
 
 ## License
 
-Zai.vim is released under the MIT License. See the [LICENSE](https://github.com/zighouse/zai/blob/main/LICENSE) file for details.  
+Released under MIT License. See: [https://github.com/zighouse/zai/blob/main/LICENSE](https://github.com/zighouse/zai/blob/main/LICENSE)
