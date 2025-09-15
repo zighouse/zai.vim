@@ -557,6 +557,9 @@ def handle_command(command):
         if cmd == 'base_url' and argv[1] != g_config['base_url']:
             # Should reopen client at the new base_url
             g_client = None
+        elif cmd == 'api_key_name' and argv[1] != g_config['api_key_name']:
+            # Should reopen client at the new api_key_name
+            g_client = None
         g_config[cmd] = argv[1]
         return True
 
@@ -674,7 +677,6 @@ def handle_command(command):
         else:
             print(f"{argv[1]} = {value}")
         return True
-
 
     print(f"unknown command: {command}", file=sys.stderr)
 
