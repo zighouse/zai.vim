@@ -153,6 +153,8 @@ Session commands configure AI assistant settings and are processed by Zai's back
 - `:show config` - Display configuration items
 - `:file file-path` - Attach text file
 - `:-file` - Clear all attachments
+- `:base-url url` - Set base url of AI service
+- `:api-key-name key-name` - Set variable of API Key to access AI service
 - `:model model-name` - Set AI model
 - `:prompt text` - Set system prompt
 - `:-prompt` - Clear custom prompt

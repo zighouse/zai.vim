@@ -163,6 +163,8 @@ Zai 会在展示窗口中同时展示用户发送的请求，以及远程助手�
 - `:show config` - 显示 AI 助手的配置项
 - `:file file-path` - 附加指定文本文件
 - `:-file` - 清除所有附件
+- `:base-url url` - 指定当前聊天的 AI 服务 base-url
+- `:api-key-name key-name` - 指定访问 AI 服务的密钥环境变量
 - `:model model-name` - 指定当前聊天的 AI 模型
 - `:prompt text` - 设置当前聊天新的提示词
 - `:-prompt` - 取消设置过的提示词
@@ -205,7 +207,7 @@ let g:zai_default_model = "deepseek-chat"
 ```vim
 let g:zai_base_url = "https://api.siliconflow.cn"
 let g:zai_api_key_name = "SILICONFLOW_API_KEY"
-let g:zai_default_model = "deepseek-ai/DeepSeek-R1"
+let g:zai_default_model = "Pro/moonshotai/Kimi-K2-Instruct-0905"
 ```
 
 ### 提示词设置

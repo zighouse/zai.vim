@@ -54,7 +54,7 @@ Using lazy.nvim (Neovim configuration example): >
        {
            "zighouse/zai.vim",
            config = function()
-            MarkdownPreview.vim   vim.g.zai_default_model = "deepseek-chat"
+              vim.g.zai_default_model = "deepseek-chat"
            end
        }
    }
@@ -334,25 +334,32 @@ via |zai-chat-command-prefix|.
                         you do not need to re-attach it; just mention the file
                         name.
 
+                                                        *zai-chatcmd-baseurl*
+:base-url `url`           Specify the base-url for the current chat.
+                        Chat command `zai-chat-commands`.
+
+                                                        *zai-chatcmd-keyname*
+:api-key-name `key-name`  Specify the API-Key name for the current chat.
+                        Chat command `zai-chat-commands`.
+                  Note: Should specify the name of environment variable other
+                        than the key value.
+
                                                         *zai-chatcmd-model*
 :model `model-name`       Specify the AI model for the current chat.
                         Chat command |zai-chat-commands|.
                         Change the AI system model used in the current chat.
 
-                  Note: The current version does not support changing
-                        configuration items such as `base-url` and
-                        `api-key-name` within the current chat, so the allowed
-                        model names depend on the AI service provided by the
-                        current `base-url`, which is not provided by Zai.
+                  Note: The allowed model names depend on the AI service
+                        provided by the current `base-url`, which is not
+                        provided by Zai.
 
                         Taking the service provided by deepseek as an example,
                         the corresponding `base-url` is https://api.deepseek.com,
                         which provides two optional models: `deepseek-chat`
                         and `deepseek-reasoner`.
 
-                        `base-url` currently only provides global
-                        configuration, for example, set the following in
-                        `~/.vimrc`: (See |zai-config|)
+                        Also can be configured globally.
+                  e.g.: (See |zai-config|)
 >
  let g:zai_base_url = "https://api.deepseek.com"
  let g:zai_api_key_name = "DEEPSEEK_API_KEY"
@@ -376,11 +383,12 @@ via |zai-chat-command-prefix|.
 >
  let g:zai_base_url = "https://api.siliconflow.cn"
  let g:zai_api_key_name = "SILICONFLOW_API_KEY"
- let g:zai_default_model = "deepseek-ai/DeepSeek-R1"
+ let g:zai_default_model = "Pro/moonshotai/Kimi-K2-Instruct-0905"
 <
                   Note: The names corresponding to the same model on Silicon
                         Flow are not consistent with those on deepseek.
                         Tested and confirmed models on Silicon Flow include:
+                         * `Pro/moonshotai/Kimi-K2-Instruct-0905`
                          * `deepseek-ai/DeepSeek-R1`
                          * `deepseek-ai/DeepSeek-V3`
                          * `Qwen/QwQ-32B`

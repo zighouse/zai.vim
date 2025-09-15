@@ -52,7 +52,7 @@ Zai.Vim 是一款将 AI 助手直接集成到 Vim 编辑器的插件，管理着
        {
            "zighouse/zai.vim",
            config = function()
-            MarkdownPreview.vim   vim.g.zai_default_model = "deepseek-chat"
+              vim.g.zai_default_model = "deepseek-chat"
            end
        }
    }
@@ -279,20 +279,28 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
                         中计入输入词元计费。当在聊天中曾经附加过某个文件时，如
                         果想在新的提问中引用它，不必重复附加，只需提及文件名。
 
+                                                        *zai-chatcmd-baseurl*
+:base-url `url`           改变当前聊天使用的 AI 服务 base-url。
+                        会话命令 |zai-chat-commands|.
+
+                                                        *zai-chatcmd-keyname*
+:api-key-name `key-name`  改变当前聊天使用的 API 密钥。
+                        会话命令 |zai-chat-commands|.
+                  注意: 这里使用的是指向密钥的环境变量的名称，而不是密钥内容。
+
                                                         *zai-chatcmd-model*
 :model `model-name`       指定当前聊天的 AI 模型。会话命令 |zai-chat-commands|.
                         改变当前聊天中使用的 AI 系统模型。
 
-                  注意: 当前的版本不支持在当前聊天中改变 `base-url`、`api-key-name`
-                        等配置项，所以允许改变的模型名称依赖于当前 `base-url`
-                        提供的 AI 服务，这不是 Zai 提供的。
+                  注意: 允许改变的模型名称依赖于当前 `base-url` 提供的 AI 服务，
+                        这不是 Zai 提供的。
 
                         以 deepseek 提供的服务为例，
                         对应的 `base-url` 为 https://api.deepseek.com ，提供了
                         两种可选的模型：`deepseek-chat` 和 `deepseek-reasoner`.
 
-                        `base-url` 目前只提供全局的配置，比如在 `~/.vimrc` 中
-                        做如下设置: (见 |zai-config|)
+                        也可以全局配置 `base-url`、`api-key-name`和`model`。
+                  例如: (见 |zai-config|)
 >
  let g:zai_base_url = "https://api.deepseek.com"
  let g:zai_api_key_name = "DEEPSEEK_API_KEY"
@@ -313,10 +321,11 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
 >
  let g:zai_base_url = "https://api.siliconflow.cn"
  let g:zai_api_key_name = "SILICONFLOW_API_KEY"
- let g:zai_default_model = "deepseek-ai/DeepSeek-R1"
+ let g:zai_default_model = "Pro/moonshotai/Kimi-K2-Instruct-0905"
 <
                   注意: 硅基流动的同一模型对应的名称与 deepseek 的并不一致。
                         已经测试并确认过的硅基流动的模型有:
+                         * `Pro/moonshotai/Kimi-K2-Instruct-0905`
                          * `deepseek-ai/DeepSeek-R1`
                          * `deepseek-ai/DeepSeek-V3`
                          * `Qwen/QwQ-32B`
