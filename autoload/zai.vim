@@ -32,8 +32,9 @@ function! zai#init() abort
         let s:base_url = exists('g:zai_base_url') ? ['--base-url', g:zai_base_url] : []
         let s:api_key_name = exists('g:zai_api_key_name') ? ['--api-key-name', g:zai_api_key_name] : []
         let s:opt_model = exists('g:zai_default_model') ? ['--model', g:zai_default_model] : []
+        let s:use_ai = exists('g:zai_use_ai') ? ['--use-ai', g:zai_use_ai] : []
         let g:zai_cmd = [ s:python_cmd, s:script_path, '--log-dir', s:log_dir,
-                    \ '--' . g:zai_input_mode] + s:base_url + s:api_key_name + s:opt_model
+                    \ '--' . g:zai_input_mode] + s:base_url + s:api_key_name + s:opt_model + s:use_ai
         let g:zai_cmp_cmd = [ s:python_cmd, s:script_path, '--text', '--no-log', '--silent',
                     \ '--base-url', s:fim_url, '--api-key-name', s:fim_api_key_name, '--model', s:fim_model]
     else
@@ -43,8 +44,9 @@ function! zai#init() abort
         let s:base_url = exists('g:zai_base_url') ? ' --base-url=' . g:zai_base_url : ''
         let s:api_key_name = exists('g:zai_api_key_name') ? ' --api-key-name=' . g:zai_api_key_name : ''
         let s:opt_model = exists('g:zai_default_model') ? ' --model="' . g:zai_default_model . '"' : ''
+        let s:use_ai = exists('g:zai_use_ai') ? ' --use-ai="' . g:zai_use_ai . '"' : ''
         let g:zai_cmd = [ s:python_cmd . s:opt_script . s:opt_log_dir . s:opt_input_mode
-                    \ . s:base_url . s:api_key_name . s:opt_model ]
+                    \ . s:base_url . s:api_key_name . s:opt_model . s:use_ai ]
         let g:zai_cmp_cmd = [ s:python_cmd . s:opt_script . ' --text' . ' --no-log' . ' --silent'
                     \ . ' --base-url=' . s:fim_url . ' --api-key-name=' . s:fim_api_key_name . ' --model=' . s:fim_model ]
     endif
