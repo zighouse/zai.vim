@@ -224,6 +224,9 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
 后台继续工作，例如继续接收还没有结束的回答。用户可以在任何时候再次通过 :Zai 命
 令打开后台的 Zai 交互界面。
 
+                                                        *:ZaiHelp*
+:help                   打开 zai 帮助。仅 Zai 聊天交互界面可用。
+
                                                         *:ZaiAdd*
 :ZaiAdd                 添加选中内容到输入窗口。全 VIM 可用。
 <leader>za              visual 模式可用 <leader>za, 从 visual 进入命令模式可用

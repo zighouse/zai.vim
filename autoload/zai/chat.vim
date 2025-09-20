@@ -1026,7 +1026,8 @@ function! zai#chat#FiltCmd(cmdline) abort
         \ 'new': 'ZaiNew',
         \ 'cn': 'ZaiNext',
         \ 'cp': 'ZaiPrev',
-        \ 'cc': 'ZaiGoto'
+        \ 'cc': 'ZaiGoto',
+        \ 'help': 'call zai#chat#Help()'
         \ }
 
     for [abbr, full_cmd] in items(l:command_map)
@@ -1081,6 +1082,11 @@ function! zai#chat#Preview() abort
     else
         call s:EchoError('MarkdownPreview command not available')
     endif
+endfunction
+
+function! zai#chat#Help() abort
+    let l:help = s:zh_lang ? 'zai@cn' : 'zai'
+    execute 'help ' . l:help
 endfunction
 
 function! s:setup_buffer_commands()

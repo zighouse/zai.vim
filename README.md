@@ -180,6 +180,7 @@ Also, a 0-based index in the list of assistants config can be used as same as th
 
 | Command                | Description                          | Mode          |
 |------------------------|--------------------------------------|---------------|
+| `:help`                | Open Zai help                        | Zai interface only |
 | `:Zai`                 | Open Zai interface                   | All VIM modes |
 | `<leader>zo`           | Open Zai interface                   | Normal mode   |
 | `:ZaiGo`               | Send input content                   | All VIM modes |

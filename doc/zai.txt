@@ -245,6 +245,9 @@ time, Zai does not pause but continues working in the background, e.g.,
 continuing to receive unfinished responses. Users can reopen the background
 Zai interaction interface at any time via the :Zai command.
 
+                                                        *:ZaiHelp*
+:help                   Open help for Zai. Only available in the Zai chat UI.
+
                                                         *:ZaiAdd*
 :ZaiAdd                 Add selected content to the input window.
                         Available throughout VIM.
