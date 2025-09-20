@@ -91,3 +91,7 @@ function! zai#Load() abort
     call zai#chat#Load()
 endfunction
 
+function! zai#EditConfig() abort
+    return zai#util#EditAssistants()
+endfunction
+

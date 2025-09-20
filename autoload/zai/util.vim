@@ -1,3 +1,6 @@
+let s:plugin_root = expand('<sfile>:h:h:h')
+let s:path_sep = has('win32') ? '\' : '/'
+
 function! zai#util#get_file_type()
    if !empty(&filetype)
        return &filetype
@@ -100,3 +103,22 @@ function! zai#util#strip_list(lst)
     return l:lst
 endfunction
 
+function! s:assistants_path()
+    let l:python_lines = [
+                \ 'import sys',
+                \ 'sys.path.insert(0, \"' . s:plugin_root . s:path_sep . 'python3\")',
+                \ 'from config import config_path_assistants',
+                \ 'print(config_path_assistants())'
+                \]
+    let l:python_code = join(l:python_lines, "\n")
+    let l:config_path = trim(system('python3 -c "' . l:python_code . '"'))
+    return l:config_path
+endfunction
+
+function! zai#util#EditAssistants()
+    let l:config_file = s:assistants_path()
+    execute 'new ' . l:config_file
+    if !filereadable(l:config_file)
+        setfiletype json
+    endif
+endfunction

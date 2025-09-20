@@ -37,6 +37,7 @@ command! -range ZaiAdd call zai#AddRange(<line1>, <line2>)
 command! ZaiGo call zai#Go()
 command! -nargs=1 ZaiComplete call zai#Complete(<arg>)
 command! ZaiLoad call zai#Load()
+command! ZaiConfig call zai#EditConfig()
 
 nmap <Plug>Zai :Zai<CR>
 nmap <Plug>ZaiGo :ZaiGo<CR>

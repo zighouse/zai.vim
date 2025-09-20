@@ -197,6 +197,7 @@ DEEPSEEK_API_KEY=sk-********************************
 | `<leader>dp`        | 在浏览器中展示聊天内容        | Zai 界面 normal 模式 |
 | `:ZaiLoad`          | 加载 Zai 日志作为新的上下文   | 全 VIM 可用   |
 | `<leader>zl`        | 加载 Zai 日志作为新的上下文   | 全 VIM 可用   |
+| `:ZaiConfig`        | 编辑 AI 配置                  | 全 VIM 可用   |
 
 ### Zai 界面说明
 

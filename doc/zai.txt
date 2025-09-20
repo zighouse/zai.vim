@@ -316,6 +316,10 @@ Zai interaction interface at any time via the :Zai command.
                         continue chats that did not meet expectations before.
                         For the chat log path, see |zai-ui| |zai-log|.
 
+                                                        *:ZaiConfig*
+:ZaiConfig              Open AI assistants configuration json file for edit.
+                        See |zai-assistants.json|.
+
 ==============================================================================
 5. CHAT COMMANDS                                        *zai-chat-commands*
 

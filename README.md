@@ -197,6 +197,7 @@ Also, a 0-based index in the list of assistants config can be used as same as th
 | `<leader>dp`           | Preview chat in browser              | Zai interface normal mode |
 | `:ZaiLoad`             | Load Zai log as context              | All VIM modes |
 | `<leader>zl`           | Load Zai log as context              | All VIM modes |
+| `:ZaiConfig`           | Edit AI assistants configuration     | All VIM modes |
 
 ### Interface Overview
 
