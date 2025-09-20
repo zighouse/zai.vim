@@ -108,6 +108,72 @@ DEEPSEEK_API_KEY=sk-********************************
 
 `g:zai_default_model` configures the default AI model.
 
+`g:zai_use_ai`  Chooses an assistant from AI assistants configuration. It is a replacement for configurations of base-url, key and model. It depends an AI assistants configuration.
+
+When multiple AI models can be used, or multiple AI assistant services are available, you can provide an json file as the AI assistants configuration on this location:
+
+* Linux/Mac: ~/.local/share/zai/assistants.json
+* Windows: %USERPROFILE%\AppData\Local\Zai\assistants.json
+
+Sample code of assistants.json:
+```json
+ [
+     {
+         "name": "deepseek",
+         "base-url": "https://api.deepseek.com",
+         "api-key-name" : "DEEPSEEK_API_KEY",
+         "model" : ["deepseek-chat", "deepseek-reasoner"]
+     },
+     {
+         "name": "Moonshot",
+         "base-url": "https://api.moonshot.cn/v1",
+         "api-key-name" : "MOONSHOT_API_KEY",
+         "model" : [
+             "kimi-k2-0905-preview",
+             "kimi-thinking-preview"
+         ]
+     },
+     {
+         "name": "Volces Ark",
+         "base-url": "https://ark.cn-beijing.volces.com/api/v3",
+         "api-key-name" : "VOLCES_API_KEY",
+         "model" : [
+             "doubao-seed-1-6-250615",
+             "doubao-seed-1-6-thinking-250715"
+         ]
+     },
+     {
+         "name": "Silicon Flow",
+         "base-url": "https://api.siliconflow.cn",
+         "api-key-name" : "SILICONFLOW_API_KEY",
+         "model" : [
+             "deepseek-ai/DeepSeek-V3.1",
+             "deepseek-ai/DeepSeek-R1",
+             "moonshotai/Kimi-K2-Instruct-0905",
+             "tencent/Hunyuan-MT-7B",
+             "inclusionAI/Ling-mini-2.0",
+             "ByteDance-Seed/Seed-OSS-36B-Instruct",
+             "zai-org/GLM-4.5",
+             "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+             "Qwen/Qwen3-235B-A22B-Thinking-2507",
+             "Qwen/Qwen3-235B-A22B-Instruct-2507",
+             "baidu/ERNIE-4.5-300B-A47B",
+             "tencent/Hunyuan-A13B-Instruct",
+             "MiniMaxAI/MiniMax-M1-80k"
+         ]
+     }
+ ]
+```
+
+Once it is provided the AI assistants configure as above, then these code make the `Silicon Flow` as the default AI assistant and with the model K2.
+
+```vim
+ let g:zai_use_ai = "Silicon Flow"
+ let g:model = "moonshotai/Kimi-K2-Instruct-0905"
+```
+
+Also, a 0-based index in the list of assistants config can be used as same as the name.
+
 ## Usage
 
 ### VIM Commands
