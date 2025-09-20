@@ -108,6 +108,72 @@ DEEPSEEK_API_KEY=sk-********************************
 
 `g:zai_default_model` 配置 AI 服务的缺省模型。
 
+`g:zai_use_ai`  从 AI 助手配置文件中选一项作为默认配置。这项配置可以用来替换关于 base-url、key 和 model 的配置，不过需要提供一个 AI 助手配置文件。
+
+如果拥有多个模型，又或者拥有多个 AI 聊天服务可以接入，提供 AI 助手配置文件就可以快速切换。AI 助手配置文件的全路径：
+
+* Linux/Mac: ~/.local/share/zai/assistants.json
+* Windows: %USERPROFILE%\AppData\Local\Zai\assistants.json
+
+一个例子：
+```json
+ [
+     {
+         "name": "deepseek",
+         "base-url": "https://api.deepseek.com",
+         "api-key-name" : "DEEPSEEK_API_KEY",
+         "model" : ["deepseek-chat", "deepseek-reasoner"]
+     },
+     {
+         "name": "月之暗面",
+         "base-url": "https://api.moonshot.cn/v1",
+         "api-key-name" : "MOONSHOT_API_KEY",
+         "model" : [
+             "kimi-k2-0905-preview",
+             "kimi-thinking-preview"
+         ]
+     },
+     {
+         "name": "火山方舟",
+         "base-url": "https://ark.cn-beijing.volces.com/api/v3",
+         "api-key-name" : "VOLCES_API_KEY",
+         "model" : [
+             "doubao-seed-1-6-250615",
+             "doubao-seed-1-6-thinking-250715"
+         ]
+     },
+     {
+         "name": "硅基流动",
+         "base-url": "https://api.siliconflow.cn",
+         "api-key-name" : "SILICONFLOW_API_KEY",
+         "model" : [
+             "deepseek-ai/DeepSeek-V3.1",
+             "deepseek-ai/DeepSeek-R1",
+             "moonshotai/Kimi-K2-Instruct-0905",
+             "tencent/Hunyuan-MT-7B",
+             "inclusionAI/Ling-mini-2.0",
+             "ByteDance-Seed/Seed-OSS-36B-Instruct",
+             "zai-org/GLM-4.5",
+             "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+             "Qwen/Qwen3-235B-A22B-Thinking-2507",
+             "Qwen/Qwen3-235B-A22B-Instruct-2507",
+             "baidu/ERNIE-4.5-300B-A47B",
+             "tencent/Hunyuan-A13B-Instruct",
+             "MiniMaxAI/MiniMax-M1-80k"
+         ]
+     }
+ ]
+```
+
+在按上例提供了 AI 助手配置文件后，下面的例子将缺省应用`硅基流动`的 k2 模型。
+
+```vim
+ let g:zai_use_ai = "硅基流动"
+ let g:model = "moonshotai/Kimi-K2-Instruct-0905"
+```
+
+上面使用了 AI 助手和模型的名称，也可以用从0开始的索引号。
+
 ## 使用说明
 
 ### VIM 命令
@@ -160,18 +226,26 @@ Zai 会在展示窗口中同时展示用户发送的请求，以及远程助手�
 - `:->?` - 设置当前会话的命令前缀
 - `:help` - 显示会话命令帮助
 - `:exit`/`:quit` - 强制退出远程 AI 服务
-- `:show config` - 显示 AI 助手的配置项
-- `:file file-path` - 附加指定文本文件
+- `:show <config>` - 显示 AI 助手的配置项
+- `:file <file-path>` - 附加指定文本文件
 - `:-file` - 清除所有附件
-- `:base-url url` - 指定当前聊天的 AI 服务 base-url
-- `:api-key-name key-name` - 指定访问 AI 服务的密钥环境变量
-- `:model model-name` - 指定当前聊天的 AI 模型
-- `:prompt text` - 设置当前聊天新的提示词
+- `:base-url <url>` - 指定当前聊天的 AI 服务 base-url
+- `:api-key-name <key-name>` - 指定访问 AI 服务的密钥环境变量
+- `:model <model-name>` - 指定当前聊天的 AI 模型
+- `:prompt <text>` - 设置当前聊天新的提示词
 - `:-prompt` - 取消设置过的提示词
-- `:temperature float` - 设置当前聊天的创造性参数
+- `:temperature <float>` - 设置当前聊天的创造性参数
 - `:-temperature` - 取消之前设置过的创造性参数
 - `:no-log` - 关闭聊天日志
 - `:-no-log` - 取消关闭，即打开聊天日志
+
+关于 AI 助手配置文件的会话命令列表
+
+- `:list ai` - 列出已经配置的 AI 助手
+- `:show ai [name|index]` - 显示指定的 AI 助手，如果没有提供 name|index，显示当前所选。
+- `:use  ai <name|index>` - 选取当前 AI 助手，并直接完成切换。
+- `:model <name|index>` - 当选定了当前的 AI 助手，则只能从限定的模型列表中选取。
+- `:use  ai <name|index> model <name|index>` - 组合 use ai 和 model 到一起。
 
 ### 配置项说明
 

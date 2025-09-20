@@ -61,7 +61,8 @@ Using lazy.nvim (Neovim configuration example): >
 <
 Manual Installation:
 
-Commands to execute in the embedded terminal on Linux/Mac:>
+Commands to execute in the embedded terminal on Linux/Mac:
+>
     pip install appdirs chardet openai
     mkdir -p ~/.vim/pack/plugins/start
     cd ~/.vim/pack/plugins/start
@@ -69,7 +70,8 @@ Commands to execute in the embedded terminal on Linux/Mac:>
     git checkout
 <
 
-Commands to execute in the embedded terminal on Windows:>
+Commands to execute in the embedded terminal on Windows:
+>
     pip install appdirs chardet openai
     md %USERPROFILE%\vimfiles\pack\plugins\start
     cd %USERPROFILE%\vimfiles\pack\plugins\start
@@ -85,14 +87,14 @@ extract it, and place the zai.vim-main folder into the corresponding directory.
 
 ==============================================================================
 3. ZAI CONFIGURATION                                    *zai-config*
-                                                        *zai-conf-logdir*
+                                                        *g:zai_log_dir*
 g:zai_log_dir           Configures the save path for log files.
 
                         Default configuration:
                         * Linux/Mac: `~/.local/share/zai/log`
                         * Windows: `%USERPROFILE%\AppData\Local\zai\log`
 
-                                                        *zai-lang*
+                                                        *g:zai_lang*
 g:zai_lang              Configures the UI language for Zai.
                         Defaults to English, or auto-selects based on the user environment.
                         To specify Chinese, configure as follows:
@@ -102,11 +104,11 @@ g:zai_lang              Configures the UI language for Zai.
 Recommendation: Configure a new log storage path on Windows. The default log
 path on Windows is hidden by the system and is inconvenient to use.
 
-                                                        *zai-conf-url*
+                                                        *g:zai_base_url*
 g:zai_base_url          Configures the `base-url` for the AI service.
                         See |zai-chatcmd-model|.
 
-                                                        *zai-conf-apikey*
+                                                        *g:zai_api_key_name*
 g:zai_api_key_name      Configures the `api-key-name` for the AI service.
                         See |zai-chatcmd-model|.
                         An API access key is required to connect to the AI
@@ -123,9 +125,81 @@ g:zai_api_key_name      Configures the `api-key-name` for the AI service.
                         Then you can use `DEEPSEEK_API_KEY` to complete this
                         configuration.
 
-                                                        *zai-conf-model*
+                                                        *g:zai_default_model*
 g:zai_default_model     Configures the default model for the AI service.
                         See |zai-chatcmd-model|.
+
+                                                        *g:zai_use_ai*
+g:zai_use_ai            Configures the default AI service.
+                        When an AI assistant configuration JSON file exists,
+                        this parameter can be used to specify the default AI
+                        assistant from the configuration file.
+
+                                                        *zai-assistants.json*
+Full path of the AI assistant configuration file:
+
+* Linux/Mac: ~/.local/share/zai/assistants.json
+* Windows: %USERPROFILE%\AppData\Local\Zai\assistants.json
+
+A typical AI assistant configuration file content is as follows:
+>
+ [
+     {
+         "name": "deepseek",
+         "base-url": "https://api.deepseek.com",
+         "api-key-name" : "DEEPSEEK_API_KEY",
+         "model" : ["deepseek-chat", "deepseek-reasoner"]
+     },
+     {
+         "name": "Moonshot AI",
+         "base-url": "https://api.moonshot.cn/v1",
+         "api-key-name" : "MOONSHOT_API_KEY",
+         "model" : [
+             "kimi-k2-0905-preview",
+             "kimi-thinking-preview"
+         ]
+     },
+     {
+         "name": "Volcano Ark",
+         "base-url": "https://ark.cn-beijing.volces.com/api/v3",
+         "api-key-name" : "VOLCES_API_KEY",
+         "model" : [
+             "doubao-seed-1-6-250615",
+             "doubao-seed-1-6-thinking-250715"
+         ]
+     },
+     {
+         "name": "Silicon Flow",
+         "base-url": "https://api.siliconflow.cn",
+         "api-key-name" : "SILICONFLOW_API_KEY",
+         "model" : [
+             "deepseek-ai/DeepSeek-V3.1",
+             "deepseek-ai/DeepSeek-R1",
+             "moonshotai/Kimi-K2-Instruct-0905",
+             "tencent/Hunyuan-MT-7B",
+             "inclusionAI/Ling-mini-2.0",
+             "ByteDance-Seed/Seed-OSS-36B-Instruct",
+             "zai-org/GLM-4.5",
+             "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+             "Qwen/Qwen3-235B-A22B-Thinking-2507",
+             "Qwen/Qwen3-235B-A22B-Instruct-2507",
+             "baidu/ERNIE-4.5-300B-A47B",
+             "tencent/Hunyuan-A13B-Instruct",
+             "MiniMaxAI/MiniMax-M1-80k"
+         ]
+     }
+ ]
+<
+
+After providing the AI assistant configuration file as above, the following
+example will default to applying Silicon Flow's k2 model.
+
+>
+ let g:zai_use_ai = "Silicon Flow"
+ let g:model = "moonshotai/Kimi-K2-Instruct-0905"
+<
+The above uses the AI assistant and model names; indexes starting from 0 can
+also be used.
 
 ==============================================================================
 4. VIM COMMANDS                                         *zai-commands*
@@ -335,14 +409,14 @@ via |zai-chat-command-prefix|.
                         name.
 
                                                         *zai-chatcmd-baseurl*
-:base-url `url`           Specify the base-url for the current chat.
-                        Chat command `zai-chat-commands`.
+:base-url `url`           Change the base-url used for the current chat's AI service.
+                        Chat command |zai-chat-commands|.
 
                                                         *zai-chatcmd-keyname*
-:api-key-name `key-name`  Specify the API-Key name for the current chat.
-                        Chat command `zai-chat-commands`.
-                  Note: Should specify the name of environment variable other
-                        than the key value.
+:api-key-name `key-name`  Change the API key used for the current chat.
+                        Chat command |zai-chat-commands|.
+                  Note: This uses the name of the environment variable pointing
+                        to the key, not the key content itself.
 
                                                         *zai-chatcmd-model*
 :model `model-name`       Specify the AI model for the current chat.
@@ -385,13 +459,11 @@ via |zai-chat-command-prefix|.
  let g:zai_api_key_name = "SILICONFLOW_API_KEY"
  let g:zai_default_model = "Pro/moonshotai/Kimi-K2-Instruct-0905"
 <
-                  Note: The names corresponding to the same model on Silicon
-                        Flow are not consistent with those on deepseek.
-                        Tested and confirmed models on Silicon Flow include:
-                         * `Pro/moonshotai/Kimi-K2-Instruct-0905`
-                         * `deepseek-ai/DeepSeek-R1`
-                         * `deepseek-ai/DeepSeek-V3`
-                         * `Qwen/QwQ-32B`
+                  Note: After successfully applying an AI assistant using
+                        `:use ai` or `g:zai_use_ai`, the `:model` session
+                        command only allows selecting values within the
+                        configured range.
+                        See |zai-chatcmd-useai|, |g:zai_use_ai|
 
                                                         *zai-chatcmd-prompt*
 :prompt `text`            Set a new prompt for the current chat.
@@ -438,12 +510,34 @@ supported for setting or unsetting:
     * `logprobs`           Top Token Probability, float, range [0,20]
 
                                                         *zai-chatcmd-nolog*
-:no-log                  Close chat logging. Chat command |zai-chat-commands|.
-:-no-log                 After chat logging is disabled, new content will no
-                         longer be saved to the log.
+:no-log                 Close chat logging. Chat command |zai-chat-commands|.
+:-no-log                After chat logging is disabled, new content will no
+                        longer be saved to the log.
 
-                   Note: In the current version, preview is not available
-                         after chat logging is disabled.  See |:ZaiPreview|.
+                  Note: In the current version, preview is not available
+                        after chat logging is disabled.  See |:ZaiPreview|.
+
+                                                        *zai-chatcmd-useai*
+:use ai `<name|idx>`                   Apply an item of AI assistant config.
+:use ai `<name|idx>` model `<name|idx>`  Session command |zai-chat-commands|.
+                                     You can use either the name or index.
+                                     See |g:zai_use_ai|, |zai-assistants.json|
+
+                        After successfully applying an AI assistant using the
+                        `:use ai` session command, the `:model` session command
+                        is affected and only allows selecting values from the
+                        pre-configured model list of the AI assistant. See
+                        |zai-chatcmd-model|.
+
+:show ai `[<name|idx>]`   Display the content of an AI assistant. Session
+                        command |zai-chat-commands|.
+                        When `<name|idx>` is not provided, displays the
+                        currently applied AI assistant.  See
+                        |zai-chatcmd-useai|.
+
+:list ai                List available AI assistants.
+                        Session command |zai-chat-commands|.
+                        See |zai-assistants.json|.
 
 ==============================================================================
 6. LICENSE                                              *zai-license*

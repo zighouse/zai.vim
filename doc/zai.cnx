@@ -85,14 +85,14 @@ Zai.Vim 是一款将 AI 助手直接集成到 Vim 编辑器的插件，管理着
 
 ==============================================================================
 3. Zai 配置                                             *zai-config*
-                                                        *zai-conf-logdir*
+                                                        *g:zai_log_dir*
 g:zai_log_dir           配置日志文件保存路径。
 
                         默认配置为:
                         * Linux/Mac: `~/.local/share/zai/log`
                         * Windows: `%USERPROFILE%\AppData\Local\zai\log`
 
-                                                        *zai-lang*
+                                                        *g:zai_lang*
 g:zai_lang              配置 Zai 的界面语言。
                         默认使用英语，或者按用户环境自行选择。
                         如果希望指定使用中文，需要配置为：
@@ -102,10 +102,10 @@ g:zai_lang              配置 Zai 的界面语言。
 推荐：在 Windows 上配置新的日志存放路径。Windows 上的默认日志存放路径被系统隐
 藏，使用不便利。
 
-                                                        *zai-conf-url*
+                                                        *g:zai_base_url*
 g:zai_base_url          配置 AI 服务的 `base-url`。见 |zai-chatcmd-model|.
 
-                                                        *zai-conf-apikey*
+                                                        *g:zai_api_key_name*
 g:zai_api_key_name      配置 AI 服务的 `api-key-name`。见 |zai-chatcmd-model|.
                         连接 AI 服务时需要提供服务接口访问密钥。用户需要在操作
                         系统的环境变量中预先设置可以访问到这个密钥的环境变量。
@@ -117,8 +117,78 @@ g:zai_api_key_name      配置 AI 服务的 `api-key-name`。见 |zai-chatcmd-mo
 <
                         然后就可以使用 `DEEPSEEK_API_KEY` 来完成这项配置。
 
-                                                        *zai-conf-model*
-g:zai_default_model     配置 AI 服务的缺省模型`。见 |zai-chatcmd-model|.
+                                                        *g:zai_default_model*
+g:zai_default_model     配置 AI 服务的缺省模型。见 |zai-chatcmd-model|.
+
+                                                        *g:zai_use_ai*
+g:zai_use_ai            配置缺省的 AI 服务。
+                        当存在一个配置 AI 助手的 json 文件时，可以使用本这个参
+                        数来指定默认应用配置文件中存在的 AI 助手。
+
+                                                        *zai-assistants.json*
+AI 助手配置文件的全路径：
+
+* Linux/Mac: ~/.local/share/zai/assistants.json
+* Windows: %USERPROFILE%\AppData\Local\Zai\assistants.json
+
+一个典型的 AI 助手配置文件内容如下：
+>
+ [
+     {
+         "name": "deepseek",
+         "base-url": "https://api.deepseek.com",
+         "api-key-name" : "DEEPSEEK_API_KEY",
+         "model" : ["deepseek-chat", "deepseek-reasoner"]
+     },
+     {
+         "name": "月之暗面",
+         "base-url": "https://api.moonshot.cn/v1",
+         "api-key-name" : "MOONSHOT_API_KEY",
+         "model" : [
+             "kimi-k2-0905-preview",
+             "kimi-thinking-preview"
+         ]
+     },
+     {
+         "name": "火山方舟",
+         "base-url": "https://ark.cn-beijing.volces.com/api/v3",
+         "api-key-name" : "VOLCES_API_KEY",
+         "model" : [
+             "doubao-seed-1-6-250615",
+             "doubao-seed-1-6-thinking-250715"
+         ]
+     },
+     {
+         "name": "硅基流动",
+         "base-url": "https://api.siliconflow.cn",
+         "api-key-name" : "SILICONFLOW_API_KEY",
+         "model" : [
+             "deepseek-ai/DeepSeek-V3.1",
+             "deepseek-ai/DeepSeek-R1",
+             "moonshotai/Kimi-K2-Instruct-0905",
+             "tencent/Hunyuan-MT-7B",
+             "inclusionAI/Ling-mini-2.0",
+             "ByteDance-Seed/Seed-OSS-36B-Instruct",
+             "zai-org/GLM-4.5",
+             "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+             "Qwen/Qwen3-235B-A22B-Thinking-2507",
+             "Qwen/Qwen3-235B-A22B-Instruct-2507",
+             "baidu/ERNIE-4.5-300B-A47B",
+             "tencent/Hunyuan-A13B-Instruct",
+             "MiniMaxAI/MiniMax-M1-80k"
+         ]
+     }
+ ]
+<
+
+在按上例提供了 AI 助手配置文件后，下面的例子将缺省应用`硅基流动`的 k2 模型。
+
+>
+ let g:zai_use_ai = "硅基流动"
+ let g:model = "moonshotai/Kimi-K2-Instruct-0905"
+<
+上面使用了 AI 助手和模型的名称，也可以用从0开始的索引号。
+
 
 ==============================================================================
 4. VIM 命令                                             *zai-commands*
@@ -323,12 +393,9 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
  let g:zai_api_key_name = "SILICONFLOW_API_KEY"
  let g:zai_default_model = "Pro/moonshotai/Kimi-K2-Instruct-0905"
 <
-                  注意: 硅基流动的同一模型对应的名称与 deepseek 的并不一致。
-                        已经测试并确认过的硅基流动的模型有:
-                         * `Pro/moonshotai/Kimi-K2-Instruct-0905`
-                         * `deepseek-ai/DeepSeek-R1`
-                         * `deepseek-ai/DeepSeek-V3`
-                         * `Qwen/QwQ-32B`
+                  注意: 当使用 `:use ai` 或者 `g:zai_use_ai` 成功应用了 AI 助
+                        手之后，`:model` 会话命令只允许在配置范围内选值。
+                        见 |zai-chatcmd-useai|、|g:zai_use_ai|
 
                                                         *zai-chatcmd-prompt*
 :prompt `text`            设置当前聊天新的提示词。会话命令 |zai-chat-commands|.
@@ -373,6 +440,23 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
 
                    注意: 当前版本关闭了聊天日志之后，不能进行预览。
                          见 |:ZaiPreview|.
+
+                                                        *zai-chatcmd-useai*
+:use ai `<name|idx>`                   应用 AI 助手配置文件中的项。
+:use ai `<name|idx>` model `<name|idx>`  会话命令 |zai-chat-commands|.
+                                     可以使用配置的名称，也可以使用索引。
+                                     见 |g:zai_use_ai|、|zai-assistants.json|
+
+                        当使用了 `:use ai` 会话命令成功应用了 AI 助手之后，会
+                        影响 `:model` 会话命令，只允许在 AI 助手预先配置的模型
+                        列表中选值。见 |zai-chatcmd-model|.
+
+:show ai `[<name|idx>]`   显示 AI 助手的内容。会话命令 |zai-chat-commands|.
+                        当没有提供 `<name|idx>` 时，显示当前应用的 AI 助手。
+                        见 |zai-chatcmd-useai|.
+
+:list ai                列出可用的 AI 助手。会话命令 |zai-chat-commands|.
+                        见|zai-assistants.json|.
 
 ==============================================================================
 6. 许可证                                               *zai-license*

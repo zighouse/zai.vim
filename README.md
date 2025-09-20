@@ -150,18 +150,26 @@ Session commands configure AI assistant settings and are processed by Zai's back
 - `:->?` - Change command prefix
 - `:help` - Show help information
 - `:exit`/`:quit` - Force exit remote AI service
-- `:show config` - Display configuration items
-- `:file file-path` - Attach text file
+- `:show <config>` - Display configuration items
+- `:file <file-path>` - Attach text file
 - `:-file` - Clear all attachments
-- `:base-url url` - Set base url of AI service
-- `:api-key-name key-name` - Set variable of API Key to access AI service
-- `:model model-name` - Set AI model
-- `:prompt text` - Set system prompt
+- `:base-url <url>` - Set base url of AI service
+- `:api-key-name <key-name>` - Set variable of API Key to access AI service
+- `:model <name>` - Set AI model
+- `:prompt <text>` - Set system prompt
 - `:-prompt` - Clear custom prompt
-- `:temperature float` - Set creativity parameter (0-2)
+- `:temperature <float>` - Set creativity parameter (0-2)
 - `:-temperature` - Clear temperature setting
 - `:no-log` - Disable logging
 - `:-no-log` - Enable logging
+
+Session Commands with AI assistants json configuration:
+
+- `:list ai` - List all AI assistants
+- `:show ai [name|index]` - Display the AI assistant
+- `:use  ai <name|index>` - Use an AI assistant picked up from the list.
+- `:model <name|index>` - Choose one of valid model from list of current AI assistant.
+- `:use  ai <name|index> model <name|index>` - Combination of `use ai` and `model` commands.
 
 ### Configuration Items
 
