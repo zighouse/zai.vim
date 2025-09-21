@@ -37,6 +37,7 @@ Zai.Vim 是一款将 AI 助手直接集成到 Vim 编辑器的插件，管理着
    - 必需Python包：
      - `openai`（缺失时自动安装）
    - 可选 iamcco/markdown-preview.nvim
+   - 可选 junegunn/fzf.vim
 <
 
 2.2 通过插件管理器安装                                  *zai-plugin-managers*
@@ -194,13 +195,17 @@ AI 助手配置文件的全路径：
 4. VIM 命令                                             *zai-commands*
 
                                                         *:Zai*
-:Zai                    打开 Zai 聊天交互界面。全 VIM 可用。
-<leader>zo              normal 模式可用 <leader>zo, 命令模式可用 :Zai.
+:Zai                    打开 Zai 聊天交互界面。
+<leader>zo              Normal 模式可用 <leader>zo.
 
-:q                      关闭 Zai 聊天交互界面。仅 Zai 聊天交互界面可用。
+                                                        *:ZaiClose*
+:ZaiClose               关闭 Zai 聊天交互界面。
+<leader>zX              Normal 模式可用。
+:q                      仅 Zai 聊天交互界面可用。
+                  注意: 当 Zai 聊天交互界面关闭时，切换到后台运行。
 
                                                         *:ZaiGo*
-:ZaiGo                  发送输入窗口中的内容。全 VIM 可用。
+:ZaiGo                  发送输入窗口中的内容。
 <CR>                    输入窗口 normal 模式可用。
 
                                                         *zai-ui*
@@ -228,7 +233,7 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
 :help                   打开 zai 帮助。仅 Zai 聊天交互界面可用。
 
                                                         *:ZaiAdd*
-:ZaiAdd                 添加选中内容到输入窗口。全 VIM 可用。
+:ZaiAdd                 添加选中内容到输入窗口。
 <leader>za              visual 模式可用 <leader>za, 从 visual 进入命令模式可用
                         :ZaiAdd.
 
@@ -270,9 +275,34 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
 
                         依赖于聊天的日志功能，关闭了日志的聊天不可用。
 
+                                                        *:ZaiOpenLog*
+:ZaiOpenLog             打开聊天日志。
+                        当安装有插件 `fzf.vim` 时优先用它来定位聊天日志，
+                        否则选用 `:NERDTree` 来打开日志目录。
+
+                        当使用 fzf.vim 来定位时，如果用户没有做 fzf 的键位映射，
+                        则默认补充如下映射:
+>
+     file list:     ctrl-g:first            ctrl-d:last
+                    ctrl-b:page-up          ctrl-f:page-down
+                    ctrl-j:down             ctrl-k:up
+     file preview:  ctrl-h:preview-top      ctrl-l:preview-bottom
+                    ctrl-p:preview-page-up  ctrl-n:preview-page-down
+                    ctrl-e:preview-up       ctrl-y:preview-down
+                    ctrl-/:toggle-preview
+<
+
+                                                        *:ZaiGrepLog*
+:ZaiGrepLog <pattern>   查找聊天日志。
+                        当安装有插件 `fzf.vim` 时可用来漂亮地查找聊天日志，
+                        否则选用 `:grep` 结合 `quickfix` 来查找，在 Windows 上使用
+                        `findstr`。
+
+                        当使用 fzf.vim 来定位时，键位映射和 |ZaiOpenLog| 同。
+
                                                         *:ZaiLoad*
 :ZaiLoad                把在当前窗口中打开的 Zai 聊天日志加载成聊天上下文。
-<leader>zl              全 VIM 可用。
+<leader>zl
 
                         Zai 可以把曾经记录的聊天会话日志加载到新的聊天中作为上
                         下文，这将会使这个聊天中的 AI 助手在接下来的回答中利用

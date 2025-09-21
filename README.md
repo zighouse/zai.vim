@@ -24,6 +24,7 @@ Zai.Vim is a Vim plugin that integrates AI assistants directly into your Vim edi
 - Required Python packages:
   - `openai` (automatically installed if missing)
 - Optional: iamcco/markdown-preview.nvim
+- Optional: junegunn/fzf.vim
 
 ### Using a plugin manager
 
@@ -181,11 +182,14 @@ Also, a 0-based index in the list of assistants config can be used as same as th
 | Command                | Description                          | Mode          |
 |------------------------|--------------------------------------|---------------|
 | `:help`                | Open Zai help                        | Zai interface only |
-| `:Zai`                 | Open Zai interface                   | All VIM modes |
+| `:Zai`                 | Open Zai interface                   | -             |
 | `<leader>zo`           | Open Zai interface                   | Normal mode   |
-| `:ZaiGo`               | Send input content                   | All VIM modes |
+| `:ZaiClose`            | Close Zai interface                  | -             |
+| `<leader>zX`           | Close Zai interface                  | Normal mode   |
+| `:q`                   | Close Zai interface                  | Zai interface only |
+| `:ZaiGo`               | Send input content                   | -             |
 | `<CR>`                 | Send input content                   | Input window normal mode |
-| `:ZaiAdd`              | Add selection to input               | All VIM modes |
+| `:ZaiAdd`              | Add selection to input               | -             |
 | `<leader>za`           | Add selection to input               | Visual mode   |
 | `:ZaiNew`              | Create new chat                      | Zai interface only |
 | `:[count]ZaiPrev`      | Select previous chat                 | Zai interface only |
@@ -196,9 +200,11 @@ Also, a 0-based index in the list of assistants config can be used as same as th
 | `:cn id`               | Select chat by ID                    | Zai interface only |
 | `:ZaiPreview`          | Preview chat in browser              | Zai interface only |
 | `<leader>dp`           | Preview chat in browser              | Zai interface normal mode |
-| `:ZaiLoad`             | Load Zai log as context              | All VIM modes |
-| `<leader>zl`           | Load Zai log as context              | All VIM modes |
-| `:ZaiConfig`           | Edit AI assistants configuration     | All VIM modes |
+| `:ZaiOpenLog`          | Open Zai log                         | -             |
+| `:ZaiGrepLog <patten>` | Grep Zai log                         | -             |
+| `:ZaiLoad`             | Load Zai log as context              | -             |
+| `<leader>zl`           | Load Zai log as context              | -             |
+| `:ZaiConfig`           | Edit AI assistants configuration     | -             |
 
 ### Interface Overview
 

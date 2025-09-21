@@ -22,6 +22,7 @@ Zai.Vim 是一款将 AI 助手直接集成到 Vim 编辑器的插件，管理着
 - 必需Python包：
   - `openai`（缺失时自动安装）
 - 可选 iamcco/markdown-preview.nvim
+- 可选 junegunn/fzf.vim
 
 ### 使用插件管理器
 
@@ -181,11 +182,14 @@ DEEPSEEK_API_KEY=sk-********************************
 | 命令                | 描述                          | 模式          |
 |---------------------|-------------------------------|---------------|
 | `:help`             | Open Zai hel        p         | 仅 Zai 界面可用 |
-| `:Zai`              | 打开 Zai 聊天交互界面         | 全 VIM 可用   |
+| `:Zai`              | 打开 Zai 聊天交互界面         | -          |
 | `<leader>zo`        | 打开 Zai 聊天交互界面         | normal 模式   |
-| `:ZaiGo`            | 发送输入窗口中的内容          | 全 VIM 可用   |
+| `:ZaiClose`         | 关闭 Zai 聊天交互界面         | -          |
+| `<leader>zX`        | 关闭 Zai 聊天交互界面         | normal 模式   |
+| `:q`                | 关闭 Zai 聊天交互界面         | 仅 Zai 界面可用 |
+| `:ZaiGo`            | 发送输入窗口中的内容          | -          |
 | `<CR>`              | 发送输入窗口中的内容          | 输入窗口 normal 模式 |
-| `:ZaiAdd`           | 添加选中内容到输入窗口        | 全 VIM 可用   |
+| `:ZaiAdd`           | 添加选中内容到输入窗口        | -          |
 | `<leader>za`        | 添加选中内容到输入窗口        | visual 模式   |
 | `:ZaiNew`           | 新建聊天                      | 仅 Zai 界面可用 |
 | `:[count]ZaiPrev`   | 选中前面的聊天                | 仅 Zai 界面可用 |
@@ -196,9 +200,11 @@ DEEPSEEK_API_KEY=sk-********************************
 | `:cn id`            | 选中 id 指定的聊天            | 仅 Zai 界面可用 |
 | `:ZaiPreview`       | 在浏览器中展示聊天内容        | 仅 Zai 界面可用 |
 | `<leader>dp`        | 在浏览器中展示聊天内容        | Zai 界面 normal 模式 |
-| `:ZaiLoad`          | 加载 Zai 日志作为新的上下文   | 全 VIM 可用   |
-| `<leader>zl`        | 加载 Zai 日志作为新的上下文   | 全 VIM 可用   |
-| `:ZaiConfig`        | 编辑 AI 配置                  | 全 VIM 可用   |
+| `:ZaiOpenLog`       | 打开聊天日志                  | -          |
+| `:ZaiGrepLog <pattern>` | 查找聊天日志              | -          |
+| `:ZaiLoad`          | 加载 Zai 日志作为新的上下文   | -          |
+| `<leader>zl`        | 加载 Zai 日志作为新的上下文   | -          |
+| `:ZaiConfig`        | 编辑 AI 配置                  | -          |
 
 ### Zai 界面说明
 

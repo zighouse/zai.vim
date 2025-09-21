@@ -35,9 +35,12 @@ endif
 command! Zai call zai#Open()
 command! -range ZaiAdd call zai#AddRange(<line1>, <line2>)
 command! ZaiGo call zai#Go()
-command! -nargs=1 ZaiComplete call zai#Complete(<arg>)
+command! ZaiClose call zai#Close()
+command! -nargs=1 ZaiComplete call zai#Complete(<args>)
 command! ZaiLoad call zai#Load()
 command! ZaiConfig call zai#EditConfig()
+command! ZaiOpenLog call zai#OpenLog()
+command! -nargs=1 ZaiGrepLog call zai#GrepLog('<args>')
 
 nmap <Plug>Zai :Zai<CR>
 nmap <Plug>ZaiGo :ZaiGo<CR>
@@ -47,6 +50,7 @@ nmap <Plug>ZaiLoad :ZaiLoad<CR>
 
 nmap <silent> <leader>zo <Plug>Zai
 nmap <silent> <leader>zg <Plug>ZaiGo
+nmap <silent> <leader>zX :call zai#Close()<CR>
 vmap <silent> <leader>za <Plug>ZaiAdd
 nmap <silent> <leader>zf :call zai#Complete(0)<CR>
 inoremap <silent> <C-F> <C-O>:call zai#Complete(1)<CR>

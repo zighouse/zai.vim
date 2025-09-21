@@ -39,6 +39,7 @@ freely, control at will.
    - Required Python packages:
      - `openai` (automatically installed if missing)
    - Optional iamcco/markdown-preview.nvim
+   - Optional junegunn/fzf.vim
 <
 
 2.2 Installation via Plugin Manager                     *zai-plugin-managers*
@@ -206,16 +207,17 @@ also be used.
 
                                                         *:Zai*
 :Zai                    Open the Zai chat interaction interface.
-                        Available throughout VIM.
-<leader>zo              Available in normal mode: <leader>zo;
-                        available in command mode: :Zai.
+<leader>zo              Available in normal mode.
 
-:q                      Close the Zai chat interaction interface.
-                        Only available within the Zai chat interface.
+                                                        *:ZaiClose*
+:ZaiClose               Close the Zai chat interaction interface.
+<leader>zX              Availabe in normal mode.
+:q                      Available within the Zai chat interface.
+                  Note. After Zai chat interface close, it still runs on
+                        background.
 
                                                         *:ZaiGo*
 :ZaiGo                  Send the content in the input window.
-                        Available throughout VIM.
 <CR>                    Available in normal mode of the input window.
 
                                                         *zai-ui*
@@ -250,7 +252,6 @@ Zai interaction interface at any time via the :Zai command.
 
                                                         *:ZaiAdd*
 :ZaiAdd                 Add selected content to the input window.
-                        Available throughout VIM.
 <leader>za              Available in visual mode: <leader>za; available from
                         visual mode entering command mode: :ZaiAdd.
 
@@ -307,10 +308,35 @@ Zai interaction interface at any time via the :Zai command.
                         Depends on the chat's logging functionality; chats
                         with logging disabled are not available.
 
+                                                        *:ZaiOpenLog*
+:ZaiOpenLog             Open Zai chat log.
+                        When `fzf.vim` is available, it is applied to locate a
+                        chat log gracefully. Otherwize, `:NERDTree` is used to
+                        open the directory of chat logs.
+
+                        When `fzf.vim` is used to locate a file, and user does
+                        not provide default key-actions maps, Zai use these maps:
+>
+     file list:     ctrl-g:first            ctrl-d:last
+                    ctrl-b:page-up          ctrl-f:page-down
+                    ctrl-j:down             ctrl-k:up
+     file preview:  ctrl-h:preview-top      ctrl-l:preview-bottom
+                    ctrl-p:preview-page-up  ctrl-n:preview-page-down
+                    ctrl-e:preview-up       ctrl-y:preview-down
+<
+
+                                                        *:ZaiGrepLog*
+:ZaiGrepLog <pattern>   Grep Zai chat log.
+                        When `fzf.vim` is available, it is applied to grep a
+                        chat log gracefully. Otherwize, the combination of
+                        `:grep` + `quickfix` is used. On Windows find by `findstr`.
+
+                        When `fzf.vim` is used, the key-actions maps are the
+                        same with |ZaiOpenLog|.
+
                                                         *:ZaiLoad*
 :ZaiLoad                Load the Zai chat log opened in the current window as
-                        chat context.
-<leader>zl              Available throughout VIM.
+<leader>zl              chat context.
 
                         Zai can load previously recorded chat session logs
                         into a new chat as context, which will enable the AI

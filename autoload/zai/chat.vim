@@ -656,6 +656,15 @@ function! zai#chat#Go() abort
     call deletebufline(s:zai_ibuf, 1, '$')
 endfunction
 
+function! zai#chat#Close() abort
+    let l:chat = s:current_chat()
+    if empty(l:chat) || !bufexists(l:chat.obuf)
+        return
+    endif
+    call s:goto_owin()
+    silent! quit
+endfunction
+
 function! zai#chat#Stop() abort
     let l:chat = s:current_chat()
     if empty(l:chat) || !bufexists(l:chat.obuf)
@@ -682,6 +691,60 @@ function! s:on_ui_closed()
             execute bufwinnr(l:chat.obuf) .. 'wincmd c'
         endif
     endif
+endfunction
+
+function! zai#chat#LoadLogfile(logfile) abort
+    let l:logfile = empty(expand(a:logfile)) ? '%' : a:logfile
+    let l:resolved = fnamemodify(l:logfile, ':p')
+    if filereadable(l:resolved)
+        return
+    endif
+    " Ensure the windows and task are open
+    call s:ui_open()
+    call s:task_start()
+
+    let l:chat = s:current_chat()
+
+    " Check if the input window is open
+    if s:zai_ibuf == -1 || !bufexists(s:zai_ibuf)
+        echo "open chat input buffer failed."
+        return
+    endif
+
+    " Send the content to chat_task
+    let l:content = [ ':load ' . l:resolved ]
+
+    if g:zai_input_mode == 'json'
+        " for json input mode
+        let l:request = json_encode(l:content)
+    else
+        " for text input mode
+        if len(l:content) > 1
+            " use quotation signature to make content a quotated block.
+            let l:signature = zai#util#get_block_sign(l:content)
+            let l:request = join(['<<' .. l:signature] + l:content + [l:signature], "\n")
+        else
+            let l:request = join(l:content, "\n")
+        endif
+    endif
+
+    let l:req_msg = iconv(l:request . "\n", &encoding, 'utf-8')
+    if has('nvim')
+        " for Neovim
+        call jobsend(l:chat.job, l:req_msg)
+    else
+        " for Vim
+        let l:channel = job_getchannel(l:chat.job)
+        call ch_sendraw(l:channel, l:req_msg)
+    endif
+
+    " Also write to the output box
+    let l:content = ['', g:zai_print_prompt[0]] + l:content + ['', g:zai_print_prompt[1]]
+    call s:ui_open()
+    call s:print_raw(l:chat.obuf, l:content)
+
+    " Clear the input buffer
+    call deletebufline(s:zai_ibuf, 1, '$')
 endfunction
 
 function! zai#chat#Load() abort

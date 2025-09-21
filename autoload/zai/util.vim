@@ -1,5 +1,28 @@
 let s:plugin_root = expand('<sfile>:h:h:h')
 let s:path_sep = has('win32') ? '\' : '/'
+let s:extra_fzf_opts = [
+                        \ '--bind', 'ctrl-h:preview-top,ctrl-l:preview-bottom',
+                        \ '--bind', 'ctrl-p:preview-page-up,ctrl-n:preview-page-down',
+                        \ '--bind', 'ctrl-e:preview-up,ctrl-y:preview-down',
+                        \ '--bind', 'ctrl-g:first,ctrl-d:last',
+                        \ '--bind', 'ctrl-b:page-up,ctrl-f:page-down',
+                        \ '--bind', 'ctrl-j:down,ctrl-k:up',
+                        \ '--bind', 'ctrl-/:toggle-preview',
+                        \ ]
+
+if exists('g:zai_log_dir')
+    let s:log_dir = fnameescape(g:zai_log_dir)
+else
+    if has('win32')
+        let s:log_dir = expand('~/AppData/Local/Zighouse/Zai/Log')
+    else
+        let s:log_dir = expand('~/.local/share/zai/log')
+    endif
+endif
+
+function! zai#util#log_path()
+    return s:log_dir
+endfunction
 
 function! zai#util#get_file_type()
    if !empty(&filetype)
@@ -121,4 +144,149 @@ function! zai#util#EditAssistants()
     if !filereadable(l:config_file)
         setfiletype json
     endif
+endfunction
+
+function! s:open_fzf_files(dir) abort
+    if !exists('g:loaded_fzf')
+        echohl ErrorMsg
+        echo 'Error: fzf.vim is required but not installed.'
+        echohl None
+        return
+    endif
+
+    try
+        let l:opts = fzf#vim#with_preview()
+        let l:opts.options = l:opts.options + [ '--preview-window', 'right:70%' ]
+        if !has_key(l:opts, 'window')
+            let l:opts.window = {}
+        endif
+        if !has_key(l:opts.window, 'width') || l:opts.window.width < 0.8
+            let l:opts.window.width = 0.9
+        endif
+        if !has_key(l:opts.window, 'height') || l:opts.window.height < 0.8
+            let l:opts.window.height = 0.9
+        endif
+        if !exists('$FZF_DEFAULT_OPTS') || $FZF_DEFAULT_OPTS !~# '--bind'
+            let l:opts.options = l:opts.options + s:extra_fzf_opts
+        endif
+        call fzf#vim#files(a:dir, l:opts)
+    catch /^Vim\%((\a\+)\)\=:E/
+        echohl ErrorMsg
+        echo 'Failed to open fzf: ' . v:exception
+        echohl None
+    endtry
+endfunction
+
+function! s:open_fzf_grep(dir, pat) abort
+    if empty(a:pat) | return | endif
+    if !exists('g:loaded_fzf')
+        echohl ErrorMsg
+        echo 'Error: fzf.vim is required but not installed.'
+        echohl None
+        return
+    endif
+
+    let l:cmd = 'rg --column --line-number --no-heading --color=always --smart-case '
+                \ . shellescape(a:pat) . ' ' . shellescape(a:dir)
+
+    try
+        let l:opts = fzf#vim#with_preview()
+        let l:opts.options = l:opts.options + [ 
+                    \ '--preview-window', 'hidden,right:70%',
+                    \ '--prompt', 'Zai Log Grep> '
+                    \ ]
+        if !has_key(l:opts, 'window')
+            let l:opts.window = {}
+        endif
+        if !has_key(l:opts.window, 'width') || l:opts.window.width < 0.8
+            let l:opts.window.width = 0.9
+        endif
+        if !has_key(l:opts.window, 'height') || l:opts.window.height < 0.8
+            let l:opts.window.height = 0.9
+        endif
+        if !exists('$FZF_DEFAULT_OPTS') || $FZF_DEFAULT_OPTS !~# '--bind'
+            let l:opts.options = l:opts.options + s:extra_fzf_opts
+        endif
+        call fzf#vim#grep(l:cmd, 1, l:opts)
+    catch /^Vim\%((\a\+)\)\=:E/
+        echohl ErrorMsg
+        echo 'Failed to open fzf: ' . v:exception
+        echohl None
+    endtry
+endfunction
+
+function zai#util#OpenLog() abort
+    try
+        if exists('g:loaded_fzf') && exists('*fzf#run')
+            call s:open_fzf_files(s:log_dir)
+        elseif exists('g:loaded_nerd_tree') && exists(':NERDTree') == 2
+            execute 'NERDTree ' . s:log_dir
+        else
+            execute 'edit ' . s:log_dir
+        endif
+    catch /^Vim\%((\a\+)\)\=:E/
+        echohl ErrorMsg
+        echomsg 'Filed open log directory: ' . v:exception
+        echohl None
+        execute 'edit ' . s:log_dir
+    endtry
+endfunction
+
+function zai#util#GrepLog(pat) abort
+    if exists('g:loaded_fzf') && exists('*fzf#run')
+        call s:open_fzf_grep(s:log_dir, a:pat)
+        return
+    endif
+
+    if executable('rg')
+        let l:cmd  = 'rg --vimgrep --smart-case '.shellescape(a:pat)
+        let l:parser = 'rg'
+    elseif executable('grep')
+        let l:cmd  = 'grep -rn '.shellescape(a:pat)
+        let l:parser = 'grep'
+    elseif has('win32') && executable('findstr')
+        " /n for line-num; findstr uses regexp, should escape key-words
+        let l:esc = substitute(a:pat, '[\\^$.*+?()|{}]', '\\\\&', 'g')
+        let l:cmd  = 'findstr /n /r /c:"'.l:esc.'"'
+        let l:parser = 'findstr'
+    else
+        echohl ErrorMsg
+        echomsg 'No rg/grep/findstr found!'
+        echohl None
+        return
+    endif
+    let l:cmd .= ' '.fnameescape(s:log_dir)
+
+    let l:lines = systemlist(l:cmd)
+    if v:shell_error || empty(l:lines)
+        echohl ErrorMsg
+        echomsg 'No match: '.a:pat
+        echohl None
+        return
+    endif
+
+    let l:qfl = []
+    for l:line in l:lines
+        if l:parser ==# 'rg'
+            let p = matchlist(l:line, '^\(.\+\):\(\d\+\):\(\d\+\):\(.*\)')
+            if !empty(p)
+                call add(l:qfl, {'filename':p[1],'lnum':str2nr(p[2]),'col':str2nr(p[3]),'text':p[4]})
+            endif
+
+        elseif l:parser ==# 'grep'
+            let p = matchlist(l:line, '^\(.\+\):\(\d\+\):\(.*\)')
+            if !empty(p)
+                call add(l:qfl, {'filename':p[1],'lnum':str2nr(p[2]),'col':1,'text':p[3]})
+            endif
+
+        else " findstr
+            let p = matchlist(l:line, '^\(.\+\):\(\d\+\):\(.*\)')
+            if !empty(p)
+                call add(l:qfl, {'filename':p[1],'lnum':str2nr(p[2]),'col':1,'text':p[3]})
+            endif
+        endif
+    endfor
+
+    call setqflist(l:qfl, 'r')
+    copen | execute 'silent! wincmd J'
 endfunction
