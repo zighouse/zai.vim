@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, List, Dict, Any
+from appdirs import user_data_dir
+
+class Logger:
+    def __init__(self):
+        self._verbose = True
+        self._enable = True
+        self._log_path = None
+        self._messages = []
+        self._system_message = ''
+        self._file = None
+        self._error = False
+
+    def set_verbose(self, verbose: bool):
+        self._verbose = verbose
+
+    def is_verbose(self) -> bool:
+        return self._verbose
+
+    def set_enable(self, enable: bool):
+        self._enable = enable
+
+    def is_enable(self) -> bool:
+        return self._enable and self._log_path is not None
+
+    def log_system(self, message: str):
+        self._system_message = message.strip()
+        
+    def open(self, log_dir: str = '', filename: str = '') -> bool:
+        if not self._enable:
+            self._log_path = None
+            return True
+        if not log_dir:
+            log_dir = Path(user_data_dir("zai", "zighouse")) / "log"
+        try:
+            if isinstance(log_dir, str):
+                log_dir = Path(log_dir)
+            log_dir.mkdir(parents=True, exist_ok=True)
+            if not filename:
+                log_filename = datetime.now().strftime("%Y%m%d_%H%M%S") + '.md'
+            else:
+                log_filename = filename
+            self._log_path = log_dir / log_filename
+            self._error = False
+            return True
+
+        except Exception as e:
+            print(f"Failed initializing log file, error: {e}", file=sys.stderr)
+            self._log_path = None
+            return False
+
+    def close(self):
+        if self._file:
+            self._file.close()
+        self._file = None
+
+    def get_path(self) -> str:
+        if self._log_path:
+            return self._log_path.absolute()
+        return ''
+
+    def _save_msg(self, msg: Dict[str, Any]):
+        if self.is_enable() and self._file is not None:
+            try:
+                self._file.write(f"**{msg['role'].capitalize()}:**\n")
+                self._file.write(f"<small>\n")
+                for k in msg:
+                    if k not in ['role', 'content', 'files', 'reasoning_content', 'tool_calls', 'stop']:
+                        if isinstance(msg[k], str) and "\n" in msg[k]:
+                            self._file.write(f"  - {k.replace('_','-')}:<<EOF\n{msg[k]}\nEOF\n")
+                        else:
+                            self._file.write(f"  - {k.replace('_','-')}: {msg[k]}\n")
+                if 'files' in msg:
+                    self._file.write("  - attachments:\n")
+                    for file in msg['files']:
+                        self._file.write(f"    - {file['full_path']}\n")
+                self._file.write(f"</small>\n")
+                if 'reasoning_content' in msg:
+                    self._file.write(f"<think>\n{''.join(msg['reasoning_content'])}\n</think>\n")
+                if 'tool_calls' in msg:
+                    self._file.write(f"<tool_calls>\n{''.join(msg['tool_calls'])}\n</tool_calls>\n")
+                self._file.write(f"{msg['content']}\n\n")
+            except Exception as e:
+                print(f"Error saving log into {self._log_path}: {e}", file=sys.stderr)
+
+    def _ensure_file(self) -> bool:
+        if self.is_enable():
+            if self._file is None and not self._error:
+                try:
+                    self._file = open(self._log_path, "w", encoding="utf-8")
+                    if self._system_message:
+                        log_file.write(f"**System:**\n{self._system_message}\n\n")
+                    for msg in self._messages:
+                        self._save_msg(msg)
+                except Exception as e:
+                    print(f"Failed initializing log file {self._log_path}, error: {e}", file=sys.stderr)
+                    self._file = None
+                    self._error = True
+                    return False
+            return True
+        else:
+            return False
+
+    def append_message(self, msg: Dict[str, Any]):
+        if self._ensure_file():
+            self._save_msg(msg)
+            if msg['role'] != 'user':
+                try:
+                    self._file.flush()
+                except:
+                    pass
+                if self.is_verbose():
+                    print("\n<small>")
+                    for k in msg:
+                        if k not in ['role', 'content', 'reasoning_content', 'tool_calls', 'stop']:
+                            if isinstance(msg[k], str) and "\n" in msg[k]:
+                                print(f"  - {k.replace('_','-')}:<<EOF\n{msg[k]}\nEOF\n")
+                            else:
+                                print(f"  - {k.replace('_','-')}: {msg[k]}")
+                    print("</small>")
+                    print(f"\nSaved log: {self._log_path}")
+        self._messages.append(msg)
+
+
+    def append_error(self, error: Exception):
+        if self.is_enable() and self._file is not None:
+            self._file.write(f"**Error:**\n{error}\n\n")
+        return self._messages[-1]
+
+    def load_history(self, file: str) -> List[Dict[str, Any]]:
+        """load log file into new context"""
+        load_messages = []
+        message = {}
+        if not os.path.exists(file):
+            log_dir = os.path.dirname(self.get_path())
+            os.path.join(log_dir, file)
+            if os.path.exists(temp):
+                file = temp
+        with open(file, "r", encoding="utf-8") as log_file:
+            text_list = []
+            caption = ""
+            small_start = 0
+            for line in log_file:
+                text = line.rstrip()
+                print(text)
+                if text == "**System:**":
+                    if caption == "":
+                        caption = "System"
+                        message = {'role': 'system'}
+                        text_list = []
+                        small_start = 0
+                elif text == "**User:**":
+                    if caption in ["System", "Assistant"]:
+                        message['content'] = '\n'.join(text_list)
+                        load_messages.append(message)
+                        message = {'role': 'user'}
+                        caption = "User"
+                        text_list = []
+                        small_start = 0
+                elif text == "**Assistant:**":
+                    if caption == "User":
+                        message['content'] = '\n'.join(text_list)
+                        load_messages.append(message)
+                        message = {'role': 'assistant'}
+                        caption = "Assistant"
+                        text_list = []
+                        small_start = 0
+                elif text == "<small>":
+                    small_start = 1
+                elif text == "</small>":
+                    small_start = 0
+                elif small_start == 0:
+                    text_list.append(text)
+                elif small_start == 1:
+                    text = text.strip()
+                    if text.startswith("- time: "):
+                        message["time"] = text[8:]
+                    elif text.startswith("- base-url: "):
+                        message["base-url"] = text[12:]
+                    elif text.startswith("- model: "):
+                        message["model"] = text[9:]
+            if caption != "":
+                message['content'] = '\n'.join(text_list)
+                load_messages.append(message)
+                for msg in load_messages:
+                    self.append_message(msg)
+                log_dir = os.path.dirname(self.get_path())
+                if not os.path.exists(log_dir):
+                    os.makedirs(log_dir)
+                log_filename = datetime.now().strftime("%Y%m%d_%H%M%S.md")
+                self.open(log_dir, log_filename)
+            else:
+                print(f"\n===============\nERROR loading an invalid Zai log file:\n  {file}\n")
+        return load_messages
+

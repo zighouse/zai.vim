@@ -1,59 +1,4 @@
 #!/usr/bin/env python3
-# Call deepseek to provide chat service.
-#
-# Supports two input modes: json and text.
-#
-# In json input mode, the input is a json string list where each item represents a line.
-# Responses in json mode will not contain commands.
-#
-# Text input mode has two request types:
-#  1. Line request mode: Each line of text triggers a deepseek request.
-#                        Command interpretation takes priority - if a line can be
-#                        interpreted as a command, it won't be treated as content.
-#
-#  2. Block request mode: Multiple lines are grouped as a single request.
-#                         Triggered by regex /^<<([A-Za-z][A-Za-z0-9]+)$/. Subsequent lines
-#                         until the ending signature are treated as one request. Example:
-#                             <<EOF
-#                             line 1
-#                             line 2
-#                             EOF
-#                         Sends 'line1\nline2\n' as a single request.
-#
-# Commands start with a prefix character (default ':'), followed by command name (case-sensitive)
-# and parameters.
-#
-# In json mode, commands must still be entered as plain text (like line requests), not json-encoded.
-#
-# Command escaping: Double prefix (e.g., '::') escapes the first prefix.
-#
-# Change command prefix: Use :->/ to change prefix to '/', /->: to revert.
-# Valid prefix characters:
-#     : / ~ \ ; ! # $ % & ? @ ^ _ * + = , . < > ` ' " ( ) [ ] { }
-#
-# Command format:
-#   :[-]<command> [args]
-#   '-' before command name unsets previous parameter settings.
-#
-# Available commands:
-#   ::                     - Escape command prefix for current line.
-#   :->/                   - Change command prefix character.
-#   :exit, :quit, :bye     - Exit program.
-#   :model deepseek-chat   - Set model (options: deepseek-coder, deepseek-reasoner, deepseek-chat)
-#   :temperature 0.7       - Set temperature [0,2]. Lower values make responses more deterministic.
-#                            Not recommended to use with top_p simultaneously.
-#   :top_p  1              - Set top_p [0,1]. 0.1 means select top 10% probability tokens.
-#   :max_tokens 1024       - Set maximum generated tokens.
-#   :presence_penalty 0    - [-2, 2] Penalize new tokens for topic repetition.
-#   :frequency_penalty 0   - [-2, 2] Penalize repeated tokens globally.
-#   :logprobs 0            - [0,20] Include log probabilities of top tokens.
-#   :prompt <string>       - Set system prompt.
-#   :talk_mode  <enum>     - Conversation mode: instant (stateless), chain (context-aware)
-#   :file <file-path>      - Attach a text file.
-#   :-file                 - Remove all attached text files.
-#   :complete_type <file-type>  - File-type to complete.
-#   :prefix <string>       - Set prefix.
-#
 import argparse
 import json
 import os
@@ -65,36 +10,18 @@ import time
 import chardet
 from datetime import datetime
 from openai import OpenAI
-from appdirs import user_data_dir
 from pathlib import Path
-from config import load_assistants, config_path_assistants
 from typing import Any, Iterable, Optional
+
+from config import load_assistants, config_path_assistants
+from logger import Logger
 
 sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='replace')
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace', line_buffering=True)
 
-g_verbose = True
-g_log_enabled = True
-g_log_path = None
-def log_init(log_dir='', filename=''):
-    global g_log_path, g_log_enabled
-    if not g_log_enabled:
-        g_log_path = None
-        return
-    if not log_dir:
-        log_dir = Path(user_data_dir("zai", "zighouse")) / "log"
-    try:
-        if isinstance(log_dir, str):
-            log_dir = Path(log_dir)
-        log_dir.mkdir(parents=True, exist_ok=True)
-        if not filename:
-            log_filename = datetime.now().strftime("%Y%m%d_%H%M%S") + '.md'
-        else:
-            log_filename = filename
-        g_log_path = log_dir / log_filename
-    except Exception as e:
-        print(f"Failed initializing log file, error: {e}", file=sys.stderr)
+logger = Logger()
+
 
 g_cmd_prefix = ':'
 g_cmd_prefix_chars = [ ':', '/', '~', '\\', ';', '!', '#', '$', '%', '&', '?',
@@ -129,8 +56,6 @@ g_messages = [ g_system_message, ]
 # List of attachments, each entry is:
 # {'path': str, 'full_path': str, 'encoding': str, 'content': str}
 g_files = []
-
-g_log = []
 
 g_config = {
         'model': 'deepseek-chat', # Verified models: deepseek-coder, deepseek-chat, deepseek-reasoner
@@ -224,111 +149,6 @@ EXAMPLES:
 """
     print(help_text)
 
-def save_log():
-    """Save conversation history to log file"""
-    global g_log_enabled, g_log_path, g_log
-
-    if not g_log_enabled or not g_log_path:
-        return
-
-    # avoid create an empty log
-    if not g_log:
-        return
-
-    # print attachments
-    with open(g_log_path, "w", encoding="utf-8") as log_file:
-        if (sys_msg := g_system_message['content'].strip()):
-            log_file.write(f"**System:**\n{sys_msg}\n\n")
-        for msg in g_log:
-            log_file.write(f"**{msg['role'].capitalize()}:**\n")
-            log_file.write(f"<small>\n")
-            for k in msg:
-                if k not in ['role', 'content', 'files', 'reasoning_content', 'tool_calls', 'stop']:
-                    if isinstance(msg[k], str) and "\n" in msg[k]:
-                        log_file.write(f"  - {k.replace('_','-')}:<<EOF\n{msg[k]}\nEOF\n")
-                    else:
-                        log_file.write(f"  - {k.replace('_','-')}: {msg[k]}\n")
-            if 'files' in msg:
-                log_file.write("  - attachments:\n")
-                for file in msg['files']:
-                    log_file.write(f"    - {file['full_path']}\n")
-            log_file.write(f"</small>\n")
-            if 'reasoning_content' in msg:
-                log_file.write(f"<think>\n{''.join(msg['reasoning_content'])}\n</think>\n")
-            if 'tool_calls' in msg:
-                log_file.write(f"<tool_calls>\n{''.join(msg['tool_calls'])}\n</tool_calls>\n")
-            log_file.write(f"{msg['content']}\n\n")
-    print(f"\nSaved log: {g_log_path}")
-
-def load_log(file):
-    """load log file into new context"""
-    global g_log, g_messages, g_files, g_log_path
-    load_messages = []
-    message = {}
-    if not os.path.exists(file):
-        log_dir = os.path.dirname(g_log_path)
-        os.path.join(log_dir, file)
-        if os.path.exists(temp):
-            file = temp
-    with open(file, "r", encoding="utf-8") as log_file:
-        text_list = []
-        caption = ""
-        small_start = 0
-        for line in log_file:
-            text = line.rstrip()
-            print(text)
-            if text == "**System:**":
-                if caption == "":
-                    caption = "System"
-                    message = {'role': 'system'}
-                    text_list = []
-                    small_start = 0
-            elif text == "**User:**":
-                if caption in ["System", "Assistant"]:
-                    message['content'] = '\n'.join(text_list)
-                    load_messages.append(message)
-                    message = {'role': 'user'}
-                    caption = "User"
-                    text_list = []
-                    small_start = 0
-            elif text == "**Assistant:**":
-                if caption == "User":
-                    message['content'] = '\n'.join(text_list)
-                    load_messages.append(message)
-                    message = {'role': 'assistant'}
-                    caption = "Assistant"
-                    text_list = []
-                    small_start = 0
-            elif text == "<small>":
-                small_start = 1
-            elif text == "</small>":
-                small_start = 0
-            elif small_start == 0:
-                text_list.append(text)
-            elif small_start == 1:
-                text = text.strip()
-                if text.startswith("- time: "):
-                    message["time"] = text[8:]
-                elif text.startswith("- base-url: "):
-                    message["base-url"] = text[12:]
-                elif text.startswith("- model: "):
-                    message["model"] = text[9:]
-        if caption != "":
-            message['content'] = '\n'.join(text_list)
-            load_messages.append(message)
-            g_messages = load_messages
-            g_log = []
-            for msg in load_messages:
-                g_log.append(msg)
-            g_files = []
-            log_dir = os.path.dirname(g_log_path)
-            if not os.path.exists(log_dir):
-                os.makedirs(log_dir)
-            log_filename = datetime.now().strftime("%Y%m%d_%H%M%S.md")
-            g_log_path = os.path.join(log_dir, log_filename)
-        else:
-            print(f"\n===============\nERROR loading an invalid Zai log file:\n  {file}\n")
-
 def build_instant_messages(messages):
     '''In instant mode, keep only system role and latest user messages'''
     if not messages or messages[0]['role'] != 'system':
@@ -392,7 +212,7 @@ def get_completion_params():
 
 def generate_response():
     """Generate and process assistant response"""
-    global g_messages, g_config, g_client, g_verbose, g_log, g_prompt_for_title
+    global g_messages, g_config, g_client, logger, g_prompt_for_title
     full_response = []
     reasoning_content = []
     tool_calls = []
@@ -484,22 +304,13 @@ def generate_response():
             msg['content'] = ''.join(full_response)
             msg['time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             g_messages.append(msg)
-            g_log.append(msg)
-            if g_verbose:
-                print("\n<small>")
-                for k in msg:
-                    if k not in ['role', 'content', 'reasoning_content', 'tool_calls', 'stop']:
-                        if isinstance(msg[k], str) and "\n" in msg[k]:
-                            print(f"  - {k.replace('_','-')}:<<EOF\n{msg[k]}\nEOF\n")
-                        else:
-                            print(f"  - {k.replace('_','-')}: {msg[k]}")
-                print("</small>")
+            logger.append_message(msg)
 
     except Exception as e:
         # Rollback error-causing message
         if g_messages and g_messages[-1]["role"] == "user":
             m = g_messages.pop()
-            l = g_log.pop();
+            l = logger.append_error(e);
         print(f"\nFailed generating response, error: {e}", file=sys.stderr)
         if l and len(l):
             print("Rolling back the message which causing error:", file=sys.stderr)
@@ -510,16 +321,17 @@ def generate_response():
             print("</small>", file=sys.stderr)
 
 def set_prompt(prompt):
-    global g_config, g_system_message
+    global g_config, g_system_message, logger
     if prompt:
         p = prompt.strip()
         if p:
             g_config['prompt'] = p
             g_system_message['content'] = p
+            logger.log_system(p)
 
 def handle_command(command):
     global g_messages, g_config, g_cmd_prefix, g_cmd_prefix_chars, \
-            g_system_message, g_prompt, g_log_enabled, g_log, g_block_stack, g_files, g_client, \
+            g_system_message, g_prompt, logger, g_block_stack, g_files, g_client, \
             g_assistant
     argv = command.split()
     argc = len(argv)
@@ -533,12 +345,12 @@ def handle_command(command):
     # Rest of the command handling logic...
     # Exit commands
     if cmd in ['exit', 'quit', 'bye']:
-        save_log()
+        logger.close()
         sys.exit(0)
         return True
 
     if cmd == 'no_log':
-        g_log_enabled = False
+        logger.set_enable(False)
         return True
 
     # Unset options
@@ -550,6 +362,7 @@ def handle_command(command):
         elif cmd[1:] == 'prompt':
             g_config.pop(cmd[1:], None)
             g_system_message['content'] = g_prompt
+            logger.log_system(g_prompt)
             return True
         elif cmd[1:] == 'file':
             # Remove all file messages,
@@ -558,7 +371,7 @@ def handle_command(command):
             g_files = []
             return True
         elif cmd[1:] == 'no_log':
-            g_log_enabled = True
+            logger.set_enable(True)
             return True
 
     # String options
@@ -749,7 +562,10 @@ def handle_command(command):
 
     # Load log
     if cmd == 'load' and argc == 2:
-        load_log(argv[1])
+        history = logger.load_history(argv[1])
+        if len(history) != 0:
+            g_messages = history
+            g_files = []
         return True
 
     # Show options
@@ -761,7 +577,7 @@ def handle_command(command):
             elif opt == 'prompt':
                 value = g_system_message['content']
             elif opt == 'log_file':
-                value = g_log_path.absolute()
+                value = logger.get_path()
             elif argv[1] == 'prefix':
                 value = g_cmd_prefix
             elif argv[1] == 'ai' and g_assistant:
@@ -825,11 +641,10 @@ def chat_round():
     try:
         user_input = input("")
     except UnicodeDecodeError as e:
-        save_log()
         print(f'Get input failure, unicode decode error: {e}', file=sys.stderr)
         return
     except EOFError as e:
-        save_log()
+        logger.close()
         sys.exit(0)
         return
     if not user_input:
@@ -850,7 +665,6 @@ def chat_round():
                 return
             user_request = '\n'.join(json.loads(user_input))
         except json.decoder.JSONDecodeError:
-            save_log()
             print(f'Request error with user_input:`{user_input}`', file=sys.stderr)
             return
 
@@ -906,9 +720,8 @@ def chat_round():
         if 'prefix' in g_config:
             msg['prefix'] = g_config['prefix']
     g_messages.append(msg)
-    g_log.append(msg)
+    logger.append_message(msg)
     generate_response()
-    save_log()
 
 def print_assistant(assistant: dict[str, Any], model: Optional[str] = None, indent: int = 4) -> None:
     """Print assistant configuration with model selection marker"""
@@ -967,9 +780,11 @@ if __name__ == "__main__":
         g_input_mode = 'json'
     elif args.text:
         g_input_mode = 'text'
-    g_verbose = False if args.silent else True
-    g_log_enabled = False if args.no_log else True
-    log_init(args.log_dir, args.log_filename)
+    if args.silent:
+        logger.set_verbose(False)
+    if args.no_log:
+        logger.set_enable(False)
+    logger.open(args.log_dir, args.log_filename)
 
     # Handle --use-ai parameter
     if args.use_ai:
