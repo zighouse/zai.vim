@@ -146,6 +146,44 @@ function! zai#util#EditAssistants()
     endif
 endfunction
 
+function! s:fzf_window_opts(list_width)
+    " smart showing preview
+    let l:term_width = &columns
+    let l:term_height = &lines
+    let l:list_width = a:list_width
+    let l:max_list_height = 30
+    let l:min_preview_width = 50
+    let l:max_preview_width = 120
+    let l:border_width = 10
+    let l:border_height = 4
+    if l:term_width < l:list_width + l:min_preview_width + l:border_width
+        let l:preview_width = 0
+        let l:preview_window = 'hidden,right:70%'
+    else
+        if l:term_width < l:list_width + l:max_preview_width + l:border_width
+            let l:preview_width = l:term_width - l:list_width - l:border_width
+            let l:preview_window = 'right:' . l:preview_width . ',nohidden'
+        else
+            let l:preview_width = l:max_preview_width
+            let l:preview_window = 'right:' . l:preview_width . ',nohidden'
+        endif
+    endif
+    let l:opts = fzf#vim#with_preview()
+    let l:opts.options = l:opts.options + [ 
+                \ '--preview-window', l:preview_window,
+                \ '--prompt', 'Zai Grep> '
+                \ ]
+    if !has_key(l:opts, 'window')
+        let l:opts.window = {}
+    endif
+    let l:opts.window.width = l:list_width + l:preview_width + l:border_width
+    let l:opts.window.height = min([l:term_height, l:max_list_height + l:border_height])
+    if !exists('$FZF_DEFAULT_OPTS') || $FZF_DEFAULT_OPTS !~# '--bind'
+        let l:opts.options = l:opts.options + s:extra_fzf_opts
+    endif
+    return l:opts
+endfunction
+
 function! s:open_fzf_files(dir) abort
     if !exists('g:loaded_fzf')
         echohl ErrorMsg
@@ -155,21 +193,7 @@ function! s:open_fzf_files(dir) abort
     endif
 
     try
-        let l:opts = fzf#vim#with_preview()
-        let l:opts.options = l:opts.options + [ '--preview-window', 'right:70%' ]
-        if !has_key(l:opts, 'window')
-            let l:opts.window = {}
-        endif
-        if !has_key(l:opts.window, 'width') || l:opts.window.width < 0.8
-            let l:opts.window.width = 0.9
-        endif
-        if !has_key(l:opts.window, 'height') || l:opts.window.height < 0.8
-            let l:opts.window.height = 0.9
-        endif
-        if !exists('$FZF_DEFAULT_OPTS') || $FZF_DEFAULT_OPTS !~# '--bind'
-            let l:opts.options = l:opts.options + s:extra_fzf_opts
-        endif
-        call fzf#vim#files(a:dir, l:opts)
+        call fzf#vim#files(a:dir, s:fzf_window_opts(30))
     catch /^Vim\%((\a\+)\)\=:E/
         echohl ErrorMsg
         echo 'Failed to open fzf: ' . v:exception
@@ -186,28 +210,11 @@ function! s:open_fzf_grep(dir, pat) abort
         return
     endif
 
-    let l:cmd = 'rg --column --line-number --no-heading --color=always --smart-case '
-                \ . shellescape(a:pat) . ' ' . shellescape(a:dir)
-
     try
-        let l:opts = fzf#vim#with_preview()
-        let l:opts.options = l:opts.options + [ 
-                    \ '--preview-window', 'hidden,right:70%',
-                    \ '--prompt', 'Zai Log Grep> '
-                    \ ]
-        if !has_key(l:opts, 'window')
-            let l:opts.window = {}
-        endif
-        if !has_key(l:opts.window, 'width') || l:opts.window.width < 0.8
-            let l:opts.window.width = 0.9
-        endif
-        if !has_key(l:opts.window, 'height') || l:opts.window.height < 0.8
-            let l:opts.window.height = 0.9
-        endif
-        if !exists('$FZF_DEFAULT_OPTS') || $FZF_DEFAULT_OPTS !~# '--bind'
-            let l:opts.options = l:opts.options + s:extra_fzf_opts
-        endif
-        call fzf#vim#grep(l:cmd, 1, l:opts)
+        let l:cmd = 'rg --column --line-number --no-heading --color=always --smart-case '
+                    \ . shellescape(a:pat)
+        let l:opts = extend(s:fzf_window_opts(40), {'dir': a:dir})
+        call fzf#vim#grep(l:cmd, 1, l:opts, 1)
     catch /^Vim\%((\a\+)\)\=:E/
         echohl ErrorMsg
         echo 'Failed to open fzf: ' . v:exception
@@ -232,9 +239,9 @@ function zai#util#OpenLog() abort
     endtry
 endfunction
 
-function zai#util#GrepLog(pat) abort
+function s:grep_dir(pat, dir) abort
     if exists('g:loaded_fzf') && exists('*fzf#run')
-        call s:open_fzf_grep(s:log_dir, a:pat)
+        call s:open_fzf_grep(a:dir, a:pat)
         return
     endif
 
@@ -255,7 +262,7 @@ function zai#util#GrepLog(pat) abort
         echohl None
         return
     endif
-    let l:cmd .= ' '.fnameescape(s:log_dir)
+    let l:cmd .= ' '.fnameescape(a:dir)
 
     let l:lines = systemlist(l:cmd)
     if v:shell_error || empty(l:lines)
@@ -289,4 +296,51 @@ function zai#util#GrepLog(pat) abort
 
     call setqflist(l:qfl, 'r')
     copen | execute 'silent! wincmd J'
+endfunction
+
+function! zai#util#GrepLog(pat) abort
+    call s:grep_dir(a:pat, s:log_dir)
+endfunction
+
+function! zai#util#Rg(args)
+    " uses shellslash parse args for quoes and escapes
+    let l:opts = []
+    let l:arg = ''
+    let l:escaping = 0
+    let l:quoting = 0
+
+    for l:char in split(a:args, '\zs')
+        if l:escaping
+            let l:arg .= l:char
+            let l:escaping = 0
+        elseif l:char == '\'
+            let l:escaping = 1
+        elseif l:char == '"'
+            let l:quoting = !l:quoting
+        elseif l:char == ' ' && !l:quoting
+            if l:arg != ''
+                let l:opts += [l:arg]
+                let l:arg = ''
+            endif
+        else
+            let l:arg .= l:char
+        endif
+    endfor
+    
+    if l:arg != ''
+        let l:opts += [l:arg]
+    endif
+
+    if len(l:opts) > 1
+        let l:pat = join(l:opts[0:-2], ' ')
+        let l:dir = l:opts[-1]
+    elseif len(l:opts) == 1
+        let l:pat = l:opts[0]
+        let l:dir = '.'
+    else
+        let l:pat = ''
+        let l:dir = '.'
+    endif
+
+    call s:grep_dir(l:pat, l:dir)
 endfunction

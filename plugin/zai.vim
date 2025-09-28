@@ -41,6 +41,7 @@ command! ZaiLoad call zai#Load()
 command! ZaiConfig call zai#EditConfig()
 command! ZaiOpenLog call zai#OpenLog()
 command! -nargs=1 ZaiGrepLog call zai#GrepLog('<args>')
+command! -bang -nargs=+ -complete=dir ZaiRg call zai#util#Rg(<q-args>)
 
 nmap <Plug>Zai :Zai<CR>
 nmap <Plug>ZaiGo :ZaiGo<CR>
