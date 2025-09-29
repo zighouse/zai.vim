@@ -13,7 +13,7 @@ from openai import OpenAI
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-from config import load_assistants, config_path_assistants
+from config import AIAssistantManager
 from logger import Logger
 
 sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='replace')
@@ -21,7 +21,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='repla
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace', line_buffering=True)
 
 logger = Logger()
-
+aiconfig = AIAssistantManager()
 
 g_cmd_prefix = ':'
 g_cmd_prefix_chars = [ ':', '/', '~', '\\', ';', '!', '#', '$', '%', '&', '?',
@@ -395,14 +395,14 @@ def handle_command(command):
                 print(f"model `{g_config[cmd]}` is applied in AI assistant:")
             else:
                 print(f"model [{id}] is not list in AI assistant:")
-            print_assistant(g_assistant, g_config['model'])
+            aiconfig.show_provider(g_assistant, g_config['model'])
         elif g_assistant:
             if argv[1] in g_assistant['model']:
                 g_config[cmd] = argv[1]
                 print(f"model `{argv[1]}` is applied in AI assistant:")
             else:
                 print(f"model `{argv[1]}` is not list in AI assistant:")
-            print_assistant(g_assistant, g_config['model'])
+            aiconfig.show_provider(g_assistant, g_config['model'])
         else:
             g_config[cmd] = argv[1]
             print(f"model `{argv[1]}` is applied")
@@ -412,62 +412,29 @@ def handle_command(command):
     if cmd == 'use' and argc >= 3:
         opt = argv[1].replace('-', '_')
         if opt.lower() == 'ai':
-            asses = load_assistants()
-            ass = {}
-            if argv[2].isdigit():
-                id = int(argv[2])
-                if 0 <= id < len(asses):
-                    ass = asses[id]
-            else:
-                name = argv[2]
-                for a in asses:
-                    if a.get('name') == name:
-                        ass = a
-                        break
-            
-            # Check if there's a model parameter in the command
-            model_to_apply = None
             if argc >= 5 and argv[3].lower() == 'model':
-                model_spec = argv[4]
-                # Check if model is specified by index
-                if model_spec.isdigit():
-                    model_id = int(model_spec)
-                    if 0 <= model_id < len(ass['model']):
-                        model_to_apply = ass['model'][model_id]
-                    else:
-                        print(f"Model index [{model_id}] is out of range")
-                else:
-                    # Model is specified by name
-                    if model_spec in ass['model']:
-                        model_to_apply = model_spec
-                    else:
-                        print(f"Model `{model_spec}` not found in assistant")
-            
-            if ('base_url' in ass and ass.get('base_url') != g_config['base_url']) or \
-                    ('api_key_name' in ass and ass.get('api_key_name') != g_config['api_key_name']):
+                changed = aiconfig.use_ai(name=argv[2], model=argv[4])
+            else:
+                changed = aiconfig.use_ai(name=argv[2])
+            provider = aiconfig.get_provider()
+            port = aiconfig.get_port()
+            model = aiconfig.get_model()
+            if changed:
+                print(f"AI assistant `{provider['name']}` is applied, details:")
+                aiconfig.show_provider(provider, model)
                 try:
-                    g_client = open_client(api_key_name=ass.get('api_key_name'), base_url=ass.get('base_url'))
-                    g_config['api_key_name'] = ass['api_key_name']
-                    g_config['base_url'] = ass['base_url']
-                    
-                    # Apply specified model or use the first one from assistant
-                    if model_to_apply:
-                        g_config['model'] = model_to_apply
-                    else:
-                        g_config['model'] = ass['model'][0]
-                    
-                    if 'prompt' in ass:
-                        set_prompt(ass['prompt'])
-                    for k, v in ass.items():
+                    g_client = open_client(api_key_name=provider.get('api_key_name'), base_url=provider.get('base_url'))
+                    g_config['api_key_name'] = provider['api_key_name']
+                    g_config['base_url'] = provider['base_url']
+                    g_config['model'] = model
+
+                    if 'prompt' in provider:
+                        set_prompt(provider['prompt'])
+                    for k, v in provider.items():
                         if k in ['temperature', 'top_p', 'presence_penalty', 'frequency_panelty', 'logprobs']:
                             g_config[k] = float(v)
-                    
-                    print(f"AI assistant `{ass['name']}` is applied, details:")
-                    params = {k: v for k, v in ass.items() if k in
-                              ['api_key_name', 'base_url', 'model', 'prompt',
-                               'temperature', 'top_p', 'presence_penalty', 'frequency_panelty', 'logprobs' ]}
-                    g_assistant = ass
-                    print_assistant(params, g_config['model'])
+
+                    g_assistant = provider
                 except:
                     print("Open AI Client failed")
             return True
@@ -582,7 +549,9 @@ def handle_command(command):
                 value = g_cmd_prefix
             elif argv[1] == 'ai' and g_assistant:
                 print("AI assistant is:")
-                print_assistant(g_assistant, g_config['model'])
+                provider = aiconfig.get_provider()
+                model = aiconfig.get_model()
+                aiconfig.show_provider(provider, model)
                 return True
             else:
                 value = ''
@@ -598,37 +567,16 @@ def handle_command(command):
         elif argc == 3:
             opt = argv[1].replace('-', '_').lower()
             if opt == 'ai':
-                asses = load_assistants()
-                ass = {}
-                if argv[2].isdigit():
-                    id = int(argv[2])
-                    if 0 <= id < len(asses):
-                        ass = asses[id]
-                else:
-                    name = argv[2]
-                    for a in asses:
-                        if a.get('name') == name:
-                            ass = a
-                            break
-                if g_config['base_url'] == ass['base_url']:
-                    print_assistant(ass, g_config['model'])
-                else:
-                    print_assistant(ass)
+                provider = aiconfig.find_provider(argv[2])
+                model = aiconfig.get_model()
+                aiconfig.show_provider(provider, model)
             return True
 
     # List assistants
     if cmd == 'list' and argc == 2:
         opt = argv[1].replace('-', '_').lower()
         if opt == 'ai':
-            assistants = load_assistants()
-            if not assistants:
-                print(f"no AI assistants configured, path:{config_path_assistants()}")
-            else:
-                id = 0
-                for ass in assistants:
-                    if 'name' in ass:
-                        print(f" {id} - {ass['name']}")
-                        id = id + 1
+            aiconfig.show_list()
         return True
 
     print(f"unknown command: {command}", file=sys.stderr)
@@ -723,43 +671,6 @@ def chat_round():
     logger.append_message(msg)
     generate_response()
 
-def print_assistant(assistant: dict[str, Any], model: Optional[str] = None, indent: int = 4) -> None:
-    """Print assistant configuration with model selection marker"""
-    if not assistant:
-        return
-    
-    # Create a copy to avoid modifying the original
-    mapping = assistant.copy()
-    
-    # Extract and remove the model list for special handling
-    model_list = mapping.pop('model', [])
-    
-    # Calculate width based on remaining keys
-    width = max(len(k) for k in mapping) if mapping else 0
-    sp = " " * indent
-    inner_sp = sp + " " * (width + 3)  # extra indent
-    
-    # Print other fields first
-    for k, v in mapping.items():
-        head = f"{sp}{k:>{width}} - "
-        print(f"{head}{v}")
-    
-    # Print model list with special formatting
-    if model_list:
-        head = f"{sp}{'model':>{width}} - "
-        for idx, item in enumerate(model_list):
-            prefix = head if idx == 0 else inner_sp
-            
-            if model:
-                # Add checkmark if this model matches the selected one
-                checkmark = "[ ✓ ]" if model == item else "     "
-            else:
-                checkmark = ""
-            
-            # Adjust spacing to maintain alignment
-            aligned_idx = f"{idx}." if idx < 10 else f"{idx}"
-            print(f"{prefix}{checkmark}{aligned_idx:>3} {item}")
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--no-log', action='store_true', help='No log')
@@ -775,7 +686,7 @@ if __name__ == "__main__":
     parser.add_argument('--silent', action='store_true', help='No verbose')
     parser.add_argument('--use-ai', type=str, help='Use AI assistant by name or index')
     args = parser.parse_args()
-    
+
     if args.json:
         g_input_mode = 'json'
     elif args.text:
@@ -788,67 +699,35 @@ if __name__ == "__main__":
 
     # Handle --use-ai parameter
     if args.use_ai:
-        try:
-            asses = load_assistants()
-            ass = {}
-            
-            # Find assistant by index or name
-            if args.use_ai.isdigit():
-                id = int(args.use_ai)
-                if 0 <= id < len(asses):
-                    ass = asses[id]
-                else:
-                    print(f"Warning: Assistant index [{id}] out of range, using first assistant")
-                    ass = asses[0] if asses else {}
-            else:
-                found = False
-                for a in asses:
-                    if a.get('name') == args.use_ai:
-                        ass = a
-                        found = True
-                        break
+        if args.model:
+            found = aiconfig.use_ai(args.use_ai, args.model)
+            if not found:
+                found = aiconfig.use_ai('0', args.model)
                 if not found:
-                    print(f"Warning: Assistant '{args.use_ai}' not found, using first assistant")
-                    ass = asses[0] if asses else {}
-            
-            if ass:
-                # Apply assistant configuration
-                g_config['base_url'] = ass.get('base_url', DEFAULT_BASE_URL)
-                g_config['api_key_name'] = ass.get('api_key_name', DEFAULT_API_KEY_NAME)
-                
-                # Use specified model or first model from assistant
-                if args.model != DEFAULT_MODEL:
-                    # Check if specified model exists in assistant
-                    if args.model in ass.get('model', []):
-                        g_config['model'] = args.model
-                    else:
-                        print(f"Warning: Model '{args.model}' not found in assistant, using first model")
-                        g_config['model'] = ass['model'][0] if ass.get('model') else DEFAULT_MODEL
-                else:
-                    g_config['model'] = ass['model'][0] if ass.get('model') else DEFAULT_MODEL
-                
-                # Copy other parameters
-                for k, v in ass.items():
-                    if k in ['temperature', 'top_p', 'presence_penalty', 'frequency_panelty', 'logprobs']:
-                        g_config[k] = float(v)
-                
-                print(f"Using AI assistant: {ass.get('name', 'Unknown')} on model: {g_config['model']}")
-                if 'prompt' in ass:
-                    set_prompt(ass['prompt'])
-                g_assistant = ass
-                
-        except Exception as e:
-            print(f"Error loading assistant: {e}")
-            # Fallback to default values
-            g_config['base_url'] = args.base_url
-            g_config['model'] = args.model
-            g_config['api_key_name'] = args.api_key_name
+                    found = aiconfig.use_ai('0', '0')
+            if not found:
+                print(f"Warning: Assistant '{args.use_ai}' with model:'{args.model}' not found")
+        else:
+            found = aiconfig.use_ai(args.use_ai, '0')
+            if not found:
+                print(f"Warning: Assistant '{args.use_ai}' not found")
+
+        provider = aiconfig.get_provider()
+        port = aiconfig.get_port()
+        g_config['base_url'] = port.get('base_url', DEFAULT_BASE_URL)
+        g_config['api_key_name'] = port.get('api_key_name', DEFAULT_API_KEY_NAME)
+        g_config['model'] = port.get('model', DEFAULT_MODEL)
+        if port:
+            print(f"Using AI assistant: {port.get('name', 'Unknown')} on model: {g_config['model']}")
+            if 'prompt' in port:
+                set_prompt(port['prompt'])
+            g_assistant = provider
     else:
         # Use individual parameters
         g_config['base_url'] = args.base_url
         g_config['model'] = args.model
         g_config['api_key_name'] = args.api_key_name
-    
+
     g_client = open_client(api_key_name=g_config['api_key_name'], base_url=g_config['base_url'])
 
     # Main chat loop
