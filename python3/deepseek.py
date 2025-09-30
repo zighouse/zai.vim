@@ -11,10 +11,10 @@ import chardet
 from datetime import datetime
 from openai import OpenAI
 from pathlib import Path
-from typing import Any, Iterable, Optional
 
 from config import AIAssistantManager
 from logger import Logger
+from tool import ToolManager
 
 sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='replace')
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
@@ -22,6 +22,8 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='repla
 
 logger = Logger()
 aiconfig = AIAssistantManager()
+tool = ToolManager()
+#tool.use_toolset('file')
 
 g_cmd_prefix = ':'
 g_cmd_prefix_chars = [ ':', '/', '~', '\\', ';', '!', '#', '$', '%', '&', '?',
@@ -187,7 +189,7 @@ def get_completion_params():
     else:
         for msg in g_messages:
             # Create new request message
-            request_msg = {'role': msg['role'], 'content': msg['content']}
+            request_msg = {k:v for k,v in msg.items() if k in ['role', 'content', 'tool_calls', 'tool_call_id', 'name']}
 
             # Attach files
             if 'files' in msg:
@@ -213,9 +215,13 @@ def get_completion_params():
 def generate_response():
     """Generate and process assistant response"""
     global g_messages, g_config, g_client, logger, g_prompt_for_title
-    full_response = []
+    full_response = {
+            "role": "assistant",
+            "content": [],
+            "tool_calls": []
+            }
+    full_content = full_response['content']
     reasoning_content = []
-    tool_calls = []
     is_FIM = False
 
     params = get_completion_params()
@@ -262,63 +268,92 @@ def generate_response():
 
     if not g_client:
         g_client = open_client(api_key_name=g_config['api_key_name'], base_url=g_config['base_url'])
-    try:
-        if is_FIM:
-            response = g_client.completions.create(**params)
-            if content := response.choices[0].text:
-                full_response.append(response.choices[0].text)
-                print(response.choices[0].text, flush=True)
-        else:
-            if params['messages'][0]['role'] == 'system':
-                params['messages'][0]['content'] = params['messages'][0]['content'] + g_prompt_for_title
-            stream = g_client.chat.completions.create(**params)
-            for chunk in stream:
-                if not full_response:
-                    if hasattr(chunk.choices[0].delta, 'reasoning_content'):
-                        if think := chunk.choices[0].delta.reasoning_content:
-                            if not reasoning_content:
-                                print('<think>')
-                            print(think, end='', flush=True)
-                            reasoning_content.append(think)
-                            time.sleep(random.uniform(0.01, 0.05))
-                    elif hasattr(chunk.choices[0].delta, 'tool_calls'):
-                        if tool := chunk.choices[0].delta.tool_calls:
-                            print(tool, end='', flush=True)
-                            tool_calls.extend(tool)
-                            time.sleep(random.uniform(0.01, 0.05))
+    if is_FIM:
+        response = g_client.completions.create(**params)
+        if content := response.choices[0].text:
+            full_content.append(content)
+            print(content, flush=True)
+    else:
+        if params['messages'][0]['role'] == 'system':
+            params['messages'][0]['content'] = params['messages'][0]['content'] + g_prompt_for_title
+        if tools := tool.get_tools():
+            params['tools'] = tools
+        stream = g_client.chat.completions.create(**params)
+        for chunk in stream:
+            chunk_message = chunk.choices[0].delta
+            if not full_content:
+                if hasattr(chunk_message, 'reasoning_content'):
+                    if think := chunk_message.reasoning_content:
+                        if not reasoning_content:
+                            print('<think>')
+                        print(think, end='', flush=True)
+                        reasoning_content.append(think)
+                        time.sleep(random.uniform(0.01, 0.05))
 
-                if content := chunk.choices[0].delta.content:
-                    if not full_response:
-                        if reasoning_content:
-                            print('\n</think>\n')
-                    print(content, end='', flush=True)
-                    full_response.append(content)
+            if hasattr(chunk_message, 'tool_calls'):
+                if tcalls := chunk_message.tool_calls:
+                    for tool_call in tcalls:
+                        if len(full_response['tool_calls']) <= tool_call.index:
+                            full_response['tool_calls'].append({
+                                'id': tool_call.id,
+                                'type': 'function',
+                                'function': {'name': None, 'arguments': []}
+                                })
+                        if tool_call.function:
+                            function = tool_call.function
+                            fullres_func = full_response["tool_calls"][tool_call.index]['function']
+                            if function.name:
+                                fullres_func['name'] = function.name
+                            if function.arguments:
+                                fullres_func['arguments'].append(function.arguments)
                     time.sleep(random.uniform(0.01, 0.05))
 
-        if reasoning_content:
-            msg['reasoning_content'] = reasoning_content
-        elif tool_calls:
+            if content := chunk_message.content:
+                if not full_content:
+                    if reasoning_content:
+                        print('\n</think>\n')
+                print(content, end='', flush=True)
+                full_content.append(content)
+                time.sleep(random.uniform(0.01, 0.05))
+
+    if reasoning_content:
+        msg['reasoning_content'] = reasoning_content
+
+    full_response['content'] = ''.join(full_content)
+
+    tool_calls = []
+    tool_responses = []
+    if full_response['tool_calls']:
+        tool_call_index = 0
+        for tool_call in full_response['tool_calls']:
+            function = tool_call['function']
+            function_name = function['name']
+            function['arguments'] = ''.join(function['arguments'])
+            function_args = json.loads(function['arguments']) if function['arguments'] else {}
+            function_response = tool.call_tool(function_name, function_args)
+            tool_responses.append({
+                "tool_call_id": tool_call['id'],
+                "role": "tool",
+                "name": function_name,
+                "content": function_response,
+            })
+        tool_calls = full_response["tool_calls"]
+
+    if full_response['content']:
+        msg['content'] = full_response['content']
+        msg['time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if tool_calls:
             msg['tool_calls'] = tool_calls
+        g_messages.append(msg)
+        logger.append_message(msg)
+        g_messages.extend(tool_responses)
+        for m in tool_responses:
+            logger.append_message(m)
 
-        if full_response:
-            msg['content'] = ''.join(full_response)
-            msg['time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            g_messages.append(msg)
-            logger.append_message(msg)
+    if tool_calls:
+        # send back to ai for final response
+        generate_response()
 
-    except Exception as e:
-        # Rollback error-causing message
-        if g_messages and g_messages[-1]["role"] == "user":
-            m = g_messages.pop()
-            l = logger.append_error(e);
-        print(f"\nFailed generating response, error: {e}", file=sys.stderr)
-        if l and len(l):
-            print("Rolling back the message which causing error:", file=sys.stderr)
-            print("<small>", file=sys.stderr)
-            for k in msg:
-                if k not in ['role', 'content']:
-                    print(f"  - {k.replace('_','-')}: {msg[k]}", file=sys.stderr)
-            print("</small>", file=sys.stderr)
 
 def set_prompt(prompt):
     global g_config, g_system_message, logger

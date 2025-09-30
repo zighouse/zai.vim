@@ -83,7 +83,12 @@ class Logger:
                 if 'reasoning_content' in msg:
                     self._file.write(f"<think>\n{''.join(msg['reasoning_content'])}\n</think>\n")
                 if 'tool_calls' in msg:
-                    self._file.write(f"<tool_calls>\n{''.join(msg['tool_calls'])}\n</tool_calls>\n")
+                    self._file.write("<tool_calls>\n")
+                    for tool_call in msg['tool_calls']:
+                        if 'function' in tool_call:
+                            function = tool_call['function']
+                            self._file.write(f"  - function: {function['name']} ({function['arguments']})\n")
+                    self._file.write(f"</tool_calls>\n")
                 self._file.write(f"{msg['content']}\n\n")
             except Exception as e:
                 print(f"Error saving log into {self._log_path}: {e}", file=sys.stderr)
