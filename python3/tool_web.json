@@ -1,0 +1,75 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "get_content",
+      "description": "获取指定URL的网页内容",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "要获取内容的URL地址"
+          },
+          "return_format": {
+            "type": "string",
+            "description": "返回内容的格式，'html' 返回原始HTML，'links' 返回解析后的链接列表",
+            "enum": ["html", "links"],
+            "default": "html"
+          }
+        },
+        "required": ["url"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search",
+      "description": "执行网络搜索",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "string",
+            "description": "搜索关键词或查询内容"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "搜索引擎的基础URL（可选，默认为DuckDuckGo）",
+            "default": "https://html.duckduckgo.com/html/"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "最大返回结果数量（可选，默认为10）",
+            "default": 10
+          },
+          "return_format": {
+            "type": "string",
+            "description": "返回内容的格式，'html' 返回原始搜索结果页面，'links' 返回解析后的搜索结果链接",
+            "enum": ["html", "links"],
+            "default": "html"
+          }
+        },
+        "required": ["request"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "parse_links",
+      "description": "解析HTML内容中的URL链接",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "要解析的HTML内容"
+          }
+        },
+        "required": ["content"]
+      }
+    }
+  }
+]

@@ -39,6 +39,19 @@ class ToolManager:
             elif function_name == "ls":
                 from tool_file import ls
                 return ls(**arguments)
+
+        # Web tools
+        if 'web' in self._toolsets:
+            if function_name == "get_content":
+                from tool_web import get_content
+                return get_content(**arguments)
+            elif function_name == "search":
+                from tool_web import search
+                return search(**arguments)
+            elif function_name == "parse_links":
+                from tool_web import parse_links
+                return parse_links(**arguments)
+
         raise Exception(f"Unknown tool function `{function_name}`")
 
     def use_tool(self, tool_spec: Union[str, Dict[str, List[str]]]) -> bool:

@@ -6,6 +6,31 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from appdirs import user_data_dir
 
+def get_char_width(char):
+    # 基本多文种平面（BMP）中的全角字符
+    if ord(char) >= 0x4E00 and ord(char) <= 0x9FFF:  # CJK统一汉字
+        return 2
+    elif ord(char) >= 0x3040 and ord(char) <= 0x30FF:  # 日文假名
+        return 2
+    elif ord(char) >= 0xAC00 and ord(char) <= 0xD7AF:  # 韩文
+        return 2
+    elif ord(char) >= 0xFF00 and ord(char) <= 0xFFEF:  # 全角符号
+        return 2
+    else:
+        return 1
+
+def truncate_by_width(text, max_width, suffix="..."):
+    suffix_width = sum(get_char_width(c) for c in suffix)
+    current_width = 0
+    result_chars = []
+    for char in text:
+        char_width = get_char_width(char)
+        if current_width + char_width > max_width - suffix_width:
+            break
+        result_chars.append(char)
+        current_width += char_width
+    return ''.join(result_chars) + suffix
+
 class Logger:
     def __init__(self):
         self._verbose = True
@@ -30,7 +55,7 @@ class Logger:
 
     def log_system(self, message: str):
         self._system_message = message.strip()
-        
+
     def open(self, log_dir: str = '', filename: str = '') -> bool:
         if not self._enable:
             self._log_path = None
@@ -68,28 +93,43 @@ class Logger:
         if self.is_enable() and self._file is not None:
             try:
                 self._file.write(f"**{msg['role'].capitalize()}:**\n")
-                self._file.write(f"<small>\n")
-                for k in msg:
-                    if k not in ['role', 'content', 'files', 'reasoning_content', 'tool_calls', 'stop']:
-                        if isinstance(msg[k], str) and "\n" in msg[k]:
-                            self._file.write(f"  - {k.replace('_','-')}:<<EOF\n{msg[k]}\nEOF\n")
+                params = {}
+                for k,v in msg.items():
+                    if k not in ['role', 'content', 'files', 'reasoning_content', 'tool_call_id', 'name', 'tool_calls', 'stop']:
+                        params[k] = v
+                if params or 'files' in msg:
+                    self._file.write(f"<small>\n")
+                    for k,v in params.items():
+                        if isinstance(v, str) and "\n" in v:
+                            self._file.write(f"  - {k.replace('_','-')}:<<EOF\n{v}\nEOF\n")
                         else:
-                            self._file.write(f"  - {k.replace('_','-')}: {msg[k]}\n")
-                if 'files' in msg:
-                    self._file.write("  - attachments:\n")
-                    for file in msg['files']:
-                        self._file.write(f"    - {file['full_path']}\n")
+                            self._file.write(f"  - {k.replace('_','-')}: {v}\n")
+                    if 'files' in msg:
+                        self._file.write("  - attachments:\n")
+                        for file in msg['files']:
+                            self._file.write(f"    - {file['full_path']}\n")
                 self._file.write(f"</small>\n")
                 if 'reasoning_content' in msg:
                     self._file.write(f"<think>\n{''.join(msg['reasoning_content'])}\n</think>\n")
                 if 'tool_calls' in msg:
+                    self._file.write(f"{msg['content']}\n")
+                    tool_calls = msg.get('tool_calls')
                     self._file.write("<tool_calls>\n")
-                    for tool_call in msg['tool_calls']:
+                    for tool_call in tool_calls:
                         if 'function' in tool_call:
                             function = tool_call['function']
-                            self._file.write(f"  - function: {function['name']} ({function['arguments']})\n")
-                    self._file.write(f"</tool_calls>\n")
-                self._file.write(f"{msg['content']}\n\n")
+                            self._file.write(f"  - function: {function.get('name')} ({function.get('arguments')})\n")
+                    self._file.write(f"</tool_calls>\n\n")
+                if 'tool_call_id' in msg:
+                    self._file.write("<tool_call>\n")
+                    self._file.write(f"  - tool_call_id: {msg.get('tool_call_id')}\n")
+                    self._file.write(f"  - name: {msg.get('name')}\n")
+                    self._file.write(f"  - content:<<CONTENT_EOF\n")
+                    self._file.write(f"{msg['content']}\nCONTENT_EOF\n\n")
+                    self._file.write("</tool_call>\n")
+
+                if not 'tool_call_id' in msg and not 'tool_calls' in msg:
+                    self._file.write(f"{msg['content']}\n\n")
             except Exception as e:
                 print(f"Error saving log into {self._log_path}: {e}", file=sys.stderr)
 
@@ -120,17 +160,26 @@ class Logger:
                 except:
                     pass
                 if self.is_verbose():
-                    print("\n<small>")
-                    for k in msg:
-                        if k not in ['role', 'content', 'reasoning_content', 'tool_calls', 'stop']:
-                            if isinstance(msg[k], str) and "\n" in msg[k]:
-                                print(f"  - {k.replace('_','-')}:<<EOF\n{msg[k]}\nEOF\n")
-                            else:
-                                print(f"  - {k.replace('_','-')}: {msg[k]}")
-                    print("</small>")
-                    print(f"\nSaved log: {self._log_path}")
+                    if 'tool_calls' in msg:
+                        for tool_call in msg['tool_calls']:
+                            if 'function' in tool_call:
+                                function = tool_call['function']
+                                name = function.get('name')
+                                args = truncate_by_width(function.get('arguments'), 20)
+                                print(f"\n  - **tool call**: `{name}` ({args})")
+                    elif 'tool_call_id' in msg:
+                        print(f"  - return: `{msg.get('name')}`\n")
+                    else:
+                        print("\n<small>")
+                        for k in msg:
+                            if k not in ['role', 'content', 'reasoning_content', 'tool_call_id', 'name', 'tool_calls', 'stop']:
+                                if isinstance(msg[k], str) and "\n" in msg[k]:
+                                    print(f"  - {k.replace('_','-')}:<<EOF\n{msg[k]}\nEOF\n")
+                                else:
+                                    print(f"  - {k.replace('_','-')}: {msg[k]}")
+                        print("</small>")
+                        print(f"\nSaved log: {self._log_path}")
         self._messages.append(msg)
-
 
     def append_error(self, error: Exception):
         if self.is_enable() and self._file is not None:

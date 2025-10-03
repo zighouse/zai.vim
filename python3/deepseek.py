@@ -23,7 +23,8 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='repla
 logger = Logger()
 aiconfig = AIAssistantManager()
 tool = ToolManager()
-#tool.use_toolset('file')
+tool.use_toolset('file')
+tool.use_toolset('web')
 
 g_cmd_prefix = ':'
 g_cmd_prefix_chars = [ ':', '/', '~', '\\', ';', '!', '#', '$', '%', '&', '?',
