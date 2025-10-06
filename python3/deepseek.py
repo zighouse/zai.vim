@@ -327,17 +327,21 @@ def generate_response():
     if full_response['tool_calls']:
         tool_call_index = 0
         for tool_call in full_response['tool_calls']:
-            function = tool_call['function']
-            function_name = function['name']
-            function['arguments'] = ''.join(function['arguments'])
-            function_args = json.loads(function['arguments']) if function['arguments'] else {}
-            function_response = tool.call_tool(function_name, function_args)
-            tool_responses.append({
-                "tool_call_id": tool_call['id'],
-                "role": "tool",
-                "name": function_name,
-                "content": function_response,
-            })
+            try:
+                function = tool_call['function']
+                function_name = function['name']
+                function['arguments'] = ''.join(function['arguments'])
+                function_args = json.loads(function['arguments']) if function['arguments'] else {}
+                function_response = tool.call_tool(function_name, function_args)
+                tool_responses.append({
+                    "tool_call_id": tool_call['id'],
+                    "role": "tool",
+                    "name": function_name,
+                    "content": function_response,
+                })
+            except Exception as call_ex:
+                print(f"tool_call `{function_name}` error {call_ex}")
+                logger.append_error(call_ex)
         tool_calls = full_response["tool_calls"]
 
     if full_response['content']:

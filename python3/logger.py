@@ -91,6 +91,7 @@ class Logger:
 
     def _save_msg(self, msg: Dict[str, Any]):
         if self.is_enable() and self._file is not None:
+            begins_small = False
             try:
                 self._file.write(f"**{msg['role'].capitalize()}:**\n")
                 params = {}
@@ -99,6 +100,7 @@ class Logger:
                         params[k] = v
                 if params or 'files' in msg:
                     self._file.write(f"<small>\n")
+                    begins_small = True
                     for k,v in params.items():
                         if isinstance(v, str) and "\n" in v:
                             self._file.write(f"  - {k.replace('_','-')}:<<EOF\n{v}\nEOF\n")
@@ -108,25 +110,27 @@ class Logger:
                         self._file.write("  - attachments:\n")
                         for file in msg['files']:
                             self._file.write(f"    - {file['full_path']}\n")
-                self._file.write(f"</small>\n")
+                if begins_small:
+                    self._file.write(f"</small>\n")
+                    begins_small = False
                 if 'reasoning_content' in msg:
                     self._file.write(f"<think>\n{''.join(msg['reasoning_content'])}\n</think>\n")
                 if 'tool_calls' in msg:
                     self._file.write(f"{msg['content']}\n")
                     tool_calls = msg.get('tool_calls')
-                    self._file.write("<tool_calls>\n")
+                    self._file.write("\n<tool_calls>\n")
                     for tool_call in tool_calls:
                         if 'function' in tool_call:
                             function = tool_call['function']
                             self._file.write(f"  - function: {function.get('name')} ({function.get('arguments')})\n")
-                    self._file.write(f"</tool_calls>\n\n")
+                    self._file.write(f"\n</tool_calls>\n\n")
                 if 'tool_call_id' in msg:
-                    self._file.write("<tool_call>\n")
+                    self._file.write("\n<tool_call>\n")
                     self._file.write(f"  - tool_call_id: {msg.get('tool_call_id')}\n")
                     self._file.write(f"  - name: {msg.get('name')}\n")
                     self._file.write(f"  - content:<<CONTENT_EOF\n")
                     self._file.write(f"{msg['content']}\nCONTENT_EOF\n\n")
-                    self._file.write("</tool_call>\n")
+                    self._file.write("</tool_call>\n\n")
 
                 if not 'tool_call_id' in msg and not 'tool_calls' in msg:
                     self._file.write(f"{msg['content']}\n\n")
@@ -165,7 +169,7 @@ class Logger:
                             if 'function' in tool_call:
                                 function = tool_call['function']
                                 name = function.get('name')
-                                args = truncate_by_width(function.get('arguments'), 20)
+                                args = truncate_by_width(function.get('arguments'), 80)
                                 print(f"\n  - **tool call**: `{name}` ({args})")
                     elif 'tool_call_id' in msg:
                         print(f"  - return: `{msg.get('name')}`\n")
