@@ -10,15 +10,19 @@ class ToolManager:
     def __init__(self):
         self._toolsets = {}
 
-    def _load_tool_file(self):
-        current_dir = Path(__file__).parent
-        config_path = current_dir / 'tool_file.json'
-        return json.loads(config_path.read_text(encoding='utf-8'))
-
-    def get_tools(self):
+    def get_tools(self, excludes=[]):
         tools = []
+        exclude_names = []
+        for ex in excludes:
+            if 'function' in ex and 'name' in ex['function']:
+                exclude_names.append(ex['function']['name'])
         for k,v in self._toolsets.items():
-            tools.extend(v)
+            if not exclude_names:
+                tools.extend(v)
+            else:
+                for it in v:
+                    if 'function' in it and 'name' in it['function'] and it['function']['name'] not in exclude_names:
+                        tools.append(it)
         return tools
 
     def call_tool(self, function_name, arguments):
@@ -54,30 +58,143 @@ class ToolManager:
 
         raise Exception(f"Unknown tool function `{function_name}`")
 
-    def use_tool(self, tool_spec: Union[str, Dict[str, List[str]]]) -> bool:
+    def list_toolsets(self) -> List[str]:
+        current_dir = Path(__file__).parent
+        tool_files = list(current_dir.glob('tool_*.json'))
+        toolsets = []
+
+        for tool_file in tool_files:
+            match = re.match(r'tool_(.+)\.json', tool_file.name)
+            if match:
+                toolsets.append(match.group(1))
+
+        return sorted(toolsets)
+
+    def show_list(self):
+        tools = self.list_toolsets()
+        if tools:
+            for name in tools:
+                print(f"  - {name}")
+
+    def show_toolset(self, toolset_name: Optional[str] = None):
+        """
+        显示工具集详情
+
+        Args:
+            toolset_name: 工具集名称，如果为None则显示所有已应用的工具集
+        """
+        if toolset_name is None:
+            # 显示所有已应用的工具集
+            if not self._toolsets:
+                print("No tools loaded.")
+                return
+
+            for toolset_name, tools in self._toolsets.items():
+                print(f"\n{toolset_name}:")
+                tool_names = []
+                for tool in tools:
+                    if tool.get('function') and tool['function'].get('name'):
+                        tool_names.append(tool['function']['name'])
+
+                if tool_names:
+                    # 对已选中的方法添加勾选标记
+                    checked_names = [f"✓ {name}" for name in tool_names]
+                    print(f"  {', '.join(checked_names)}")
+        else:
+            # 显示指定工具集
+            current_dir = Path(__file__).parent
+            toolset_path = current_dir / f'tool_{toolset_name}.json'
+
+            if not toolset_path.exists():
+                print(f"Toolset `{toolset_name}` not found.")
+                return
+
+            try:
+                full_toolset = json.loads(toolset_path.read_text(encoding='utf-8'))
+                print(f"\n{toolset_name}:")
+
+                # 获取当前已选中的方法
+                selected_methods = set()
+                if toolset_name in self._toolsets:
+                    for tool in self._toolsets[toolset_name]:
+                        if tool.get('function') and tool['function'].get('name'):
+                            selected_methods.add(tool['function']['name'])
+
+                # 显示所有方法，对已选中的添加勾选
+                for tool in full_toolset:
+                    if tool.get('function') and tool['function'].get('name'):
+                        method_name = tool['function']['name']
+                        if method_name in selected_methods:
+                            print(f" -  [ ✓ ] {method_name}")
+                        else:
+                            print(f" -  [   ] {method_name}")
+
+            except Exception as e:
+                print(f"Failed to load toolset `{toolset_name}`: {e}")
+
+    def use_tool(self, tool_spec: Union[str, List[str], Dict[str, List[str]]]) -> bool:
         """
         使用工具集或特定工具
 
         Args:
             tool_spec: 工具规范，可以是：
-                - 字符串：工具集名称，如 'file'，引入整个工具集
+                - 字符串：'XXX' 工具集名称，如 'file'，引入整个工具集
+                          'XXX.xxx' 指定工具集中的具体工具
+                - 字符串列表：['XXX'], ['XXX.xxx'], ['XXX:', 'xxx', 'yyy', 'zzz']
                 - 字典：{工具集名: [工具名列表]}，如 {'file': ['read_file', 'write_file']}
 
         Returns:
             bool: 是否成功加载
         """
         if isinstance(tool_spec, str):
-            # introduce whole toolset.
-            toolset_name = tool_spec
+            if '.' in tool_spec:
+                toolset_name, tool_candidate = tool_spec.split('.', 1)
+            else:
+                toolset_name = tool_spec
+                tool_candidate = '' # introduce whole toolset.
             toolset_path = Path(__file__).parent / f'tool_{toolset_name}.json'
             try:
                 if config := json.loads(toolset_path.read_text(encoding='utf-8')):
-                    self._toolsets[toolset_name] = config
+                    if not tool_candidate:
+                        self._toolsets[toolset_name] = config
+                    elif tool_candidate in config:
+                        self._toolsets[toolset_name] = [config.get(tool_candidate)]
                     return True
                 return False
             except Exception as e:
                 print(f"Unknown toolset `{toolset_name}`: {e}.")
                 return False
+
+        elif isinstance(tool_spec, list):
+            tools_map = {}
+            toolset_name = None
+            tool_candidates = []
+            for item in tool_spec:
+                if isinstance(item, str):
+                    if item.endswith(':'):
+                        if toolset_name is not None:
+                            if toolset_name not in tools_map:
+                                tools_map[toolset_name] = []
+                            tools_map[toolset_name].extend(tool_candidates)
+                        toolset_name = item.rstrip(':')
+                        tool_candidates = []
+                    elif '.' in item:
+                        if toolset_name is not None:
+                            if toolset_name not in tools_map:
+                                tools_map[toolset_name] = []
+                            tools_map[toolset_name].extend(tool_candidates)
+                        toolset_name, tool_candidate = item.split('.', 1)
+                        if toolset_name not in tools_map:
+                            tools_map[toolset_name] = []
+                        tools_map[toolset_name].append(tool_candidate)
+                    else:
+                        if toolset_name is not None:
+                            tool_candidates.append(item)
+            if toolset_name is not None:
+                if toolset_name not in tools_map:
+                    tools_map[toolset_name] = []
+                tools_map[toolset_name].extend(tool_candidates)
+            return self.use_tool(tools_map)
 
         elif isinstance(tool_spec, dict):
             # introduce specfied tools

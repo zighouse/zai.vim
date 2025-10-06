@@ -23,8 +23,6 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='repla
 logger = Logger()
 aiconfig = AIAssistantManager()
 tool = ToolManager()
-tool.use_toolset('file')
-tool.use_toolset('web')
 
 g_cmd_prefix = ':'
 g_cmd_prefix_chars = [ ':', '/', '~', '\\', ';', '!', '#', '$', '%', '&', '?',
@@ -128,17 +126,27 @@ COMMANDS:
     {g_cmd_prefix}talk_mode <mode>     - Set conversation mode (instant, chain)
     {g_cmd_prefix}logprobs <int>       - Show top token probabilities (0-20)
 
+  AI Assistant:
+    {g_cmd_prefix}list AI              - List valid AI assistants
+    {g_cmd_prefix}show AI <name|idx>   - Display AI assistant by name or index
+    {g_cmd_prefix}use AI <name|idx> [model <name|idx>]
+                                       - Use AI assistant by name or index, or optional,
+                                         use model in AI assistant by name or index
+
+  Tools:
+    {g_cmd_prefix}list tool            - List all available tool sets
+    {g_cmd_prefix}show tool [name]     - Show tool set details (all or specific)
+    {g_cmd_prefix}use tool XXX         - Apply entire tool set XXX
+    {g_cmd_prefix}use tool XXX.xxx     - Apply single method xxx from tool set XXX
+    {g_cmd_prefix}use tool XXX: xxx yyy zzz
+                                       - Apply multiple methods from tool set XXX
+
   Prefix Control:
     {g_cmd_prefix}-><char>             - Change command prefix character
     Valid prefix chars: : / ~ \\ ; ! # $ % & ? @ ^ _ * + = , . < > ` ' " ( ) [ ] {{ }}
 
   Utility:
     {g_cmd_prefix}show <config>        - Display configurations or parameters.
-    {g_cmd_prefix}show AI <name|idx>   - Display AI assistant by name or index.
-    {g_cmd_prefix}list AI              - List valid AI assistants.
-    {g_cmd_prefix}use AI <name|idx> [model <name|idx>]
-                                       - Use AI assistant by name or index, or optional,
-                                         use model in AI assistant by name or index.
 
 EXAMPLES:
   {g_cmd_prefix}model deepseek-coder
@@ -149,6 +157,11 @@ EXAMPLES:
   CODE
   {g_cmd_prefix}file example.py
   {g_cmd_prefix}->/   (now commands start with / instead of :)
+  {g_cmd_prefix}list tool
+  {g_cmd_prefix}show tool file
+  {g_cmd_prefix}use tool file
+  {g_cmd_prefix}use tool file.read_file
+  {g_cmd_prefix}use tool file: read_file write_file
 """
     print(help_text)
 
@@ -478,6 +491,9 @@ def handle_command(command):
                 except:
                     print("Open AI Client failed")
             return True
+        if opt.lower() == 'tool':
+            tool.use_tool(argv[2:])
+            return True
 
     if cmd in ['prefix', 'suffix'] and argc > 1:
         g_config[cmd] = command[len(cmd)+1:]
@@ -593,6 +609,9 @@ def handle_command(command):
                 model = aiconfig.get_model()
                 aiconfig.show_provider(provider, model)
                 return True
+            elif argv[1] == 'tool':
+                tool.show_tools()
+                return True
             else:
                 value = ''
                 print(f"Option `{argv[1]}` is unspecified.")
@@ -610,6 +629,8 @@ def handle_command(command):
                 provider = aiconfig.find_provider(argv[2])
                 model = aiconfig.get_model()
                 aiconfig.show_provider(provider, model)
+            elif opt == 'tool':
+                tool.show_toolset(argv[2])
             return True
 
     # List assistants
@@ -617,6 +638,8 @@ def handle_command(command):
         opt = argv[1].replace('-', '_').lower()
         if opt == 'ai':
             aiconfig.show_list()
+        elif opt == 'tool':
+            tool.show_list()
         return True
 
     print(f"unknown command: {command}", file=sys.stderr)
