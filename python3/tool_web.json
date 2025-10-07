@@ -13,9 +13,9 @@
           },
           "return_format": {
             "type": "string",
-            "description": "返回内容的格式，'html' 返回原始HTML，'links' 返回解析后的链接列表",
-            "enum": ["html", "links"],
-            "default": "html"
+            "description": "返回内容的格式, 'clean_text' 返回纯文本，'html' 返回原始HTML，'links' 返回解析后的链接列表",
+            "enum": ["clean_text", "html", "links"],
+            "default": "clean_text"
           }
         },
         "required": ["url"]

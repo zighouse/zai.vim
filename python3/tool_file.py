@@ -140,7 +140,7 @@ def read_file(path):
     except Exception as e:
         return f"错误：{str(e)}"
 
-def write_file(path, content):
+def write_file(path, mode, content):
     """向沙盒内的文件写入内容"""
     try:
         target_file = _sanitize_path(path)
@@ -148,7 +148,7 @@ def write_file(path, content):
         # 确保父目录存在
         target_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(target_file, 'w', encoding='utf-8') as f:
+        with open(target_file, mode, encoding='utf-8') as f:
             f.write(content)
 
         return f"成功写入文件 '{path}'"

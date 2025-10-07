@@ -10,6 +10,14 @@ class ToolManager:
     def __init__(self):
         self._toolsets = {}
 
+    def _load_toolset(self, toolset_name: str) -> List[Dict[str, Any]]:
+        toolset_path = Path(__file__).parent / f'tool_{toolset_name}.json'
+        try:
+            return json.loads(toolset_path.read_text(encoding='utf-8'))
+        except Exception as e:
+            print(f"Unknown toolset `{toolset_name}`: {e}.")
+            return {}
+
     def get_tools(self, excludes=[]):
         tools = []
         exclude_names = []
@@ -55,6 +63,15 @@ class ToolManager:
             elif function_name == "parse_links":
                 from tool_web import parse_links
                 return parse_links(**arguments)
+
+        # OS tools
+        if 'os' in self._toolsets:
+            if function_name == "os_get_info":
+                from tool_os import os_tools
+                result = os_tools(**arguments)
+                if isinstance(result, str):
+                    return result
+                return json.dumps(result, indent=2, ensure_ascii=False)
 
         raise Exception(f"Unknown tool function `{function_name}`")
 
@@ -152,18 +169,14 @@ class ToolManager:
             else:
                 toolset_name = tool_spec
                 tool_candidate = '' # introduce whole toolset.
-            toolset_path = Path(__file__).parent / f'tool_{toolset_name}.json'
-            try:
-                if config := json.loads(toolset_path.read_text(encoding='utf-8')):
-                    if not tool_candidate:
-                        self._toolsets[toolset_name] = config
-                    elif tool_candidate in config:
-                        self._toolsets[toolset_name] = [config.get(tool_candidate)]
-                    return True
+            config = self._load_toolset(toolset_name)
+            if not config:
                 return False
-            except Exception as e:
-                print(f"Unknown toolset `{toolset_name}`: {e}.")
-                return False
+            if not tool_candidate:
+                self._toolsets[toolset_name] = config
+            elif tool_candidate in config:
+                self._toolsets[toolset_name] = [config.get(tool_candidate)]
+            return True
 
         elif isinstance(tool_spec, list):
             tools_map = {}
@@ -190,6 +203,9 @@ class ToolManager:
                     else:
                         if toolset_name is not None:
                             tool_candidates.append(item)
+                        else:
+                            toolset_name = item
+                            tool_candidates = [tool['function']['name'] for tool in self._load_toolset(item) if 'function' in tool and 'name' in tool['function']]
             if toolset_name is not None:
                 if toolset_name not in tools_map:
                     tools_map[toolset_name] = []
@@ -200,9 +216,8 @@ class ToolManager:
             # introduce specfied tools
             success = True
             for toolset_name, tool_names in tool_spec.items():
-                toolset_path = Path(__file__).parent / f'tool_{toolset_name}.json'
-                try:
-                    full_toolset = json.loads(toolset_path.read_text(encoding='utf-8'))
+                full_toolset = self._load_toolset(toolset_name)
+                if full_toolset:
                     # select tools from toolset
                     selected_tools = [tool for tool in full_toolset if tool.get('function') and tool['function'].get('name') in tool_names]
                     if selected_tools:
@@ -216,9 +231,6 @@ class ToolManager:
                     else:
                         print(f"No matching tools found in toolset `{toolset_name}` for {tool_names}")
                         success = False
-                except Exception as e:
-                    print(f"Failed to load toolset `{toolset_name}`: {e}")
-                    success = False
             return success
         else:
             print("Invalid tool specification. Must be string (toolset name) or dict ({toolset: [tools]})")

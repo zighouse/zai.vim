@@ -1,0 +1,30 @@
+[
+{
+  "type": "function",
+  "function": {
+    "name": "os_get_info",
+    "description": "提供系统相关的信息获取功能，包括日期时间、地理位置、系统配置等",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "要执行的操作类型",
+          "enum": [
+            "get_date",
+            "get_locale",
+            "get_os_version"
+          ]
+        },
+        "format": {
+          "type": "string",
+          "description": "日期格式（仅适用于get_date操作）",
+          "enum": ["date_only", "datetime", "utc", "timestamp", "all"],
+          "default": "all"
+        }
+      },
+      "required": ["action"]
+    }
+  }
+}
+]

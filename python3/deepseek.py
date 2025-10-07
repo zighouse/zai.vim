@@ -371,6 +371,7 @@ def generate_response():
     if tool_calls:
         # send back to ai for final response
         generate_response()
+        tool_calls = []
 
 
 def set_prompt(prompt):

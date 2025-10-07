@@ -54,13 +54,17 @@
     "type": "function",
     "function": {
       "name": "write_file",
-      "description": "写入文件",
+      "description": "写入文件。注意当写入内容过长时，可能会超出 AI-Chat 最大允许输出 tokens 长度而导致工具调用错误，应分成多批以追加方式写入来避免错误。",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
             "type": "string",
             "description": "文件路径"
+          },
+          "mode": {
+            "type": "string",
+            "description": "写入模式: 'w'-覆盖, 'a'-追加"
           },
           "content": {
             "type": "string",
