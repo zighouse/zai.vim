@@ -119,7 +119,7 @@ def get_os_version_info() -> Dict[str, Any]:
     return result
 
 
-def os_tools(action: str, format: str = "all") -> Dict[str, Any]:
+def invoke_get_os_info(action: str, format: str = "all") -> Dict[str, Any]:
     """
     OS工具集主函数
 

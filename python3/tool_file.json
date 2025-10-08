@@ -62,16 +62,16 @@
             "type": "string",
             "description": "文件路径"
           },
-          "mode": {
-            "type": "string",
-            "description": "写入模式: 'w'-覆盖, 'a'-追加"
-          },
           "content": {
             "type": "string",
             "description": "写入内容"
+          },
+          "mode": {
+            "type": "string",
+            "description": "写入模式: 'w'-覆盖, 'a'-追加"
           }
         },
-        "required": ["path", "mode", "content"]
+        "required": ["path", "content"]
       }
     }
   },

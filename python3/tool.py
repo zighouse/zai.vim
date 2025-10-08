@@ -1,24 +1,44 @@
 #!/usr/bin/env python3
 import json
 import re
+import importlib
 from pathlib import Path
 from typing import Dict, List, Any, Union, Optional
 from appdirs import user_data_dir
 
 class ToolManager:
+    """管理工具集，支持动态发现与调用"""
 
     def __init__(self):
-        self._toolsets = {}
+        # toolset_name -> [tool_meta, ...]
+        self._toolsets: Dict[str, List[Dict[str, Any]]] = {}
 
-    def _load_toolset(self, toolset_name: str) -> List[Dict[str, Any]]:
-        toolset_path = Path(__file__).parent / f'tool_{toolset_name}.json'
+    # ----------- 内部工具 -----------
+    def _load_toolset_meta(self, toolset_name: str) -> List[Dict[str, Any]]:
+        """读取 tool_{name}.json 元信息"""
+        toolset_path = Path(__file__).parent / f"tool_{toolset_name}.json"
         try:
-            return json.loads(toolset_path.read_text(encoding='utf-8'))
+            return json.loads(toolset_path.read_text(encoding="utf-8"))
         except Exception as e:
-            print(f"Unknown toolset `{toolset_name}`: {e}.")
-            return {}
+            print(f"[WARN] 无法加载 toolset `{toolset_name}`: {e}")
+            return []
 
-    def get_tools(self, excludes=[]):
+    def _ensure_toolset_module(self, toolset_name: str):
+        """动态 import tool_{toolset_name} 模块，返回 module 对象"""
+        # 已加载则直接返回
+        if toolset_name in self._toolsets:
+            return importlib.import_module(f"tool_{toolset_name}")
+        raise RuntimeError(f"toolset `{toolset_name}` 尚未使用，无法调用其函数")
+
+    def _find_toolset_by_function(self, function_name: str) -> Optional[str]:
+        """根据函数名反查所属 toolset"""
+        for toolset_name, tools in self._toolsets.items():
+            for tool in tools:
+                if tool.get("function", {}).get("name") == function_name:
+                    return toolset_name
+        return None
+
+    def get_tools(self, excludes=[]) -> List[Dict[str, Any]]:
         tools = []
         exclude_names = []
         for ex in excludes:
@@ -33,79 +53,34 @@ class ToolManager:
                         tools.append(it)
         return tools
 
-    def call_tool(self, function_name, arguments):
-        # File tools
-        if 'file' in self._toolsets:
-            if function_name == "mkdir":
-                from tool_file import mkdir
-                return mkdir(**arguments)
-            elif function_name == "write_file":
-                from tool_file import write_file
-                return write_file(**arguments)
-            elif function_name == "read_file":
-                from tool_file import read_file
-                return read_file(**arguments)
-            elif function_name == "copy_file":
-                from tool_file import copy_file
-                return copy_file(**arguments)
-            elif function_name == "ls":
-                from tool_file import ls
-                return ls(**arguments)
-            elif function_name == "descript_file":
-                from tool_file import descript_file
-                result = descript_file(**arguments)
-                if isinstance(result, str):
-                    return result
-                return json.dumps(result, indent=2, ensure_ascii=False)
-
-        # Web tools
-        if 'web' in self._toolsets:
-            if function_name == "get_content":
-                from tool_web import get_content
-                return get_content(**arguments)
-            elif function_name == "search":
-                from tool_web import search
-                return search(**arguments)
-            elif function_name == "parse_links":
-                from tool_web import parse_links
-                return parse_links(**arguments)
-            elif function_name == "download_file":
-                from tool_web import download_file
-                result = download_file(**arguments)
-                if isinstance(result, str):
-                    return result
-                return json.dumps(result, indent=2, ensure_ascii=False)
-
-        # OS tools
-        if 'os' in self._toolsets:
-            if function_name == "os_get_info":
-                from tool_os import os_tools
-                result = os_tools(**arguments)
-                if isinstance(result, str):
-                    return result
-                return json.dumps(result, indent=2, ensure_ascii=False)
-
-        # AI tools
-        if 'ai' in self._toolsets:
-            if function_name == "generate_image":
-                from tool_ai import generate_image
-                result = generate_image(**arguments)
-                if isinstance(result, str):
-                    return result
-                return json.dumps(result, indent=2, ensure_ascii=False)
-
-        raise Exception(f"Unknown tool function `{function_name}`")
+    def call_tool(self, function_name: str, arguments: dict) -> Any:
+        """
+        根据 function_name 动态调用对应 toolset 中的实现函数
+        约定：每个 toolset 模块需提供 invoke_{function_name}(**arguments)
+        """
+        ts = self._find_toolset_by_function(function_name)
+        if ts is None:
+            raise RuntimeError(f"未知工具函数 `{function_name}`")
+        mod = self._ensure_toolset_module(ts)
+        invoker = getattr(mod, f"invoke_{function_name}", None)
+        if invoker is None:
+            raise RuntimeError(
+                f"工具集 `{ts}` 中未找到实现函数 `invoke_{function_name}`"
+            )
+        result = invoker(**arguments)
+        if isinstance(result, str):
+            return result
+        return json.dumps(result, indent=2, ensure_ascii=False)
 
     def list_toolsets(self) -> List[str]:
+        """扫描当前目录下所有 tool_*.json，返回排序后的工具集名称列表"""
         current_dir = Path(__file__).parent
         tool_files = list(current_dir.glob('tool_*.json'))
         toolsets = []
-
         for tool_file in tool_files:
             match = re.match(r'tool_(.+)\.json', tool_file.name)
             if match:
                 toolsets.append(match.group(1))
-
         return sorted(toolsets)
 
     def show_list(self):
@@ -172,90 +147,73 @@ class ToolManager:
 
     def use_tool(self, tool_spec: Union[str, List[str], Dict[str, List[str]]]) -> bool:
         """
-        使用工具集或特定工具
-
-        Args:
-            tool_spec: 工具规范，可以是：
-                - 字符串：'XXX' 工具集名称，如 'file'，引入整个工具集
-                          'XXX.xxx' 指定工具集中的具体工具
-                - 字符串列表：['XXX'], ['XXX.xxx'], ['XXX:', 'xxx', 'yyy', 'zzz']
-                - 字典：{工具集名: [工具名列表]}，如 {'file': ['read_file', 'write_file']}
-
-        Returns:
-            bool: 是否成功加载
+        加载工具集或指定工具，支持多种形式：
+          字符串：
+            'file'               -> 加载整个 file 工具集
+            'file.mkdir'         -> 仅加载 file 工具集中的 mkdir
+          列表：['file', 'web'] / ['file.mkdir'] / ['file:', 'mkdir', 'ls']
+          字典：{'file': ['mkdir', 'ls'], 'web': ['search']}
+        返回是否全部成功
         """
+        # 统一转成 Dict[toolset_name, List[func_name]] 形式
+        spec_map: Dict[str, List[str]] = {}
+
         if isinstance(tool_spec, str):
-            if '.' in tool_spec:
-                toolset_name, tool_candidate = tool_spec.split('.', 1)
+            if "." in tool_spec:
+                ts, fn = tool_spec.split(".", 1)
+                spec_map[ts] = [fn]
             else:
-                toolset_name = tool_spec
-                tool_candidate = '' # introduce whole toolset.
-            config = self._load_toolset(toolset_name)
-            if not config:
-                return False
-            if not tool_candidate:
-                self._toolsets[toolset_name] = config
-            elif tool_candidate in config:
-                self._toolsets[toolset_name] = [config.get(tool_candidate)]
-            return True
+                spec_map[tool_spec] = []  # 全量
 
         elif isinstance(tool_spec, list):
-            tools_map = {}
-            toolset_name = None
-            tool_candidates = []
+            cur_ts = None
             for item in tool_spec:
-                if isinstance(item, str):
-                    if item.endswith(':'):
-                        if toolset_name is not None:
-                            if toolset_name not in tools_map:
-                                tools_map[toolset_name] = []
-                            tools_map[toolset_name].extend(tool_candidates)
-                        toolset_name = item.rstrip(':')
-                        tool_candidates = []
-                    elif '.' in item:
-                        if toolset_name is not None:
-                            if toolset_name not in tools_map:
-                                tools_map[toolset_name] = []
-                            tools_map[toolset_name].extend(tool_candidates)
-                        toolset_name, tool_candidate = item.split('.', 1)
-                        if toolset_name not in tools_map:
-                            tools_map[toolset_name] = []
-                        tools_map[toolset_name].append(tool_candidate)
+                if item.endswith(":"):
+                    cur_ts = item[:-1]
+                    spec_map.setdefault(cur_ts, [])
+                elif "." in item:
+                    ts, fn = item.split(".", 1)
+                    spec_map.setdefault(ts, []).append(fn)
+                else:
+                    # 纯函数名，要求 cur_ts 已存在
+                    if cur_ts is None:
+                        # 把 item 当成 toolset 全量加载
+                        spec_map.setdefault(item, [])
                     else:
-                        if toolset_name is not None:
-                            tool_candidates.append(item)
-                        else:
-                            toolset_name = item
-                            tool_candidates = [tool['function']['name'] for tool in self._load_toolset(item) if 'function' in tool and 'name' in tool['function']]
-            if toolset_name is not None:
-                if toolset_name not in tools_map:
-                    tools_map[toolset_name] = []
-                tools_map[toolset_name].extend(tool_candidates)
-            return self.use_tool(tools_map)
+                        spec_map[cur_ts].append(item)
 
         elif isinstance(tool_spec, dict):
-            # introduce specfied tools
-            success = True
-            for toolset_name, tool_names in tool_spec.items():
-                full_toolset = self._load_toolset(toolset_name)
-                if full_toolset:
-                    # select tools from toolset
-                    selected_tools = [tool for tool in full_toolset if tool.get('function') and tool['function'].get('name') in tool_names]
-                    if selected_tools:
-                        if toolset_name not in self._toolsets:
-                            self._toolsets[toolset_name] = []
-                        # avoid duplicates
-                        inlist_names = [tool['function']['name'] for tool in self._toolsets[toolset_name]]
-                        for tool in selected_tools:
-                            if tool['function']['name'] not in inlist_names:
-                                self._toolsets[toolset_name].append(tool)
-                    else:
-                        print(f"No matching tools found in toolset `{toolset_name}` for {tool_names}")
-                        success = False
-            return success
+            spec_map = tool_spec
         else:
-            print("Invalid tool specification. Must be string (toolset name) or dict ({toolset: [tools]})")
+            print("[ERROR] 非法的 tool_spec 类型")
             return False
+
+        # 真正加载
+        ok = True
+        for ts, funcs in spec_map.items():
+            meta = self._load_toolset_meta(ts)
+            if not meta:
+                ok = False
+                continue
+            # 若 funcs 为空则代表全量
+            if not funcs:
+                selected = meta
+            else:
+                selected = [t for t in meta if t.get("function", {}).get("name") in funcs]
+                miss = set(funcs) - {t.get("function", {}).get("name") for t in selected}
+                if miss:
+                    print(f"[WARN] toolset `{ts}` 中未找到函数: {miss}")
+                    ok = False
+            # 合并进 self._toolsets（去重）
+            exist_names = {
+                t.get("function", {}).get("name")
+                for t in self._toolsets.setdefault(ts, [])
+            }
+            for t in selected:
+                name = t.get("function", {}).get("name")
+                if name and name not in exist_names:
+                    self._toolsets[ts].append(t)
+        return ok
 
     def show_tools(self):
         """

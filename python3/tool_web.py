@@ -10,7 +10,7 @@ from pathlib import Path
 
 from toolcommon import sanitize_path
 
-def get_content(url: str, return_format: str = "clean_text") -> str:
+def invoke_get_content(url: str, return_format: str = "clean_text") -> str:
     """
     获取指定URL的网页内容，优先使用elinks导出干净的文本内容
 
@@ -37,7 +37,7 @@ def get_content(url: str, return_format: str = "clean_text") -> str:
         content = response.text
 
         if return_format == "links":
-            links = parse_links(content)
+            links = invoke_parse_links(content)
             if links:
                 result = []
                 for link in links:
@@ -112,7 +112,7 @@ def get_content_fallback(url: str) -> str:
     except Exception as e:
         return f"Fallback also failed: {str(e)}"
 
-def search(request: str, base_url: str = "https://html.duckduckgo.com/html/", max_results: int = 10, return_format: str = "html") -> str:
+def invoke_search(request: str, base_url: str = "https://html.duckduckgo.com/html/", max_results: int = 10, return_format: str = "html") -> str:
     """
     执行网络搜索
 
@@ -154,7 +154,7 @@ def search(request: str, base_url: str = "https://html.duckduckgo.com/html/", ma
 
         if return_format == "links":
             # 直接返回解析后的链接
-            links = parse_links(content)
+            links = invoke_parse_links(content)
 
             # 过滤和格式化结果
             results = []
@@ -176,7 +176,7 @@ def search(request: str, base_url: str = "https://html.duckduckgo.com/html/", ma
     except Exception as e:
         return f"Unexpected search error: {str(e)}"
 
-def parse_links(content: str) -> List[Dict[str, str]]:
+def invoke_parse_links(content: str) -> List[Dict[str, str]]:
     """
     解析HTML内容中的URL链接
 
@@ -305,7 +305,7 @@ def extract_clean_text(html_content: str) -> str:
         text = re.sub(r'\s+', ' ', text)  # 合并多个空白字符
         return text.strip()
 
-def download_file(
+def invoke_download_file(
     url: str,
     output_path: Optional[str] = None,
     output_dir: Optional[str] = None,
@@ -521,11 +521,11 @@ def _get_download_output_path(
 if __name__ == "__main__":
     # 测试 get_content
     print("Testing get_content with html format...")
-    content = get_content("https://httpbin.org/html")
+    content = invoke_get_content("https://httpbin.org/html")
     print(f"Content length: {len(content)}")
 
     print("\nTesting get_content with links format...")
-    links_content = get_content("https://httpbin.org/html", return_format="links")
+    links_content = invoke_get_content("https://httpbin.org/html", return_format="links")
     print(f"Links found:\n{links_content}")
 
     # 测试 parse_links
@@ -539,7 +539,7 @@ if __name__ == "__main__":
     </body>
     </html>
     '''
-    links = parse_links(test_html)
+    links = invoke_parse_links(test_html)
     for link in links:
         print(f"Link: {link}")
 
@@ -550,5 +550,5 @@ if __name__ == "__main__":
 
     # 测试 download_file
     print("\nTesting download_file...")
-    result = download_file("https://httpbin.org/image/jpeg", filename="test_image.jpg")
+    result = invoke_download_file("https://httpbin.org/image/jpeg", filename="test_image.jpg")
     print(f"Download result: {result}")

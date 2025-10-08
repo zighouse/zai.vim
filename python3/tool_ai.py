@@ -2,6 +2,7 @@
 """
 图片生成AI功能模块
 支持多种AI图片生成服务，包括SiliconFlow、OpenAI DALL-E等
+所有导出函数统一加上 invoke_ 前缀，供 ToolManager.call_tool 路由
 """
 import os
 import sys
@@ -18,7 +19,7 @@ from toolcommon import sanitize_path
 from tool_web import download_file_robust
 
 
-def generate_image(
+def invoke_generate_image(
     prompt: str,
     base_url: str = "https://api.siliconflow.cn/v1/images/generations",
     model: str = "Qwen/Qwen-Image",
@@ -34,9 +35,6 @@ def generate_image(
     使用AI生成图片
 
     Args:
-        base_url: API服务地址
-        model: 模型名称
-        api_key_name: 环境变量中的API密钥名称
         prompt: 图片生成提示词
         output_path: 输出图片文件路径
         output_dir: 输出目录（如果output_path未指定，则在此目录下生成图片）
@@ -255,7 +253,7 @@ def main():
 
     args = parser.parse_args()
 
-    result = generate_image(
+    result = invoke_generate_image(
         base_url=args.base_url,
         model=args.model,
         api_key_name=args.api_key_name,

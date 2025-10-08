@@ -2,7 +2,7 @@
 {
   "type": "function",
   "function": {
-    "name": "os_get_info",
+    "name": "get_os_info",
     "description": "提供系统相关的信息获取功能，包括日期时间、地理位置、系统配置等",
     "parameters": {
       "type": "object",

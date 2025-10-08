@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
+"""
+File toolbox —— 动态兼容层
+所有导出函数统一加上 invoke_ 前缀，供 ToolManager.call_tool 路由
+"""
 import shutil
 import os
 import stat
 from datetime import datetime
 from toolcommon import sanitize_path
 
-def ls(path=""):
+
+def invoke_ls(path: str = "") -> str:
     """列出沙盒内指定目录的内容，返回格式化的字符串"""
     try:
         target_dir = sanitize_path(path)
@@ -98,7 +103,8 @@ def ls(path=""):
     except Exception as e:
         return f"错误：{str(e)}"
 
-def read_file(path):
+
+def invoke_read_file(path: str) -> str:
     """读取沙盒内的文件内容"""
     try:
         target_file = sanitize_path(path)
@@ -117,7 +123,8 @@ def read_file(path):
     except Exception as e:
         return f"错误：{str(e)}"
 
-def write_file(path, mode, content):
+
+def invoke_write_file(path: str, mode: str, content: str) -> str:
     """向沙盒内的文件写入内容"""
     try:
         target_file = sanitize_path(path)
@@ -135,7 +142,8 @@ def write_file(path, mode, content):
     except Exception as e:
         return f"错误：{str(e)}"
 
-def mkdir(path):
+
+def invoke_mkdir(path: str) -> str:
     """在沙盒内创建目录"""
     try:
         target_dir = sanitize_path(path)
@@ -151,14 +159,13 @@ def mkdir(path):
     except Exception as e:
         return f"错误：{str(e)}"
 
-def copy_file(source: str, destination: str) -> str:
+
+def invoke_copy_file(source: str, destination: str) -> str:
     """
     复制沙盒内的文件或目录到指定路径
-
     Args:
         source: 源文件或目录路径
         destination: 目标路径
-
     Returns:
         str: 操作结果信息字符串
     """
@@ -191,13 +198,12 @@ def copy_file(source: str, destination: str) -> str:
     except Exception as e:
         return f"错误：复制失败 - {str(e)}"
 
-def descript_file(path):
+
+def invoke_descript_file(path: str) -> str:
     """
     描述文件类型和格式，使用 file 命令或 Python 内置方法
-
     Args:
         path: 文件路径
-
     Returns:
         str: 文件描述信息
     """
@@ -237,15 +243,10 @@ def descript_file(path):
     except Exception as e:
         return f"错误：{str(e)}"
 
-def _describe_file_with_python(file_path, original_path):
-    """
-    使用 Python 内置方法描述文件类型
-    """
-    import os
-    import stat
-    import magic  # 如果安装了 python-magic 库
-    from pathlib import Path
 
+def _describe_file_with_python(file_path, original_path):
+    """使用 Python 内置方法描述文件类型"""
+    import stat
     try:
         stat_info = file_path.stat()
         size = stat_info.st_size
@@ -273,9 +274,7 @@ def _describe_file_with_python(file_path, original_path):
         return f"文件 '{original_path}' 的基本信息：{size} 字节"
 
 def _simple_file_detection(file_path, size):
-    """
-    使用简单方法检测文件类型
-    """
+    """使用简单方法检测文件类型"""
     extension = file_path.suffix.lower()
 
     # 常见文件类型的扩展名映射
