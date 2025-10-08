@@ -71,7 +71,7 @@
             "description": "写入内容"
           }
         },
-        "required": ["path", "content"]
+        "required": ["path", "mode", "content"]
       }
     }
   },

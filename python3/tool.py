@@ -73,6 +73,15 @@ class ToolManager:
                     return result
                 return json.dumps(result, indent=2, ensure_ascii=False)
 
+        # AI tools
+        if 'ai' in self._toolsets:
+            if function_name == "generate_image":
+                from tool_ai import generate_image
+                result = generate_image(**arguments)
+                if isinstance(result, str):
+                    return result
+                return json.dumps(result, indent=2, ensure_ascii=False)
+
         raise Exception(f"Unknown tool function `{function_name}`")
 
     def list_toolsets(self) -> List[str]:

@@ -1,37 +1,14 @@
+#!/usr/bin/env python3
 import shutil
 import os
 import stat
-from appdirs import user_data_dir
 from datetime import datetime
-from pathlib import Path
-
-def sandbox_home():
-    zai_home = Path(user_data_dir("zai", "zighouse"))
-    try:
-        zai_home.mkdir(parents=True, exist_ok=True)
-        return zai_home / "sandbox"
-    except:
-        return Path("sandbox")
-
-def _sanitize_path(user_path):
-    """将用户路径转换为沙盒内的安全路径"""
-    if not user_path or user_path == "":
-        return sandbox_home()
-
-    # 解析路径并确保它在沙盒内
-    sandbox_root = sandbox_home().resolve()
-    target_path = (sandbox_root / user_path).resolve()
-
-    # 安全检查：确保目标路径在沙盒根目录内
-    if sandbox_root not in target_path.parents and target_path != sandbox_root:
-        raise ValueError(f"路径 '{user_path}' 试图逃逸沙盒")
-
-    return target_path
+from toolcommon import sanitize_path
 
 def ls(path=""):
     """列出沙盒内指定目录的内容，返回格式化的字符串"""
     try:
-        target_dir = _sanitize_path(path)
+        target_dir = sanitize_path(path)
 
         if not target_dir.exists():
             return f"错误：目录 '{path}' 不存在"
@@ -124,7 +101,7 @@ def ls(path=""):
 def read_file(path):
     """读取沙盒内的文件内容"""
     try:
-        target_file = _sanitize_path(path)
+        target_file = sanitize_path(path)
 
         if not target_file.exists():
             return f"错误：文件 '{path}' 不存在"
@@ -143,7 +120,7 @@ def read_file(path):
 def write_file(path, mode, content):
     """向沙盒内的文件写入内容"""
     try:
-        target_file = _sanitize_path(path)
+        target_file = sanitize_path(path)
 
         # 确保父目录存在
         target_file.parent.mkdir(parents=True, exist_ok=True)
@@ -161,7 +138,7 @@ def write_file(path, mode, content):
 def mkdir(path):
     """在沙盒内创建目录"""
     try:
-        target_dir = _sanitize_path(path)
+        target_dir = sanitize_path(path)
 
         if target_dir.exists():
             return f"错误：路径 '{path}' 已存在"
@@ -187,8 +164,8 @@ def copy_file(source: str, destination: str) -> str:
     """
     try:
         # 使用现有的路径安全检查
-        source_path = _sanitize_path(source)
-        dest_path = _sanitize_path(destination)
+        source_path = sanitize_path(source)
+        dest_path = sanitize_path(destination)
 
         # 检查源路径是否存在
         if not source_path.exists():

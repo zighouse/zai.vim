@@ -1,0 +1,35 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "generate_image",
+      "description": "使用AI生成图片",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "图片生成提示词"
+          },
+          "output_path": {
+            "type": "string",
+            "description": "输出图片文件路径"
+          },
+          "output_dir": {
+            "type": "string",
+            "description": "输出目录（如果output_path未指定，则在此目录下生成图片）"
+          },
+          "size": {
+            "type": "string",
+            "description": "图片尺寸，如 \"1024x1024\", \"512x512\""
+          },
+          "quality": {
+            "type": "string",
+            "description": "图片质量，如 \"standard\", \"hd\""
+          }
+        },
+        "required": ["prompt"]
+      }
+    }
+  }
+]
