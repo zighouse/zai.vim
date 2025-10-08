@@ -71,5 +71,39 @@
         "required": ["content"]
       }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "download_file",
+      "description": "从URL下载文件",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "要下载文件的URL地址"
+          },
+          "output_path": {
+            "type": "string",
+            "description": "完整的输出文件路径（包含文件名），如果未指定则自动生成文件名"
+          },
+          "output_dir": {
+            "type": "string",
+            "description": "输出目录，如果未指定则使用默认下载目录"
+          },
+          "filename": {
+            "type": "string",
+            "description": "文件名，如果未指定则从URL中提取或使用时间戳"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "下载超时时间（秒），默认60秒",
+            "default": 60
+          }
+        },
+        "required": ["url"]
+      }
+    }
   }
 ]

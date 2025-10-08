@@ -3,9 +3,12 @@ import requests
 import re
 import subprocess
 import shutil
-from urllib.parse import urljoin, urlparse
-from typing import List, Dict, Optional, Literal
 import time
+from urllib.parse import urljoin, urlparse
+from typing import List, Dict, Optional, Literal, Any
+from pathlib import Path
+
+from toolcommon import sanitize_path
 
 def get_content(url: str, return_format: str = "clean_text") -> str:
     """
@@ -78,7 +81,7 @@ def get_content_with_elinks(url: str) -> str:
             timeout=15,
             check=True
         )
-        
+
         if result.returncode == 0:
             content = result.stdout.strip()
             # 进一步清理elinks输出的多余空行
@@ -87,7 +90,7 @@ def get_content_with_elinks(url: str) -> str:
         else:
             # 如果elinks失败，回退到常规方法
             return get_content_fallback(url)
-            
+
     except subprocess.TimeoutExpired:
         return f"Error: elinks timeout when fetching {url}"
     except subprocess.CalledProcessError as e:
@@ -302,6 +305,218 @@ def extract_clean_text(html_content: str) -> str:
         text = re.sub(r'\s+', ' ', text)  # 合并多个空白字符
         return text.strip()
 
+def download_file(
+    url: str,
+    output_path: Optional[str] = None,
+    output_dir: Optional[str] = None,
+    filename: Optional[str] = None,
+    timeout: int = 60
+) -> Dict[str, Any]:
+    """
+    从URL下载文件
+
+    Args:
+        url: 要下载文件的URL地址
+        output_path: 完整的输出文件路径（包含文件名）
+        output_dir: 输出目录（如果output_path未指定，则在此目录下生成文件）
+        filename: 文件名（如果output_path未指定，则使用此文件名）
+        timeout: 下载超时时间（秒）
+
+    Returns:
+        Dict: 包含下载结果的信息
+    """
+    try:
+        file_path = _get_download_output_path(url, output_path, output_dir, filename)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        downloaded_path = download_file_robust(url, file_path, timeout)
+
+        if downloaded_path:
+            return {
+                "success": True,
+                "message": f"文件下载成功",
+                "file_path": str(downloaded_path),
+                "url": url,
+                "file_size": downloaded_path.stat().st_size if downloaded_path.exists() else 0
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"所有下载方法都失败了: {url}",
+                "url": url
+            }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"下载文件时发生错误: {str(e)}",
+            "url": url
+        }
+
+
+def download_file_robust(
+    url: str,
+    output_path: Path,
+    timeout: int,
+    headers: Dict[str, str] = {}
+) -> Optional[Path]:
+    file_path = _download_with_requests(url, output_path, timeout)
+    if file_path:
+        return file_path
+
+    file_path = _download_with_wget(url, output_path, timeout)
+    if file_path:
+        return file_path
+
+    file_path = _download_with_curl(url, output_path, timeout)
+    if file_path:
+        return file_path
+
+    print(f"所有下载方法都失败了: {url}")
+    return None
+
+
+def _download_with_requests(
+    url: str,
+    output_path: Path,
+    timeout: int,
+    headers: Dict[str, str] = {}
+) -> Optional[Path]:
+    try:
+        # 尝试不同的请求头组合
+        headers_combinations = [
+            {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            },
+            {
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                "Accept": "*/*",
+                "Accept-Language": "en-US,en;q=0.9"
+            },
+            {}  # 空请求头
+        ]
+        if headers:
+            headers_combinations.insert(0, headers)
+
+        for headers_try in headers_combinations:
+            try:
+                response = requests.get(url, headers=headers_try, timeout=timeout, stream=True)
+                response.raise_for_status()
+
+                with open(output_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+
+                print(f"使用requests下载成功: {output_path}")
+                return output_path
+
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 403:
+                    continue  # 尝试下一个请求头组合
+                else:
+                    raise
+
+        return None
+
+    except Exception as e:
+        print(f"requests下载失败: {str(e)}")
+        return None
+
+
+def _download_with_wget(
+    url: str,
+    output_path: Path,
+    timeout: int
+) -> Optional[Path]:
+    if not shutil.which("wget"):
+        return None
+
+    try:
+        cmd = [
+            "wget",
+            "-O", str(output_path),
+            "-T", str(timeout),  # 超时时间
+            url
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 10)
+
+        if result.returncode == 0:
+            print(f"使用wget下载成功: {output_path}")
+            return output_path
+        else:
+            print(f"wget下载失败: {result.stderr}")
+            return None
+
+    except Exception as e:
+        print(f"wget下载失败: {str(e)}")
+        return None
+
+
+def _download_with_curl(
+    url: str,
+    output_path: Path,
+    timeout: int
+) -> Optional[Path]:
+    if not shutil.which("curl"):
+        return None
+
+    try:
+        cmd = [
+            "curl",
+            "-L",  # 跟随重定向
+            "-o", str(output_path),
+            "--connect-timeout", str(timeout),
+            "--max-time", str(timeout),
+            url
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 10)
+
+        if result.returncode == 0:
+            print(f"使用curl下载成功: {output_path}")
+            return output_path
+        else:
+            print(f"curl下载失败: {result.stderr}")
+            return None
+
+    except Exception as e:
+        print(f"curl下载失败: {str(e)}")
+        return None
+
+
+def _get_download_output_path(
+    url: str,
+    output_path: Optional[str],
+    output_dir: Optional[str],
+    filename: Optional[str]
+) -> Path:
+    """获取下载文件的输出路径"""
+    if output_path:
+        return sanitize_path(output_path)
+
+    # 确定输出目录
+    if output_dir:
+        output_dir_path = sanitize_path(output_dir)
+    else:
+        output_dir_path = sanitize_path() / "downloads"
+
+    # 确定文件名
+    if filename:
+        file_name = filename
+    else:
+        # 从URL中提取文件名，或使用时间戳
+        parsed_url = urlparse(url)
+        url_filename = Path(parsed_url.path).name
+        if url_filename and url_filename != "/":
+            file_name = url_filename
+        else:
+            timestamp = int(time.time())
+            file_name = f"downloaded_file_{timestamp}"
+
+    return output_dir_path / file_name
+
+
 # 测试代码（如果直接运行）
 if __name__ == "__main__":
     # 测试 get_content
@@ -332,3 +547,8 @@ if __name__ == "__main__":
     print("\nTesting search with links format...")
     results = search("python programming", max_results=3, return_format="links")
     print(results)
+
+    # 测试 download_file
+    print("\nTesting download_file...")
+    result = download_file("https://httpbin.org/image/jpeg", filename="test_image.jpg")
+    print(f"Download result: {result}")

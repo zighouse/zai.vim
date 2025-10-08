@@ -493,7 +493,8 @@ def handle_command(command):
                     print("Open AI Client failed")
             return True
         if opt.lower() == 'tool':
-            tool.use_tool(argv[2:])
+            if tool.use_tool(argv[2:]):
+                tool.show_tools()
             return True
 
     if cmd in ['prefix', 'suffix'] and argc > 1:

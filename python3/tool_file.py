@@ -190,3 +190,163 @@ def copy_file(source: str, destination: str) -> str:
         return f"错误：目标路径 '{destination}' 已存在"
     except Exception as e:
         return f"错误：复制失败 - {str(e)}"
+
+def descript_file(path):
+    """
+    描述文件类型和格式，使用 file 命令或 Python 内置方法
+
+    Args:
+        path: 文件路径
+
+    Returns:
+        str: 文件描述信息
+    """
+    try:
+        target_file = sanitize_path(path)
+
+        if not target_file.exists():
+            return f"错误：文件 '{path}' 不存在"
+
+        if not target_file.is_file():
+            return f"错误：'{path}' 不是文件"
+
+        # 首先尝试使用 file 命令（Linux/Unix 系统）
+        import subprocess
+        import shutil
+
+        # 检查 file 命令是否可用
+        if shutil.which('file'):
+            try:
+                result = subprocess.run(
+                    ['file', '-b', str(target_file)],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if result.returncode == 0:
+                    description = result.stdout.strip()
+                    return f"文件 '{path}' 的描述：{description}"
+            except (subprocess.TimeoutExpired, subprocess.SubprocessError):
+                pass  # 如果 file 命令失败，回退到 Python 方法
+
+        # 如果 file 命令不可用或失败，使用 Python 内置方法
+        return _describe_file_with_python(target_file, path)
+
+    except ValueError as e:
+        return f"安全错误：{e}"
+    except Exception as e:
+        return f"错误：{str(e)}"
+
+def _describe_file_with_python(file_path, original_path):
+    """
+    使用 Python 内置方法描述文件类型
+    """
+    import os
+    import stat
+    import magic  # 如果安装了 python-magic 库
+    from pathlib import Path
+
+    try:
+        stat_info = file_path.stat()
+        size = stat_info.st_size
+
+        # 检查文件大小
+        if size == 0:
+            return f"文件 '{original_path}' 的描述：空文件"
+
+        # 尝试使用 python-magic 库（如果可用）
+        try:
+            import magic
+            mime = magic.Magic(mime=True)
+            mime_type = mime.from_file(str(file_path))
+            description = f"{mime_type} ({size} 字节)"
+            return f"文件 '{original_path}' 的描述：{description}"
+        except ImportError:
+            pass  # 如果 python-magic 不可用，继续使用其他方法
+
+        # 基于文件扩展名和内容的简单检测
+        description = _simple_file_detection(file_path, size)
+        return f"文件 '{original_path}' 的描述：{description}"
+
+    except Exception:
+        # 最后的回退方案
+        return f"文件 '{original_path}' 的基本信息：{size} 字节"
+
+def _simple_file_detection(file_path, size):
+    """
+    使用简单方法检测文件类型
+    """
+    extension = file_path.suffix.lower()
+
+    # 常见文件类型的扩展名映射
+    extension_map = {
+        '.txt': '文本文件',
+        '.py': 'Python 脚本',
+        '.js': 'JavaScript 文件',
+        '.json': 'JSON 数据文件',
+        '.xml': 'XML 文件',
+        '.html': 'HTML 文档',
+        '.css': 'CSS 样式表',
+        '.md': 'Markdown 文档',
+        '.pdf': 'PDF 文档',
+        '.jpg': 'JPEG 图像',
+        '.jpeg': 'JPEG 图像',
+        '.png': 'PNG 图像',
+        '.gif': 'GIF 图像',
+        '.bmp': 'BMP 图像',
+        '.svg': 'SVG 矢量图像',
+        '.mp3': 'MP3 音频',
+        '.mp4': 'MP4 视频',
+        '.avi': 'AVI 视频',
+        '.zip': 'ZIP 压缩文件',
+        '.tar': 'TAR 归档文件',
+        '.gz': 'GZIP 压缩文件',
+        '.exe': '可执行文件',
+        '.dll': '动态链接库',
+        '.so': '共享库',
+        '.bin': '二进制文件',
+        '.log': '日志文件',
+        '.csv': 'CSV 数据文件',
+        '.sql': 'SQL 脚本',
+        '.sh': 'Shell 脚本',
+        '.bat': '批处理文件',
+        '.ps1': 'PowerShell 脚本',
+    }
+
+    if extension in extension_map:
+        return f"{extension_map[extension]} ({size} 字节)"
+
+    # 尝试读取文件开头来判断类型
+    try:
+        with open(file_path, 'rb') as f:
+            header = f.read(512)  # 读取前512字节
+
+        # 常见文件类型的魔术数字
+        if header.startswith(b'\x89PNG\r\n\x1a\n'):
+            return f"PNG 图像 ({size} 字节)"
+        elif header.startswith(b'\xff\xd8\xff'):
+            return f"JPEG 图像 ({size} 字节)"
+        elif header.startswith(b'GIF8'):
+            return f"GIF 图像 ({size} 字节)"
+        elif header.startswith(b'%PDF'):
+            return f"PDF 文档 ({size} 字节)"
+        elif header.startswith(b'PK\x03\x04'):
+            return f"ZIP 压缩文件 ({size} 字节)"
+        elif header.startswith(b'\x1f\x8b'):
+            return f"GZIP 压缩文件 ({size} 字节)"
+        elif header.startswith(b'\x7fELF'):
+            return f"ELF 可执行文件 ({size} 字节)"
+        elif b'<!DOCTYPE html' in header[:100] or b'<html' in header[:100]:
+            return f"HTML 文档 ({size} 字节)"
+        elif b'<?xml' in header[:100]:
+            return f"XML 文档 ({size} 字节)"
+
+        # 检查是否为文本文件
+        try:
+            header.decode('utf-8')
+            return f"文本文件 ({size} 字节)"
+        except UnicodeDecodeError:
+            return f"二进制文件 ({size} 字节)"
+
+    except Exception:
+        return f"未知文件类型 ({size} 字节)"

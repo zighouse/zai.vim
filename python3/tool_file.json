@@ -95,5 +95,22 @@
         "required": ["source", "destination"]
       }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "descript_file",
+      "description": "描述文件类型和格式，使用 file 命令或 Python 内置方法返回文件描述信息",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径"
+          }
+        },
+        "required": ["path"]
+      }
+    }
   }
 ]

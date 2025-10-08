@@ -63,6 +63,12 @@ class ToolManager:
             elif function_name == "parse_links":
                 from tool_web import parse_links
                 return parse_links(**arguments)
+            elif function_name == "download_file":
+                from tool_web import download_file
+                result = download_file(**arguments)
+                if isinstance(result, str):
+                    return result
+                return json.dumps(result, indent=2, ensure_ascii=False)
 
         # OS tools
         if 'os' in self._toolsets:

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 from toolcommon import sanitize_path
+from tool_web import download_file_robust
 
 
 def generate_image(
@@ -145,11 +146,10 @@ def generate_image(
                 )
             else:
                 # 处理URL图片
-                file_path = _download_image_robust(
+                file_path = download_file_robust(
                     image_url,
-                    output_path,
-                    output_dir,
-                    i,
+                    _get_output_path(output_path, output_dir, i),
+                    timeout,
                     headers
                 )
 
@@ -211,211 +211,6 @@ def _save_base64_image(
 
     except Exception as e:
         print(f"保存base64图片失败: {str(e)}")
-        return None
-
-
-def _download_image_robust(
-    image_url: str,
-    output_path: Optional[str],
-    output_dir: Optional[str],
-    index: int,
-    headers: Dict[str, str]
-) -> Optional[Path]:
-    """
-    使用多种方法下载图片，包括：
-    1. 直接requests下载
-    2. 使用浏览器工具（elinks, wget, curl）
-    3. 添加不同的请求头
-    """
-    # 方法1: 使用requests尝试下载
-    file_path = _download_with_requests(image_url, output_path, output_dir, index, headers)
-    if file_path:
-        return file_path
-
-    # 方法2: 使用浏览器工具
-    file_path = _download_with_browser_tools(image_url, output_path, output_dir, index)
-    if file_path:
-        return file_path
-
-    # 方法3: 使用wget
-    file_path = _download_with_wget(image_url, output_path, output_dir, index)
-    if file_path:
-        return file_path
-
-    # 方法4: 使用curl
-    file_path = _download_with_curl(image_url, output_path, output_dir, index)
-    if file_path:
-        return file_path
-
-    print(f"所有下载方法都失败了: {image_url}")
-    return None
-
-
-def _download_with_requests(
-    image_url: str,
-    output_path: Optional[str],
-    output_dir: Optional[str],
-    index: int,
-    headers: Dict[str, str]
-) -> Optional[Path]:
-    """使用requests下载图片"""
-    try:
-        # 尝试不同的请求头组合
-        headers_combinations = [
-            headers,
-            {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            },
-            {
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9"
-            },
-            {}  # 空请求头
-        ]
-
-        for headers_try in headers_combinations:
-            try:
-                response = requests.get(image_url, headers=headers_try, timeout=30)
-                response.raise_for_status()
-
-                # 确定输出路径
-                file_path = _get_output_path(output_path, output_dir, index)
-
-                # 确保目录存在
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-
-                # 保存图片
-                with open(file_path, "wb") as f:
-                    f.write(response.content)
-
-                print(f"使用requests下载成功: {file_path}")
-                return file_path
-
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 403:
-                    continue  # 尝试下一个请求头组合
-                else:
-                    raise
-
-        return None
-
-    except Exception as e:
-        print(f"requests下载失败: {str(e)}")
-        return None
-
-
-def _download_with_browser_tools(
-    image_url: str,
-    output_path: Optional[str],
-    output_dir: Optional[str],
-    index: int
-) -> Optional[Path]:
-    """使用浏览器工具下载图片"""
-    try:
-        # 确定输出路径
-        file_path = _get_output_path(output_path, output_dir, index)
-
-        # 确保目录存在
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # 检查可用的浏览器工具
-        browser_tools = [
-            ("elinks", ["-dump", image_url, "-no-references"]),
-            ("lynx", ["-dump", image_url]),
-            ("w3m", ["-dump", image_url])
-        ]
-
-        for tool, args in browser_tools:
-            if shutil.which(tool):
-                try:
-                    # 这些工具通常不适合直接下载二进制文件
-                    # 这里我们只是检查可用性
-                    print(f"检测到 {tool}，但可能不适合下载图片")
-                except Exception:
-                    continue
-
-        return None
-
-    except Exception as e:
-        print(f"浏览器工具下载失败: {str(e)}")
-        return None
-
-
-def _download_with_wget(
-    image_url: str,
-    output_path: Optional[str],
-    output_dir: Optional[str],
-    index: int
-) -> Optional[Path]:
-    """使用wget下载图片"""
-    if not shutil.which("wget"):
-        return None
-
-    try:
-        # 确定输出路径
-        file_path = _get_output_path(output_path, output_dir, index)
-
-        # 确保目录存在
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # 构建wget命令
-        cmd = [
-            "wget",
-            "-O", str(file_path),
-            image_url
-        ]
-
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-
-        if result.returncode == 0:
-            print(f"使用wget下载成功: {file_path}")
-            return file_path
-        else:
-            print(f"wget下载失败: {result.stderr}")
-            return None
-
-    except Exception as e:
-        print(f"wget下载失败: {str(e)}")
-        return None
-
-
-def _download_with_curl(
-    image_url: str,
-    output_path: Optional[str],
-    output_dir: Optional[str],
-    index: int
-) -> Optional[Path]:
-    """使用curl下载图片"""
-    if not shutil.which("curl"):
-        return None
-
-    try:
-        # 确定输出路径
-        file_path = _get_output_path(output_path, output_dir, index)
-
-        # 确保目录存在
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # 构建curl命令
-        cmd = [
-            "curl",
-            "-L",  # 跟随重定向
-            "-o", str(file_path),
-            image_url
-        ]
-
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-
-        if result.returncode == 0:
-            print(f"使用curl下载成功: {file_path}")
-            return file_path
-        else:
-            print(f"curl下载失败: {result.stderr}")
-            return None
-
-    except Exception as e:
-        print(f"curl下载失败: {str(e)}")
         return None
 
 
