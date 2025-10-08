@@ -51,6 +51,12 @@ class ToolManager:
             elif function_name == "ls":
                 from tool_file import ls
                 return ls(**arguments)
+            elif function_name == "descript_file":
+                from tool_file import descript_file
+                result = descript_file(**arguments)
+                if isinstance(result, str):
+                    return result
+                return json.dumps(result, indent=2, ensure_ascii=False)
 
         # Web tools
         if 'web' in self._toolsets:
