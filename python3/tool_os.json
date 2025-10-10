@@ -19,7 +19,7 @@
         "format": {
           "type": "string",
           "description": "日期格式（仅适用于get_date操作）",
-          "enum": ["date_only", "datetime", "utc", "timestamp", "all"],
+          "enum": ["date_only", "datetime", "utc", "timestamp", "lunar", "all"],
           "default": "all"
         }
       },

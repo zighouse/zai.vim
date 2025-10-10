@@ -12,6 +12,39 @@ import locale
 import time
 from typing import Dict, Any, Optional
 
+# 农历：可选依赖
+try:
+    from lunarcalendar import Converter
+    _LUNAR_AVAILABLE = True
+except ModuleNotFoundError:
+    _LUNAR_AVAILABLE = False
+
+_LUNAR_MONTHS = ["", "正月", "二月", "三月", "四月", "五月", "六月", 
+                "七月", "八月", "九月", "十月", "冬月", "腊月"]
+_LUNAR_DAYS = ["", "初一", "初二", "初三", "初四", "初五", "初六", "初七", "初八", "初九", "初十",
+              "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十",
+              "廿一", "廿二", "廿三", "廿四", "廿五", "廿六", "廿七", "廿八", "廿九", "三十"]
+
+def _solar_to_lunar(date: datetime.date) -> Dict[str, str]:
+    """
+    公历 -> 农历
+    如果 lunarcalendar 未安装，返回空 dict，由调用者决定提示
+    """
+    if not _LUNAR_AVAILABLE:
+        return {}
+    lunar = Converter.Solar2Lunar(date)
+    # 处理闰月
+    month_name = _LUNAR_MONTHS[lunar.month]
+    if lunar.isleap:
+        month_name = "闰" + month_name
+    
+    day_name = _LUNAR_DAYS[lunar.day]
+    
+    return {
+        "lunar_date": f"{lunar.year}年{month_name}{day_name}",
+        "lunar_month_name": month_name,
+        "lunar_day_name": day_name,
+    }
 
 def get_date_info(format_type: str = "all") -> Dict[str, Any]:
     """
@@ -23,6 +56,7 @@ def get_date_info(format_type: str = "all") -> Dict[str, Any]:
             - "datetime": 日期加时间
             - "utc": UTC时间
             - "timestamp": 时间戳
+            - "lunar": 农历
             - "all": 所有信息
 
     Returns:
@@ -47,6 +81,13 @@ def get_date_info(format_type: str = "all") -> Dict[str, Any]:
     if format_type in ["timestamp", "all"]:
         result["timestamp"] = int(time.time())
         result["timestamp_millis"] = int(time.time() * 1000)
+
+    if format_type in ["lunar", "all"]:
+        lunar = _solar_to_lunar(now.date())
+        if not lunar and format_type == "lunar":
+            result["luar_hint"] = "农历功能需要安装 lunarcalendar：pip install lunarcalendar"
+        elif lunar:
+            result.update(lunar)
 
     if format_type == "all":
         result["timezone"] = time.tzname[0] if time.daylight else time.tzname[1]
