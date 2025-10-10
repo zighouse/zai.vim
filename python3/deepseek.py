@@ -596,6 +596,13 @@ def handle_command(command):
             g_files = []
         return True
 
+    # Set
+    if cmd == 'set' and argc == 3:
+        opt = argv[1].replace('-', '_')
+        if opt.lower() == 'sandbox':
+            tool.set_sandbox_home(argv[2])
+            return True
+
     # Show options
     if cmd == 'show':
         if argc == 2:
@@ -616,6 +623,9 @@ def handle_command(command):
                 return True
             elif argv[1] == 'tool':
                 tool.show_tools()
+                return True
+            elif opt == 'sandbox':
+                tool.show_sandbox_home()
                 return True
             else:
                 value = ''

@@ -5,6 +5,7 @@ import importlib
 from pathlib import Path
 from typing import Dict, List, Any, Union, Optional
 from appdirs import user_data_dir
+from toolcommon import set_sandbox_home, sandbox_home
 
 class ToolManager:
     """管理工具集，支持动态发现与调用"""
@@ -236,3 +237,13 @@ class ToolManager:
 
     def use_toolset(self, toolset_name: str) -> bool:
         return self.use_tool(toolset_name)
+
+    def set_sandbox_home(self, new_path: str):
+        try:
+            new_path = set_sandbox_home(new_path)
+            print(f"set sandbox home succeed, new sandbox home:\n  {new_path}")
+        except Exception as e:
+            print(f"ERROR failed set sandbox home, error:{e}")
+
+    def show_sandbox_home(self):
+        print(f"sandbox home:\n  {sandbox_home()}")
