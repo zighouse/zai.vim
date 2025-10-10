@@ -340,21 +340,24 @@ def generate_response():
     if full_response['tool_calls']:
         tool_call_index = 0
         for tool_call in full_response['tool_calls']:
-            try:
-                function = tool_call['function']
-                function_name = function['name']
-                function['arguments'] = ''.join(function['arguments'])
-                function_args = json.loads(function['arguments']) if function['arguments'] else {}
-                function_response = tool.call_tool(function_name, function_args)
-                tool_responses.append({
+            function = tool_call['function']
+            function_name = function['name']
+            function_response = {
                     "tool_call_id": tool_call['id'],
                     "role": "tool",
                     "name": function_name,
-                    "content": function_response,
-                })
+                    "content": "ERROR: calling tool failed.",
+                }
+            try:
+                function['arguments'] = ''.join(function['arguments'])
+                function_args = json.loads(function['arguments']) if function['arguments'] else {}
+                function_response["content"] = tool.call_tool(function_name, function_args)
             except Exception as call_ex:
                 print(f"tool_call `{function_name}` error {call_ex}")
                 logger.append_error(call_ex)
+                function_response["content"] = f"[ERROR] calling tool failed: {call_ex}"
+            finally:
+                tool_responses.append(function_response)
         tool_calls = full_response["tool_calls"]
 
     if full_response['content']:
@@ -462,7 +465,7 @@ def handle_command(command):
             print(f"model `{argv[1]}` is applied")
         return True
 
-    # Use assistant
+    # Use assistant, tool
     if cmd == 'use' and argc >= 3:
         opt = argv[1].replace('-', '_')
         if opt.lower() == 'ai':
