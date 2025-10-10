@@ -6,6 +6,7 @@ File toolbox —— 动态兼容层
 import shutil
 import os
 import stat
+import re
 from datetime import datetime
 from toolcommon import sanitize_path
 
@@ -124,7 +125,7 @@ def invoke_read_file(path: str) -> str:
         return f"错误：{str(e)}"
 
 
-def invoke_write_file(path: str, mode: str, content: str) -> str:
+def invoke_write_file(path: str, content: str, mode: str = "w") -> str:
     """向沙盒内的文件写入内容"""
     try:
         target_file = sanitize_path(path)
@@ -160,19 +161,24 @@ def invoke_mkdir(path: str) -> str:
         return f"错误：{str(e)}"
 
 
-def invoke_copy_file(source: str, destination: str) -> str:
+def invoke_copy_file(source, destination: str) -> str:
     """
-    复制沙盒内的文件或目录到指定路径
+    复制沙盒内的文件或目录到指定路径，支持合并多个文件
     Args:
-        source: 源文件或目录路径
+        source: 单个源文件/目录路径，或多个源文件路径列表
         destination: 目标路径
     Returns:
         str: 操作结果信息字符串
     """
     try:
-        # 使用现有的路径安全检查
-        source_path = sanitize_path(source)
         dest_path = sanitize_path(destination)
+
+        # 处理多个源文件合并的情况
+        if isinstance(source, list):
+            return _merge_multiple_files(source, dest_path)
+
+        # 处理单个源路径的情况
+        source_path = sanitize_path(source)
 
         # 检查源路径是否存在
         if not source_path.exists():
@@ -197,6 +203,59 @@ def invoke_copy_file(source: str, destination: str) -> str:
         return f"错误：目标路径 '{destination}' 已存在"
     except Exception as e:
         return f"错误：复制失败 - {str(e)}"
+
+
+def _merge_multiple_files(sources: list, dest_path):
+    """
+    合并多个文件到一个目标文件
+    Args:
+        sources: 源文件路径列表
+        dest_path: 目标文件路径
+    Returns:
+        str: 操作结果信息字符串
+    """
+    try:
+        # 检查所有源文件是否存在且为文件
+        source_paths = []
+        for source in sources:
+            source_path = sanitize_path(source)
+            if not source_path.exists():
+                return f"错误：源文件 '{source}' 不存在"
+            if not source_path.is_file():
+                return f"错误：源路径 '{source}' 不是文件"
+            source_paths.append(source_path)
+
+        # 创建目标文件的父目录（如果不存在）
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 使用追加模式合并文件
+        with open(dest_path, 'w', encoding='utf-8') as dest_file:
+            for i, source_path in enumerate(source_paths):
+                try:
+                    with open(source_path, 'r', encoding='utf-8') as src_file:
+                        content = src_file.read()
+                        dest_file.write(content)
+
+                        # 如果不是最后一个文件，添加换行符分隔（可选）
+                        if i < len(source_paths) - 1:
+                            dest_file.write('\n')
+
+                except UnicodeDecodeError:
+                    # 如果是二进制文件，使用二进制模式
+                    with open(source_path, 'rb') as src_file:
+                        content = src_file.read()
+                        # 对于二进制文件，需要切换到二进制模式
+                        dest_file.close()  # 先关闭文本模式文件
+                        with open(dest_path, 'ab' if i > 0 else 'wb') as dest_file_bin:
+                            dest_file_bin.write(content)
+                        # 重新打开文本模式文件用于后续写入
+                        dest_file = open(dest_path, 'a', encoding='utf-8')
+
+        source_names = ', '.join(sources)
+        return f"成功合并文件 [{source_names}] -> '{dest_path}'"
+
+    except Exception as e:
+        return f"错误：合并文件失败 - {str(e)}"
 
 
 def invoke_descript_file(path: str) -> str:
@@ -349,3 +408,452 @@ def _simple_file_detection(file_path, size):
 
     except Exception:
         return f"未知文件类型 ({size} 字节)"
+
+def invoke_substitute_file(path: str, old_text: str, new_text: str, use_regex: bool = False, count: int = 0) -> str:
+    """
+    对文本文件的局部内容进行替换
+
+    Args:
+        path: 文件路径
+        old_text: 要替换的旧文本或正则表达式模式
+        new_text: 替换后的新文本
+        use_regex: 是否使用正则表达式进行匹配，默认为 false（字符串匹配）
+        count: 替换次数，0 表示替换所有匹配项，默认为 0
+
+    Returns:
+        str: 操作结果信息字符串
+    """
+    try:
+        target_file = sanitize_path(path)
+
+        if not target_file.exists():
+            return f"错误：文件 '{path}' 不存在"
+
+        if not target_file.is_file():
+            return f"错误：'{path}' 不是文件"
+
+        with open(target_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        if use_regex:
+            try:
+                if count == 0:
+                    new_content, replacements = re.subn(old_text, new_text, content)
+                else:
+                    pattern = re.compile(old_text)
+                    new_content = content
+                    replacements = 0
+                    for i in range(count):
+                        new_content, n = pattern.subn(new_text, new_content, 1)
+                        replacements += n
+                        if n == 0:
+                            break
+            except re.error as e:
+                return f"错误：无效的正则表达式 '{old_text}' - {str(e)}"
+        else:
+            if count == 0:
+                new_content = content.replace(old_text, new_text)
+                replacements = content.count(old_text)
+            else:
+                new_content = content
+                replacements = 0
+                start = 0
+                for i in range(count):
+                    pos = new_content.find(old_text, start)
+                    if pos == -1:
+                        break
+                    new_content = new_content[:pos] + new_text + new_content[pos + len(old_text):]
+                    start = pos + len(new_text)
+                    replacements += 1
+
+        if replacements == 0:
+            return f"警告：在文件 '{path}' 中未找到匹配的文本"
+
+        with open(target_file, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+
+        return f"成功在文件 '{path}' 中完成 {replacements} 处替换"
+
+    except ValueError as e:
+        return f"安全错误：{e}"
+    except Exception as e:
+        return f"错误：{str(e)}"
+
+def invoke_search_in_file(path: str, pattern: str, use_regex: bool = False, case_sensitive: bool = True, max_results: int = 0, context_lines: int = 2) -> str:
+    """
+    在文件中搜索指定的文本或模式
+
+    Args:
+        path: 文件路径
+        pattern: 要搜索的文本或正则表达式模式
+        use_regex: 是否使用正则表达式进行搜索，默认为 false（字符串匹配）
+        case_sensitive: 是否区分大小写，默认为 true
+        max_results: 最大返回结果数，0 表示返回所有结果，默认为 0
+        context_lines: 返回匹配项的上下文行数，默认为 2
+
+    Returns:
+        str: 搜索结果信息字符串
+    """
+    try:
+        target_file = sanitize_path(path)
+
+        # 检查文件是否存在
+        if not target_file.exists():
+            return f"错误：文件 '{path}' 不存在"
+
+        if not target_file.is_file():
+            return f"错误：'{path}' 不是文件"
+
+        # 读取文件内容
+        with open(target_file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        # 准备搜索结果
+        results = []
+        result_count = 0
+
+        # 执行搜索操作
+        for line_num, line in enumerate(lines, 1):
+            if use_regex:
+                # 使用正则表达式搜索
+                try:
+                    flags = 0 if case_sensitive else re.IGNORECASE
+                    matches = list(re.finditer(pattern, line, flags))
+                    for match in matches:
+                        if max_results > 0 and result_count >= max_results:
+                            break
+
+                        start_pos = match.start()
+                        end_pos = match.end()
+                        matched_text = match.group()
+
+                        # 添加上下文
+                        context_start = max(0, line_num - context_lines - 1)
+                        context_end = min(len(lines), line_num + context_lines)
+                        context = lines[context_start:context_end]
+
+                        results.append({
+                            'line': line_num,
+                            'position': start_pos,
+                            'matched_text': matched_text,
+                            'context': context,
+                            'context_start_line': context_start + 1
+                        })
+                        result_count += 1
+                except re.error as e:
+                    return f"错误：无效的正则表达式 '{pattern}' - {str(e)}"
+            else:
+                # 使用字符串搜索
+                search_text = line if case_sensitive else line.lower()
+                search_pattern = pattern if case_sensitive else pattern.lower()
+
+                start_pos = 0
+                while True:
+                    pos = search_text.find(search_pattern, start_pos)
+                    if pos == -1:
+                        break
+
+                    if max_results > 0 and result_count >= max_results:
+                        break
+
+                    # 添加上下文
+                    context_start = max(0, line_num - context_lines - 1)
+                    context_end = min(len(lines), line_num + context_lines)
+                    context = lines[context_start:context_end]
+
+                    results.append({
+                        'line': line_num,
+                        'position': pos,
+                        'matched_text': line[pos:pos + len(pattern)],
+                        'context': context,
+                        'context_start_line': context_start + 1
+                    })
+                    result_count += 1
+                    start_pos = pos + 1
+
+        # 格式化输出结果
+        if not results:
+            return f"在文件 '{path}' 中未找到匹配的文本"
+
+        output_lines = [f"在文件 '{path}' 中找到 {len(results)} 个匹配项：\n"]
+
+        for i, result in enumerate(results, 1):
+            output_lines.append(f"匹配项 {i}:")
+            output_lines.append(f"  位置：第 {result['line']} 行，第 {result['position'] + 1} 列")
+            output_lines.append(f"  匹配文本：{result['matched_text']}")
+            output_lines.append(f"  上下文：")
+
+            # 显示上下文
+            for j, context_line in enumerate(result['context']):
+                current_line_num = result['context_start_line'] + j
+                line_prefix = "> " if current_line_num == result['line'] else "  "
+                output_lines.append(f"  {line_prefix}{current_line_num}: {context_line.rstrip()}")
+
+            output_lines.append("")
+
+        if max_results > 0 and result_count >= max_results:
+            output_lines.append(f"（由于 max_results 限制，只显示前 {max_results} 个结果）")
+
+        return "\n".join(output_lines)
+
+    except ValueError as e:
+        return f"安全错误：{e}"
+    except Exception as e:
+        return f"错误：{str(e)}"
+
+def invoke_diff_file(file1: str, file2: str, output_format: str = "unified", context_lines: int = 3) -> str:
+    """
+    比较两个文件的差异，生成类似 Linux diff 命令的差异输出
+
+    Args:
+        file1: 第一个文件路径
+        file2: 第二个文件路径
+        output_format: 差异输出格式：unified（统一格式，默认）、context（上下文格式）、normal（普通格式）
+        context_lines: 上下文行数（仅对 unified 和 context 格式有效），默认为 3
+
+    Returns:
+        str: 差异输出结果
+    """
+    try:
+        target_file1 = sanitize_path(file1)
+        target_file2 = sanitize_path(file2)
+
+        if not target_file1.exists():
+            return f"错误：文件 '{file1}' 不存在"
+        if not target_file2.exists():
+            return f"错误：文件 '{file2}' 不存在"
+
+        if not target_file1.is_file():
+            return f"错误：'{file1}' 不是文件"
+        if not target_file2.is_file():
+            return f"错误：'{file2}' 不是文件"
+
+        with open(target_file1, 'r', encoding='utf-8') as f:
+            lines1 = f.readlines()
+        with open(target_file2, 'r', encoding='utf-8') as f:
+            lines2 = f.readlines()
+
+        diff_result = _compute_diff(lines1, lines2, output_format, context_lines)
+        return diff_result
+
+    except ValueError as e:
+        return f"安全错误：{e}"
+    except Exception as e:
+        return f"错误：{str(e)}"
+
+
+def _compute_diff(lines1, lines2, output_format, context_lines):
+    """计算两个文件内容的差异"""
+    import difflib
+
+    if output_format == "unified":
+        diff = difflib.unified_diff(
+            lines1, lines2,
+            fromfile='file1', tofile='file2',
+            lineterm='', n=context_lines
+        )
+    elif output_format == "context":
+        diff = difflib.context_diff(
+            lines1, lines2,
+            fromfile='file1', tofile='file2',
+            lineterm='', n=context_lines
+        )
+    else:  # normal
+        diff = difflib.ndiff(lines1, lines2)
+
+    diff_lines = list(diff)
+
+    if not diff_lines:
+        return "文件 'file1' 和 'file2' 内容相同"
+
+    return '\n'.join(diff_lines)
+
+
+def invoke_patch_file(file_path: str, patch_content: str, backup: bool = True, reverse: bool = False) -> str:
+    """
+    将差异补丁应用到文件，类似于 Linux patch 命令的功能
+
+    Args:
+        file_path: 要应用补丁的文件路径
+        patch_content: 补丁内容，可以是 unified diff 格式或其他支持的格式
+        backup: 是否在应用补丁前创建备份文件，默认为 true
+        reverse: 是否反向应用补丁（撤销补丁），默认为 false
+
+    Returns:
+        str: 补丁应用结果
+    """
+    try:
+        target_file = sanitize_path(file_path)
+
+        # 检查文件是否存在
+        if not target_file.exists():
+            return f"错误：文件 '{file_path}' 不存在"
+        if not target_file.is_file():
+            return f"错误：'{file_path}' 不是文件"
+
+        # 创建备份文件
+        backup_file = None
+        if backup:
+            backup_file = target_file.with_suffix(target_file.suffix + '.bak')
+            import shutil
+            shutil.copy2(target_file, backup_file)
+
+        # 读取原始文件内容
+        with open(target_file, 'r', encoding='utf-8') as f:
+            original_content = f.read()
+
+        # 应用补丁
+        try:
+            patched_content = _apply_patch(original_content, patch_content, reverse)
+        except Exception as e:
+            # 如果补丁应用失败，恢复备份
+            if backup and backup_file and backup_file.exists():
+                shutil.copy2(backup_file, target_file)
+            return f"错误：补丁应用失败 - {str(e)}"
+
+        # 写入补丁后的内容
+        with open(target_file, 'w', encoding='utf-8') as f:
+            f.write(patched_content)
+
+        result = f"成功将补丁应用到文件 '{file_path}'"
+        if backup:
+            result += f"（已创建备份文件：{backup_file.name}）"
+
+        return result
+
+    except ValueError as e:
+        return f"安全错误：{e}"
+    except Exception as e:
+        return f"错误：{str(e)}"
+
+
+def _apply_patch(original_content, patch_content, reverse):
+    """应用补丁到文件内容"""
+    import difflib
+
+    # 将原始内容分割为行
+    original_lines = original_content.splitlines(keepends=True)
+
+    # 解析补丁内容
+    patch_lines = patch_content.splitlines(keepends=True)
+
+    # 简单的补丁应用逻辑（仅支持 unified diff 格式）
+    if patch_lines and patch_lines[0].startswith('---'):
+        # 检测到 unified diff 格式
+        return _apply_unified_patch(original_lines, patch_lines, reverse)
+    else:
+        # 对于其他格式，使用更通用的方法
+        return _apply_generic_patch(original_content, patch_content, reverse)
+
+
+def _apply_unified_patch(original_lines, patch_lines, reverse):
+    """应用 unified diff 格式的补丁"""
+    result_lines = original_lines.copy()
+
+    i = 0
+    while i < len(patch_lines):
+        line = patch_lines[i]
+
+        # 寻找补丁块开始
+        if line.startswith('@@'):
+            # 解析补丁头
+            import re
+            header_match = re.match(r'@@ -([0-9]+),?([0-9]*) \+([0-9]+),?([0-9]*) @@', line)
+            if not header_match:
+                i += 1
+                continue
+
+            old_start = int(header_match.group(1))
+            old_count = int(header_match.group(2)) if header_match.group(2) else 1
+            new_start = int(header_match.group(3))
+            new_count = int(header_match.group(4)) if header_match.group(4) else 1
+
+            i += 1
+
+            # 处理补丁块
+            old_index = old_start - 1
+            patch_operations = []
+
+            for j in range(i, min(i + old_count + new_count, len(patch_lines))):
+                patch_line = patch_lines[j]
+                if patch_line.startswith(' '):
+                    # 未更改的行
+                    patch_operations.append(('keep', patch_line[1:]))
+                    old_index += 1
+                elif patch_line.startswith('-'):
+                    # 删除的行
+                    patch_operations.append(('remove', patch_line[1:]))
+                    old_index += 1
+                elif patch_line.startswith('+'):
+                    # 添加的行
+                    patch_operations.append(('add', patch_line[1:]))
+                else:
+                    break
+
+            # 应用补丁操作
+            if reverse:
+                # 反向应用：交换添加和删除操作
+                for op, content in patch_operations:
+                    if op == 'remove':
+                        # 反向时：删除变为添加
+                        result_lines.insert(old_start - 1, content)
+                    elif op == 'add':
+                        # 反向时：添加变为删除
+                        # 找到并删除对应的行
+                        for k in range(len(result_lines)):
+                            if result_lines[k] == content:
+                                del result_lines[k]
+                                break
+            else:
+                # 正向应用补丁
+                current_pos = old_start - 1
+                for op, content in patch_operations:
+                    if op == 'remove':
+                        if current_pos < len(result_lines) and result_lines[current_pos] == content:
+                            del result_lines[current_pos]
+                        else:
+                            raise ValueError(f"无法应用补丁：在第 {current_pos + 1} 行找不到要删除的内容")
+                    elif op == 'add':
+                        result_lines.insert(current_pos, content)
+                        current_pos += 1
+                    elif op == 'keep':
+                        current_pos += 1
+
+            i += len(patch_operations)
+        else:
+            i += 1
+
+    return ''.join(result_lines)
+
+
+def _apply_generic_patch(original_content, patch_content, reverse):
+    """应用通用格式的补丁"""
+    # 这是一个简化的实现，实际应用中可能需要更复杂的逻辑
+    if reverse:
+        # 对于反向补丁，我们尝试撤销更改
+        # 这里使用简单的字符串替换作为回退方案
+        lines = patch_content.splitlines()
+        for line in lines:
+            if line.startswith('-'):
+                # 在反向模式中，删除行变为添加行
+                content_to_add = line[1:]
+                original_content = original_content.replace(content_to_add, '', 1)
+            elif line.startswith('+'):
+                # 在反向模式中，添加行变为删除行
+                content_to_remove = line[1:]
+                original_content = original_content.replace(content_to_remove, '', 1)
+    else:
+        # 正向应用补丁
+        lines = patch_content.splitlines()
+        for line in lines:
+            if line.startswith('-'):
+                # 删除行
+                content_to_remove = line[1:]
+                original_content = original_content.replace(content_to_remove, '', 1)
+            elif line.startswith('+'):
+                # 添加行
+                content_to_add = line[1:]
+                # 在文件末尾添加
+                original_content += '\n' + content_to_add
+
+    return original_content

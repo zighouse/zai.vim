@@ -36,56 +36,25 @@
   {
     "type": "function",
     "function": {
-      "name": "read_file",
-      "description": "读取文件",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string",
-            "description": "文件路径"
-          }
-        },
-        "required": ["path"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "write_file",
-      "description": "写入文件。注意当写入内容过长时，可能会超出 AI-Chat 最大允许输出 tokens 长度而导致工具调用错误，应分成多批以追加方式写入来避免错误。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string",
-            "description": "文件路径"
-          },
-          "content": {
-            "type": "string",
-            "description": "写入内容"
-          },
-          "mode": {
-            "type": "string",
-            "description": "写入模式: 'w'-覆盖, 'a'-追加"
-          }
-        },
-        "required": ["path", "content"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "copy_file",
-      "description": "复制文件或目录到指定路径，支持递归复制目录",
+      "description": "复制文件或目录到指定路径，支持递归复制目录和合并多个文件",
       "parameters": {
         "type": "object",
         "properties": {
           "source": {
-            "type": "string",
-            "description": "源文件或目录路径"
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "源文件或目录路径"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "多个源文件路径，按顺序合并到目标文件"
+              }
+            ]
           },
           "destination": {
             "type": "string",
@@ -110,6 +79,182 @@
           }
         },
         "required": ["path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "substitute_file",
+      "description": "对文本文件的局部内容进行替换，支持基于字符串匹配或正则表达式的替换操作",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径"
+          },
+          "old_text": {
+            "type": "string",
+            "description": "要替换的旧文本或正则表达式模式"
+          },
+          "new_text": {
+            "type": "string",
+            "description": "替换后的新文本"
+          },
+          "use_regex": {
+            "type": "boolean",
+            "description": "是否使用正则表达式进行匹配，默认为 false（字符串匹配）"
+          },
+          "count": {
+            "type": "integer",
+            "description": "替换次数，0 表示替换所有匹配项，默认为 0"
+          }
+        },
+        "required": ["path", "old_text", "new_text"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search_in_file",
+      "description": "在文件中搜索指定的文本或模式，支持字符串匹配和正则表达式，返回匹配结果的位置和上下文",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径"
+          },
+          "pattern": {
+            "type": "string",
+            "description": "要搜索的文本或正则表达式模式"
+          },
+          "use_regex": {
+            "type": "boolean",
+            "description": "是否使用正则表达式进行搜索，默认为 false（字符串匹配）"
+          },
+          "case_sensitive": {
+            "type": "boolean",
+            "description": "是否区分大小写，默认为 true"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "最大返回结果数，0 表示返回所有结果，默认为 0"
+          },
+          "context_lines": {
+            "type": "integer",
+            "description": "返回匹配项的上下文行数，默认为 2"
+          }
+        },
+        "required": ["path", "pattern"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_file",
+      "description": "读取文件 (读取尺寸过大的文件可能会因最大输入 tokens 而受限制，调用需要谨慎)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径"
+          }
+        },
+        "required": ["path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "write_file",
+      "description": "写入文件。(写入尺寸过大的内容可能会因为最大输出 tokens 而截断调用参数，调用需谨慎：写入内容不宜超过 12000 字符，过长可能因超出 AI-Chat 最大允许输出 tokens 长度而截断并导致工具调用错误。过长时应分成多批以追加方式写入，或者通过其它方式例如替换。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径"
+          },
+          "content": {
+            "type": "string",
+            "description": "写入内容"
+        },
+          "mode": {
+            "type": "string",
+            "description": "写入模式: 'w'-覆盖",
+            "default": "w"
+          }
+        },
+        "required": ["path", "content"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "diff_file",
+      "description": "比较两个文件的差异，生成类似 Linux diff 命令的差异输出",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file1": {
+            "type": "string",
+            "description": "第一个文件路径"
+          },
+          "file2": {
+            "type": "string",
+            "description": "第二个文件路径"
+          },
+          "output_format": {
+            "type": "string",
+            "enum": ["unified", "context", "normal"],
+            "description": "差异输出格式：unified（统一格式，默认）、context（上下文格式）、normal（普通格式）",
+            "default": "unified"
+          },
+          "context_lines": {
+            "type": "integer",
+            "description": "上下文行数（仅对 unified 和 context 格式有效），默认为 3",
+            "default": 3
+          }
+        },
+        "required": ["file1", "file2"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "patch_file",
+      "description": "将差异补丁应用到文件，类似于 Linux patch 命令的功能",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "要应用补丁的文件路径"
+          },
+          "patch_content": {
+            "type": "string",
+            "description": "补丁内容，可以是 unified diff 格式或其他支持的格式"
+          },
+          "backup": {
+            "type": "boolean",
+            "description": "是否在应用补丁前创建备份文件，默认为 true",
+            "default": true
+          },
+          "reverse": {
+            "type": "boolean",
+            "description": "是否反向应用补丁（撤销补丁），默认为 false",
+            "default": false
+          }
+        },
+        "required": ["file_path", "patch_content"]
       }
     }
   }
