@@ -141,7 +141,7 @@ class Logger:
         if self.is_enable():
             if self._file is None and not self._error:
                 try:
-                    self._file = open(self._log_path, "w", encoding="utf-8")
+                    self._file = open(self._log_path, "a", encoding="utf-8")
                     if self._system_message:
                         log_file.write(f"**System:**\n{self._system_message}\n\n")
                     for msg in self._messages:

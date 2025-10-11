@@ -228,7 +228,7 @@ def get_completion_params():
 
 def generate_response():
     """Generate and process assistant response"""
-    global g_messages, g_config, g_client, logger, g_prompt_for_title
+    global g_messages, g_config, g_client, logger, g_prompt_for_title, g_tool_call_context
     full_response = {
             "role": "assistant",
             "content": [],
@@ -304,23 +304,21 @@ def generate_response():
                         reasoning_content.append(think)
                         time.sleep(random.uniform(0.01, 0.05))
 
-            if hasattr(chunk_message, 'tool_calls'):
-                if tcalls := chunk_message.tool_calls:
-                    for tool_call in tcalls:
-                        if len(full_response['tool_calls']) <= tool_call.index:
-                            full_response['tool_calls'].append({
-                                'id': tool_call.id,
-                                'type': 'function',
-                                'function': {'name': None, 'arguments': []}
-                                })
-                        if tool_call.function:
-                            function = tool_call.function
-                            fullres_func = full_response["tool_calls"][tool_call.index]['function']
-                            if function.name:
-                                fullres_func['name'] = function.name
-                            if function.arguments:
-                                fullres_func['arguments'].append(function.arguments)
-                    time.sleep(random.uniform(0.01, 0.05))
+            if hasattr(chunk_message, 'tool_calls') and chunk_message.tool_calls:
+                for tool_call in chunk_message.tool_calls:
+                    if len(full_response['tool_calls']) <= tool_call.index:
+                        full_response['tool_calls'].append({
+                            'id': tool_call.id,
+                            'type': 'function',
+                            'function': {'name': None, 'arguments': []}
+                            })
+                    if tool_call.function:
+                        function = tool_call.function
+                        fullres_func = full_response["tool_calls"][tool_call.index]['function']
+                        if function.name:
+                            fullres_func['name'] = function.name
+                        if function.arguments:
+                            fullres_func['arguments'].append(function.arguments)
 
             if content := chunk_message.content:
                 if not full_content:
@@ -334,48 +332,20 @@ def generate_response():
         msg['reasoning_content'] = reasoning_content
 
     full_response['content'] = ''.join(full_content)
-
-    tool_calls = []
-    tool_responses = []
     if full_response['tool_calls']:
-        tool_call_index = 0
         for tool_call in full_response['tool_calls']:
             function = tool_call['function']
-            function_name = function['name']
-            function_response = {
-                    "tool_call_id": tool_call['id'],
-                    "role": "tool",
-                    "name": function_name,
-                    "content": "ERROR: calling tool failed.",
-                }
-            try:
-                function['arguments'] = ''.join(function['arguments'])
-                function_args = json.loads(function['arguments']) if function['arguments'] else {}
-                function_response["content"] = tool.call_tool(function_name, function_args)
-            except Exception as call_ex:
-                print(f"tool_call `{function_name}` error {call_ex}")
-                logger.append_error(call_ex)
-                function_response["content"] = f"[ERROR] calling tool failed: {call_ex}"
-            finally:
-                tool_responses.append(function_response)
-        tool_calls = full_response["tool_calls"]
+            function['arguments'] = ''.join(function['arguments'])
 
-    if full_response['content']:
+    if full_response['content'] or full_response['tool_calls']:
         msg['content'] = full_response['content']
         msg['time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        if tool_calls:
-            msg['tool_calls'] = tool_calls
+        if full_response['tool_calls']:
+            msg['tool_calls'] = full_response['tool_calls']
         g_messages.append(msg)
         logger.append_message(msg)
-        g_messages.extend(tool_responses)
-        for m in tool_responses:
-            logger.append_message(m)
 
-    if tool_calls:
-        # send back to ai for final response
-        generate_response()
-        tool_calls = []
-
+    return msg
 
 def set_prompt(prompt):
     global g_config, g_system_message, logger
@@ -668,13 +638,13 @@ def chat_round():
         user_input = input("")
     except UnicodeDecodeError as e:
         print(f'Get input failure, unicode decode error: {e}', file=sys.stderr)
-        return
+        return None
     except EOFError as e:
         logger.close()
         sys.exit(0)
-        return
+        return None
     if not user_input:
-        return # ignore empty
+        return None # ignore empty
 
     # Process commands
     user_cmd = user_input.strip()
@@ -683,16 +653,16 @@ def chat_round():
             user_input = user_input[1:]
         else:
             handle_command(user_cmd[1:])
-            return
+            return None
 
     if g_input_mode == 'json':
         try:
             if not user_input.strip():
-                return
+                return None
             user_request = '\n'.join(json.loads(user_input))
         except json.decoder.JSONDecodeError:
             print(f'Request error with user_input:`{user_input}`', file=sys.stderr)
-            return
+            return None
 
     # Check block mode
     if not g_block_stack:
@@ -705,7 +675,7 @@ def chat_round():
                     'signature': group,
                     'content': ''
                 })
-                return
+                return None
 
     # Accumulate block mode inputs
     if g_block_stack:
@@ -717,20 +687,20 @@ def chat_round():
 
             if current_block['type'] == 'prompt':
                 set_prompt(block_content)
-                return
+                return None
             elif current_block['type'] == 'prefix':
                 g_config['prefix'] = block_content
-                return
+                return None
             elif current_block['type'] == 'suffix':
                 g_config['suffix'] = block_content
-                return
+                return None
             else:
                 user_request = block_content
                 if not block_content.strip():
-                    return
+                    return None
         else:
             current_block['content'] += user_input + '\n'
-            return
+            return None
     else:
         if g_input_mode == 'json':
             user_request = json.loads(user_input)
@@ -747,7 +717,50 @@ def chat_round():
             msg['prefix'] = g_config['prefix']
     g_messages.append(msg)
     logger.append_message(msg)
-    generate_response()
+    return generate_response()
+
+def make_tool_calls(response):
+    if tool_calls := response.get('tool_calls', []):
+        for tool_call in tool_calls:
+            function = tool_call['function']
+            function_name = function['name']
+            tool_response = {
+                    "tool_call_id": tool_call['id'],
+                    "role": "tool",
+                    "name": function_name,
+                    "content": "ERROR: calling tool failed.",
+                }
+            try:
+                function_args = json.loads(function['arguments']) if function['arguments'] else {}
+                tool_response["content"] = tool.call_tool(function_name, function_args)
+            except Exception as call_ex:
+                print(f"tool_call `{function_name}` error {call_ex}")
+                logger.append_error(call_ex)
+                tool_response["content"] = f"[ERROR] calling tool failed: {call_ex}"
+            finally:
+                g_messages.append(tool_response)
+                logger.append_message(tool_response)
+
+        ## shorten previous tool-calls contents
+        ## TODO 经过测试，略去内容会影响到随后的执行过程，所以需要谨慎对待。
+        #for it_msg in g_messages:
+        #    if it_calls := it_msg.get('tool_calls', []):
+        #        if it_calls == tool_calls:
+        #            break
+        #        for it_call in it_calls:
+        #            chars = len(it_call['function'].get('arguments',''))
+        #            if chars > 1000:
+        #                it_call['function']['arguments'] = f"[调用结束，略去参数，原参数长度: {chars}]"
+        #    if tool_call_id := it_msg.get('tool_call_id',''):
+        #        chars = len(it_msg['content'])
+        #        if chars > 1000:
+        #            it_msg['content'] = f"[调用结束，略去响应，原响应长度: {chars}]"
+
+        #with open('/tmp/zai-hist.log', 'w') as f:
+        #    f.write(str(g_messages))
+        # send tool_response to ai for next response
+        return generate_response()
+    return None
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -810,4 +823,7 @@ if __name__ == "__main__":
 
     # Main chat loop
     while True:
-        chat_round()
+        response = chat_round()
+        while response and 'tool_calls' in response:
+            response = make_tool_calls(response)
+

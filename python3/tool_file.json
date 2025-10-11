@@ -187,7 +187,7 @@
         },
           "mode": {
             "type": "string",
-            "description": "写入模式: 'w'-覆盖",
+            "description": "写入模式: 'w'-覆盖, 'a'-追加, 缺省为 'w'",
             "default": "w"
           }
         },

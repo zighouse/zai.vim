@@ -27,7 +27,7 @@ def set_sandbox_home(new_path: str):
     except Exception as e:
         raise ValueError(f"无法创建沙盒目录 '{new_path}': {e}")
 
-def sandbox_home():
+def sandbox_home() -> Path:
     """获取当前沙盒根目录"""
     global _sandbox_home
 

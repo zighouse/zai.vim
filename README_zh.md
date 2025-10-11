@@ -23,6 +23,7 @@ Zai.Vim 是一款将 AI 助手直接集成到 Vim 编辑器的插件，管理着
   - `openai`（缺失时自动安装）
 - 可选 iamcco/markdown-preview.nvim
 - 可选 junegunn/fzf.vim
+- 可选 lunarcalendar
 
 ### 使用插件管理器
 
