@@ -8,6 +8,8 @@ import re
 import sys
 import time
 import chardet
+import threading
+import queue
 from datetime import datetime
 from openai import OpenAI
 from pathlib import Path
@@ -24,6 +26,8 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='repla
 logger = Logger()
 aiconfig = AIAssistantManager()
 tool = ToolManager()
+input_queue = queue.Queue()
+stop_event = threading.Event()
 
 g_cmd_prefix = ':'
 g_cmd_prefix_chars = [ ':', '/', '~', '\\', ';', '!', '#', '$', '%', '&', '?',
@@ -383,7 +387,7 @@ def handle_command(command):
     # Exit commands
     if cmd in ['exit', 'quit', 'bye']:
         logger.close()
-        sys.exit(0)
+        stop_event.set()
         return True
 
     if cmd == 'no_log':
@@ -641,19 +645,6 @@ def handle_command(command):
 
     return False
 
-def collect_input():
-    global logger
-
-    try:
-        return input("")
-    except UnicodeDecodeError as e:
-        print(f'Get input failure, unicode decode error: {e}', file=sys.stderr)
-        return None
-    except EOFError as e:
-        logger.close()
-        sys.exit(0)
-        return None
-
 def build_request(user_input):
     global g_block_stack, g_input_mode, g_cmd_prefix, g_files, logger
 
@@ -767,6 +758,45 @@ def make_tool_calls(response) -> List[Dict[str, Any]]:
         #            it_msg['content'] = f"[调用结束，略去响应，原响应长度: {chars}]"
     return tool_returns
 
+def input_collector():
+    while not stop_event.is_set():
+        try:
+            user_input = input("")
+            input_queue.put(user_input)
+        except UnicodeDecodeError as e:
+            print(f'Get input failure, unicode decode error: {e}', file=sys.stderr)
+            continue
+        except EOFError:
+            stop_event.set()
+            break
+
+def collect_input_non_blocking(timeout=None):
+    try:
+        return input_queue.get(timeout=timeout)
+    except queue.Empty:
+        return None
+
+def main_chat_loop():
+    response = None
+    while True:
+        user_input = None
+        while user_input is None:
+            user_input = collect_input_non_blocking(timeout=0.1)
+        request = build_request(user_input)
+        response = generate_response(request)
+        while response and 'tool_calls' in response:
+            tool_returns = make_tool_calls(response)
+            user_input = collect_input_non_blocking(timeout=0)
+            if user_input:
+                request = build_request(user_input)
+                if request:
+                    # append user request to tool_returns
+                    if tool_returns:
+                        tool_returns.append(request)
+                    else:
+                        tool_returns = request
+            response = generate_response(tool_returns)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--no-log', action='store_true', help='No log')
@@ -826,13 +856,10 @@ if __name__ == "__main__":
 
     g_client = open_client(api_key_name=g_config['api_key_name'], base_url=g_config['base_url'])
 
-    # Main chat loop
-    response = None
-    while True:
-        user_input = collect_input()
-        request = build_request(user_input)
-        response = generate_response(request)
-        while response and 'tool_calls' in response:
-            tool_returns = make_tool_calls(response)
-            response = generate_response(tool_returns)
-
+    input_thread = threading.Thread(target=input_collector, daemon=True)
+    input_thread.start()
+    try:
+        main_chat_loop()
+    finally:
+        stop_event.set()
+        input_thread.join(timeout=1.0)
