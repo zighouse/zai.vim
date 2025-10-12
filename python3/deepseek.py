@@ -11,6 +11,7 @@ import chardet
 from datetime import datetime
 from openai import OpenAI
 from pathlib import Path
+from typing import Dict, List, Any, Union, Optional
 
 from config import AIAssistantManager
 from logger import Logger
@@ -226,9 +227,18 @@ def get_completion_params():
 
     return params;
 
-def generate_response():
+def generate_response(request: Union[Dict[str,Any], List[Dict[str,Any]]]) -> Dict[str,Any]:
     """Generate and process assistant response"""
     global g_messages, g_config, g_client, logger, g_prompt_for_title, g_tool_call_context
+    if not request:
+        return None
+    if isinstance(request, list):
+        for it in request:
+            g_messages.append(it)
+            logger.append_message(it)
+    else:
+        g_messages.append(request)
+        logger.append_message(request)
     full_response = {
             "role": "assistant",
             "content": [],
@@ -631,11 +641,11 @@ def handle_command(command):
 
     return False
 
-def chat_round():
-    global g_block_stack, g_messages, g_input_mode, g_cmd_prefix, g_files
+def collect_input():
+    global logger
 
     try:
-        user_input = input("")
+        return input("")
     except UnicodeDecodeError as e:
         print(f'Get input failure, unicode decode error: {e}', file=sys.stderr)
         return None
@@ -643,8 +653,9 @@ def chat_round():
         logger.close()
         sys.exit(0)
         return None
-    if not user_input:
-        return None # ignore empty
+
+def build_request(user_input):
+    global g_block_stack, g_input_mode, g_cmd_prefix, g_files, logger
 
     # Process commands
     user_cmd = user_input.strip()
@@ -715,11 +726,11 @@ def chat_round():
         msg['complete_type'] = g_config['complete_type']
         if 'prefix' in g_config:
             msg['prefix'] = g_config['prefix']
-    g_messages.append(msg)
-    logger.append_message(msg)
-    return generate_response()
+    return msg
 
-def make_tool_calls(response):
+def make_tool_calls(response) -> List[Dict[str, Any]]:
+    global g_messages, logger, tool
+    tool_returns = []
     if tool_calls := response.get('tool_calls', []):
         for tool_call in tool_calls:
             function = tool_call['function']
@@ -738,8 +749,7 @@ def make_tool_calls(response):
                 logger.append_error(call_ex)
                 tool_response["content"] = f"[ERROR] calling tool failed: {call_ex}"
             finally:
-                g_messages.append(tool_response)
-                logger.append_message(tool_response)
+                tool_returns.append(tool_response)
 
         ## shorten previous tool-calls contents
         ## TODO 经过测试，略去内容会影响到随后的执行过程，所以需要谨慎对待。
@@ -755,12 +765,7 @@ def make_tool_calls(response):
         #        chars = len(it_msg['content'])
         #        if chars > 1000:
         #            it_msg['content'] = f"[调用结束，略去响应，原响应长度: {chars}]"
-
-        #with open('/tmp/zai-hist.log', 'w') as f:
-        #    f.write(str(g_messages))
-        # send tool_response to ai for next response
-        return generate_response()
-    return None
+    return tool_returns
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -822,8 +827,12 @@ if __name__ == "__main__":
     g_client = open_client(api_key_name=g_config['api_key_name'], base_url=g_config['base_url'])
 
     # Main chat loop
+    response = None
     while True:
-        response = chat_round()
+        user_input = collect_input()
+        request = build_request(user_input)
+        response = generate_response(request)
         while response and 'tool_calls' in response:
-            response = make_tool_calls(response)
+            tool_returns = make_tool_calls(response)
+            response = generate_response(tool_returns)
 
