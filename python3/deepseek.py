@@ -170,34 +170,36 @@ EXAMPLES:
 """
     print(help_text)
 
-def build_instant_messages(messages):
-    '''In instant mode, keep only system role and latest user messages'''
-    if not messages or messages[0]['role'] != 'system':
-        return messages
-
-    # Find latest user message group
-    latest_user_msgs = []
-    found_assistant = False
-
-    for msg in reversed(messages):
-        if msg['role'] == 'assistant':
-            found_assistant = True
-        elif msg['role'] == 'user':
-            if found_assistant:
-                break
+def filter_messages(messages):
+    result = []
+    for msg in messages:
+        if msg.get("role","") == "user":
             request_msg = {'role': msg['role'], 'content': msg['content']}
-
             # Attach files
             if 'files' in msg:
                 files = msg['files']
                 file_contents = '\n\n[attachments]:\n'
                 file_contents += '\n'.join([f"===== file: `{f['path']}` =====\n{f['content']}\n" for f in files])
                 request_msg['content'] += file_contents
+            result.append(request_msg)
+        else:
+            result.append(msg)
+    return result
 
-            latest_user_msgs.append(request_msg)
-
-    latest_user_msgs.reverse()
-    return [messages[0]] + latest_user_msgs
+def build_instant_messages(messages):
+    '''In instant mode, keep only system role and latest user messages'''
+    if not messages or messages[0]['role'] != 'system':
+        return messages
+    last_user_index = 0
+    for index in range(1, len(messages)):
+        if messages[index]["role"] == "user":
+            last_user_index = index
+    result = []
+    if last_user_index:
+        result = [messages[0]] + messages[last_user_index:]
+    else:
+        result = messages
+    return filter_messages(result)
 
 def get_completion_params():
     global g_messages, g_config
