@@ -143,7 +143,7 @@ class Logger:
                 try:
                     self._file = open(self._log_path, "a", encoding="utf-8")
                     if self._system_message:
-                        log_file.write(f"**System:**\n{self._system_message}\n\n")
+                        self._file.write(f"**System:**\n{self._system_message}\n\n")
                     for msg in self._messages:
                         self._save_msg(msg)
                 except Exception as e:
