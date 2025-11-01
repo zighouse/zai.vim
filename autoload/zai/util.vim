@@ -160,18 +160,38 @@ function! s:fzf_window_opts(list_width)
         let l:preview_width = 0
         let l:preview_window = 'hidden,right:70%'
     else
-        if l:term_width < l:list_width + l:max_preview_width + l:border_width
+        let l:win_width = l:list_width + l:max_preview_width + l:border_width
+        if l:term_width < l:win_width
             let l:preview_width = l:term_width - l:list_width - l:border_width
+            let l:preview_window = 'right:' . l:preview_width . ',nohidden'
+        elseif l:win_width < l:term_width * 0.62
+            let l:rate = (l:term_width - l:border_width) * 0.62 / (l:win_width - l:border_width)
+            let l:list_width = float2nr(l:list_width * l:rate)
+            let l:max_preview_width = float2nr(l:max_preview_width * l:rate)
+            let l:preview_width = l:max_preview_width
             let l:preview_window = 'right:' . l:preview_width . ',nohidden'
         else
             let l:preview_width = l:max_preview_width
             let l:preview_window = 'right:' . l:preview_width . ',nohidden'
         endif
     endif
+    if l:max_list_height + l:border_height < l:term_height * 0.62
+        let l:max_list_height = float2nr(l:term_height * 0.62 - l:border_height)
+    endif
     let l:opts = fzf#vim#with_preview()
+    let l:preview_cmd = 'filename=$(echo {} | cut -d: -f1); ' .
+                \ 'if command -v enca >/dev/null 2>&1; then ' .
+                \ 'encoding=$(enca -L chinese -i "$filename" 2>/dev/null); ' .
+                \ 'iconv -c -f "$encoding" -t utf-8 "$filename" | bat --color=always --style=numbers -l "$(basename "$filename" | sed "s/.*\.//")" - || ' .
+                \ 'bat --color=always --style=numbers "$filename" 2>/dev/null || cat "$filename"; ' .
+                \ 'else ' .
+                \ 'bat --color=always --style=numbers "$filename" 2>/dev/null || cat "$filename"; ' .
+                \ 'fi'
+
     let l:opts.options = l:opts.options + [ 
-                \ '--preview-window', l:preview_window,
-                \ '--prompt', 'Zai Grep> '
+                \ '--preview-window', 'right:70%',
+                \ '--prompt', 'Zai Grep> ',
+                \ '--preview', l:preview_cmd
                 \ ]
     if !has_key(l:opts, 'window')
         let l:opts.window = {}
@@ -214,7 +234,7 @@ function! s:open_fzf_grep(dir, pat) abort
         let l:cmd = 'rg --column --line-number --no-heading --color=always --smart-case '
                     \ . shellescape(a:pat)
         let l:opts = extend(s:fzf_window_opts(40), {'dir': a:dir})
-        call fzf#vim#grep(l:cmd, 1, l:opts, 1)
+        call fzf#vim#grep(l:cmd, 1, l:opts, 0)
     catch /^Vim\%((\a\+)\)\=:E/
         echohl ErrorMsg
         echo 'Failed to open fzf: ' . v:exception
