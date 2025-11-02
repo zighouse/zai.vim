@@ -23,7 +23,8 @@ Zai.Vim 是一款将 AI 助手直接集成到 Vim 编辑器的插件，管理着
   - `openai`（缺失时自动安装）
 - 可选 iamcco/markdown-preview.nvim
 - 可选 junegunn/fzf.vim
-- 可选 lunarcalendar
+- 可选 apt install rg
+- 可选 pip install lunarcalendar
 
 ### 使用插件管理器
 
@@ -203,6 +204,7 @@ DEEPSEEK_API_KEY=sk-********************************
 | `<leader>dp`        | 在浏览器中展示聊天内容        | Zai 界面 normal 模式 |
 | `:ZaiOpenLog`       | 打开聊天日志                  | -          |
 | `:ZaiGrepLog <pattern>` | 查找聊天日志              | -          |
+| `:ZaiRg <pattern> <dir>` | 指定文件夹查找           | -          |
 | `:ZaiLoad`          | 加载 Zai 日志作为新的上下文   | -          |
 | `<leader>zl`        | 加载 Zai 日志作为新的上下文   | -          |
 | `:ZaiConfig`        | 编辑 AI 配置                  | -          |
@@ -255,6 +257,13 @@ Zai 会在展示窗口中同时展示用户发送的请求，以及远程助手�
 - `:use  ai <name|index>` - 选取当前 AI 助手，并直接完成切换。
 - `:model <name|index>` - 当选定了当前的 AI 助手，则只能从限定的模型列表中选取。
 - `:use  ai <name|index> model <name|index>` - 组合 use ai 和 model 到一起。
+
+关于 AI 工具调用的会话命令列表
+
+- `:list tool` - 列出已经拥有的可供 AI 调用的工具集。当前提供了简单的 file、web 等工具集。
+- `:show tool [name]` - 显示指定的 AI 工具集
+- `:use tool [name]` - 加载 AI 工具集供 AI 调用
+- `:sandbox path` - 指定 sandbox 路径。在 file 工具集中用来限制允许操作的文件夹。
 
 ### 配置项说明
 

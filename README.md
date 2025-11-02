@@ -25,6 +25,8 @@ Zai.Vim is a Vim plugin that integrates AI assistants directly into your Vim edi
   - `openai` (automatically installed if missing)
 - Optional: iamcco/markdown-preview.nvim
 - Optional: junegunn/fzf.vim
+- Optional: apt install rg
+- Optional: pip install lunarcalendar
 
 ### Using a plugin manager
 
@@ -202,6 +204,7 @@ Also, a 0-based index in the list of assistants config can be used as same as th
 | `<leader>dp`           | Preview chat in browser              | Zai interface normal mode |
 | `:ZaiOpenLog`          | Open Zai log                         | -             |
 | `:ZaiGrepLog <patten>` | Grep Zai log                         | -             |
+| `:ZaiRg <pattern> <dir>` | Rg in a directory                  | -             |
 | `:ZaiLoad`             | Load Zai log as context              | -             |
 | `<leader>zl`           | Load Zai log as context              | -             |
 | `:ZaiConfig`           | Edit AI assistants configuration     | -             |
@@ -244,6 +247,13 @@ Session Commands with AI assistants json configuration:
 - `:use  ai <name|index>` - Use an AI assistant picked up from the list.
 - `:model <name|index>` - Choose one of valid model from list of current AI assistant.
 - `:use  ai <name|index> model <name|index>` - Combination of `use ai` and `model` commands.
+
+Session commands with AI calling tools:
+
+- `:list tool` - List all available toolsets for AI calling.
+- `:show tool [name]` - Show details of an AI calling toolset.
+- `:use tool [name]` - Use an AI calling toolset.
+- `:sandbox path` - Specify a sandbox path for file toolset.
 
 ### Configuration Items
 
