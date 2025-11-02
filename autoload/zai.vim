@@ -4,7 +4,7 @@ let s:home = expand('<sfile>:h:h')
 let s:path_sep = has('win32') ? '\' : '/'
 let g:zai_input_mode = 'text' " json, text
 
-let s:script_path = s:home . '/python3/deepseek.py'
+let s:script_path = s:home . '/python3/aichat.py'
 
 function! zai#init() abort
     if exists('s:inited')
