@@ -392,7 +392,6 @@ class AIChat:
         return self._config.get(name, "")
 
     def _on_file_attach(self, file_path):
-        file_path = argv[1]
         file_obj = Path(file_path).expanduser().resolve()
         if not file_obj.exists():
             print(f"Error: File `{file_path}` does not exist.", file=sys.stderr)
