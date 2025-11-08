@@ -90,7 +90,7 @@ class AIChat:
 
         return OpenAI(api_key=api_key, base_url=base_url)
 
-    def _filter_messages(messages):
+    def _filter_messages(self, messages):
         result = []
         for msg in messages:
             if msg.get("role","") == "user":
