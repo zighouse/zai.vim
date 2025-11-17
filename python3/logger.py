@@ -156,6 +156,8 @@ class Logger:
             return False
 
     def append_message(self, msg: Dict[str, Any]):
+        if "role" not in msg:
+            return
         if self._ensure_file():
             self._save_msg(msg)
             if msg['role'] != 'user':
@@ -202,39 +204,55 @@ class Logger:
         with open(file, "r", encoding="utf-8") as log_file:
             text_list = []
             caption = ""
-            small_start = 0
+            special_block = ""
+            line_no = 1
             for line in log_file:
                 text = line.rstrip()
-                print(text)
                 if text == "**System:**":
                     if caption == "":
                         caption = "System"
                         message = {'role': 'system'}
                         text_list = []
-                        small_start = 0
+                        special_block = ""
                 elif text == "**User:**":
-                    if caption in ["System", "Assistant"]:
+                    if caption in ["System", "Assistant", "Tool", ""]:
                         message['content'] = '\n'.join(text_list)
                         load_messages.append(message)
                         message = {'role': 'user'}
                         caption = "User"
                         text_list = []
-                        small_start = 0
+                        special_block = ""
                 elif text == "**Assistant:**":
-                    if caption == "User":
+                    if caption in ["User", "Tool"]:
                         message['content'] = '\n'.join(text_list)
                         load_messages.append(message)
                         message = {'role': 'assistant'}
                         caption = "Assistant"
                         text_list = []
-                        small_start = 0
+                        special_block = ""
+                elif text == "**Tool:**":
+                    if caption == "Assistant":
+                        message['content'] = '\n'.join(text_list)
+                        load_messages.append(message)
+                        message = {'role': 'tool'}
+                        caption = "Tool"
+                        text_list = ["ignore return of tool_calls"]
+                        special_block = ""
                 elif text == "<small>":
-                    small_start = 1
+                    special_block = "small"
                 elif text == "</small>":
-                    small_start = 0
-                elif small_start == 0:
+                    special_block = ""
+                elif text == "<tool_calls>":
+                    special_block = "tool_calls"
+                elif text == "</tool_calls>":
+                    special_block = ""
+                elif text == "<tool_call>":
+                    special_block = "tool_call"
+                elif text == "</tool_call>":
+                    special_block = ""
+                elif not special_block:
                     text_list.append(text)
-                elif small_start == 1:
+                elif special_block == "small":
                     text = text.strip()
                     if text.startswith("- time: "):
                         message["time"] = text[8:]
@@ -242,6 +260,16 @@ class Logger:
                         message["base-url"] = text[12:]
                     elif text.startswith("- model: "):
                         message["model"] = text[9:]
+                #elif special_block == "tool_calls":
+                #    text = text.strip()
+                #    if text.startswith("- function: "):
+                #        tool_calls = message.get("tool_calls", [])
+                #        tool_calls.append(text[12:])
+                #        message["tool_calls"] = tool_calls
+                #elif special_block == "tool_call":
+                #    text_list.append(text)
+                print(f"[{line_no}: {caption}]  {text}")
+                line_no = line_no + 1
             if caption != "":
                 message['content'] = '\n'.join(text_list)
                 load_messages.append(message)
@@ -253,6 +281,6 @@ class Logger:
                 log_filename = datetime.now().strftime("%Y%m%d_%H%M%S.md")
                 self.open(log_dir, log_filename)
             else:
-                print(f"\n===============\nERROR loading an invalid Zai log file:\n  {file}\n")
+                print(f"\n===============\nERROR loading an invalid Zai log file:\n{file}:{line_no}:'{line}':`{text}`:|{caption}|\n")
         return load_messages
 

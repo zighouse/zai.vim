@@ -29,7 +29,8 @@ class AIChat:
         self._assistant = None
         self._tool = ToolManager()
         self._system_prompt = ""
-        self._history = []
+        self._history = [] # [{request:msg, response:[msg]}]
+        self._cur_round = {"request":[], "response":[]}
         self._llm = None
         self._files = []
         self._config = { 'model': 'deepseek-chat' }
@@ -90,36 +91,30 @@ class AIChat:
 
         return OpenAI(api_key=api_key, base_url=base_url)
 
-    def _filter_messages(self, messages):
-        result = []
-        for msg in messages:
-            if msg.get("role","") == "user":
-                request_msg = {'role': msg['role'], 'content': msg['content']}
-                # Attach files
-                if 'files' in msg:
-                    files = msg['files']
-                    file_contents = '\n\n[attachments]:\n'
-                    file_contents += '\n'.join([f"===== file: `{f['path']}` =====\n{f['content']}\n" for f in files])
-                    request_msg['content'] += file_contents
-                result.append(request_msg)
-            else:
-                result.append(msg)
-        return result
+    def _filter_request(self, request):
+        return request
 
-    def _build_instant_messages(self, messages):
-        '''In instant mode, keep only system role and latest user messages'''
-        if not messages or messages[0]['role'] != 'system':
-            return messages
-        last_user_index = 0
-        for index in range(1, len(messages)):
-            if messages[index]["role"] == "user":
-                last_user_index = index
+    def _filter_response(self, response, filter_out=[], filter_toolcalls=False):
         result = []
-        if last_user_index:
-            result = [messages[0]] + messages[last_user_index:]
-        else:
-            result = messages
-        return self._filter_messages(result)
+        if isinstance(response, dict):
+            filted = {k:v for k,v in response.items() if k not in filter_out}
+            result.append(filted)
+        elif isinstance(response, list):
+            if filter_toolcalls:
+                filter_out.append("tool_calls")
+            for it in response:
+                if isinstance(it, dict):
+                    filted = {k:v for k,v in it.items() if k not in filter_out}
+                    if not filter_toolcalls or filted["role"] != "tool":
+                        result.append(filted)
+                elif isinstance(it, list):
+                    for i in it:
+                        filted = {k:v for k,v in i.items() if k not in filter_out}
+                        if not filter_toolcalls or filted["role"] != "tool":
+                            result.append(filted)
+        if not result:
+            result.append({"role":"assistant", "content":"\n"})
+        return result
 
     def _get_completion_params(self):
         params = { 'stream': True, 'messages':[] }
@@ -127,25 +122,48 @@ class AIChat:
             "role":    "system",
             "content": self._config.get("prompt", self._system_prompt)
             } ]
-        if self._history:
-            messages.extend(self._history)
-        # Conversation mode
-        if self._config.get('talk_mode', 'chain') == 'instant':
-            params['messages'] = self._build_instant_messages(messages)
-        else:
-            for msg in messages:
-                # Create new request message
-                request_msg = {k:v for k,v in msg.items() if k in ['role', 'content', 'tool_calls', 'tool_call_id', 'name']}
+        if self._history and self._config.get("talk_mode", "chain") == "chain":
+            count = 0
+            length = len(self._history)
+            for round in self._history:
+                request = self._filter_request(round.get("request", {}))
+                response = round.get("response", [])
+                if request:
+                    messages.append(request)
+                if count + 2 < length:
+                    filted = self._filter_response(response,
+                            filter_out=["reasoning_content"],
+                            filter_toolcalls=True)
+                else:
+                    filted = self._filter_response(response)
+                messages.extend(filted)
+                count = count + 1
+        if self._cur_round:
+            request = self._cur_round.get("request", {})
+            response = self._cur_round.get("response", [])
+            if request:
+                messages.append(request)
+                filted = self._filter_response(response)
+                messages.extend(filted)
 
-                # Attach files
-                if 'files' in msg:
-                    files = msg['files']
-                    file_contents = '\n\n[attachments]:\n'
-                    file_contents += '\n'.join([f"===== file: `{f['path']}` =====\n{f['content']}\n" for f in files])
-                    request_msg['content'] += file_contents
+        if len(messages) > 0:
+            last = messages[-1]
+            if last["role"] == "assistant" and last["content"].strip() == "" and "tool_calls" not in last:
+                messages.remove(messages[-1])
 
-                # Append request message
-                params['messages'].append(request_msg)
+        for msg in messages:
+            # Create new request message
+            request_msg = {k:v for k,v in msg.items() if k in ['role', 'content', 'tool_calls', 'tool_call_id', 'name']}
+
+            # Attach files
+            if 'files' in msg:
+                files = msg['files']
+                file_contents = '\n\n[attachments]:\n'
+                file_contents += '\n'.join([f"===== file: `{f['path']}` =====\n{f['content']}\n" for f in files])
+                request_msg['content'] += file_contents
+
+            # Append request message
+            params['messages'].append(request_msg)
 
         if 'deepseek-r' in self._config['model'].lower():
             valid_opts = ['model', 'max_tokens']
@@ -177,21 +195,6 @@ class AIChat:
                     tool_response["content"] = f"[ERROR] calling tool failed: {call_ex}"
                 finally:
                     tool_returns.append(tool_response)
-
-            ## shorten previous tool-calls contents
-            ## TODO 经过测试，略去内容会影响到随后的执行过程，所以需要谨慎对待。
-            #for it_msg in self._history:
-            #    if it_calls := it_msg.get('tool_calls', []):
-            #        if it_calls == tool_calls:
-            #            break
-            #        for it_call in it_calls:
-            #            chars = len(it_call['function'].get('arguments',''))
-            #            if chars > 1000:
-            #                it_call['function']['arguments'] = f"[调用结束，略去参数，原参数长度: {chars}]"
-            #    if tool_call_id := it_msg.get('tool_call_id',''):
-            #        chars = len(it_msg['content'])
-            #        if chars > 1000:
-            #            it_msg['content'] = f"[调用结束，略去响应，原响应长度: {chars}]"
         return tool_returns
 
     def _generate_response(self, request: Union[Dict[str,Any], List[Dict[str,Any]]]) -> Dict[str,Any]:
@@ -200,10 +203,8 @@ class AIChat:
             return None
         if isinstance(request, list):
             for it in request:
-                self._history.append(it)
                 self._logger.append_message(it)
         else:
-            self._history.append(request)
             self._logger.append_message(request)
         full_response = {
                 "role": "assistant",
@@ -256,6 +257,8 @@ class AIChat:
         msg.pop('stream', None)
         msg.pop('messages', None)
 
+        #print(f"params: {params}")
+
         if not self._llm:
             self._llm = self._open_llm(api_key_name=self._config.get('api_key_name', _DEFAULT_API_KEY_NAME),
                     base_url=self._config.get('base_url', _DEFAULT_BASE_URL))
@@ -306,7 +309,10 @@ class AIChat:
                     time.sleep(random.uniform(0.01, 0.05))
 
         if reasoning_content:
-            msg['reasoning_content'] = reasoning_content
+            if isinstance(reasoning_content, list):
+                msg['reasoning_content'] = ''.join(reasoning_content)
+            else:
+                msg['reasoning_content'] = reasoning_content
 
         full_response['content'] = ''.join(full_content)
         if full_response['tool_calls']:
@@ -319,7 +325,6 @@ class AIChat:
             msg['time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             if full_response['tool_calls']:
                 msg['tool_calls'] = full_response['tool_calls']
-            self._history.append(msg)
             self._logger.append_message(msg)
 
         return msg
@@ -344,7 +349,11 @@ class AIChat:
             request = None
             while not self._cli.is_stopped() and request is None:
                 request = self._fetch_request(timeout=0.1)
+            if request:
+                self._cur_round = {"request": request, "response":[]}
             response = self._generate_response(request)
+            if response:
+                self._cur_round["response"].append(response)
             while not self._cli.is_stopped() and response and 'tool_calls' in response:
                 tool_returns = self._make_tool_calls(response)
                 request = self._fetch_request(timeout=0)
@@ -354,7 +363,13 @@ class AIChat:
                         tool_returns.append(request)
                     else:
                         tool_returns = request
+                self._cur_round["response"].append(tool_returns)
                 response = self._generate_response(tool_returns)
+                if response:
+                    self._cur_round["response"].append(response)
+            self._history.append(self._cur_round)
+            #print(f"rounds: {self._history}")
+            self._cur_round = {"request":[], "response":[]}
 
     def _on_set_model(self, value):
         if value.isdigit() and self._assistant:
@@ -420,10 +435,26 @@ class AIChat:
         return True
 
     def _on_load_log(self, log_path):
-            history = self._logger.load_history(log_path)
-            if len(history) != 0:
-                self._history = history
+            history_messages = self._logger.load_history(log_path)
+            if len(history_messages) != 0:
                 self._files = []
+            request = None
+            response = []
+            if self._cur_round and self._cur_round["request"]:
+                self._history.append(self._cur_round)
+                self._cur_round = {"request":[], "response":[]}
+            for msg in history_messages:
+                if "role" in msg:
+                    if msg["role"] == "user":
+                        if request:
+                            self._history.append({"request": request, "response": response})
+                        request = msg
+                    else:
+                        response.append(msg)
+            if request:
+                self._history.append({"request": request, "response": response})
+                self._cur_round = {"request":[], "response":[]}
+            #print(f"{self._history}")
             return True
 
     def _on_list(self, list_type):
