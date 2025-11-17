@@ -13,8 +13,8 @@
           },
           "return_format": {
             "type": "string",
-            "description": "返回内容的格式, 'clean_text' 返回纯文本，'html' 返回原始HTML，'links' 返回解析后的链接列表",
-            "enum": ["clean_text", "html", "links"],
+            "description": "返回内容的格式, 'clean_text' 返回纯文本, 'markdown' 返回markdown，'html' 返回原始HTML，'links' 返回解析后的链接列表",
+            "enum": ["clean_text", "markdown", "html", "links"],
             "default": "clean_text"
           }
         },
@@ -46,9 +46,9 @@
           },
           "return_format": {
             "type": "string",
-            "description": "返回内容的格式，'html' 返回原始搜索结果页面，'links' 返回解析后的搜索结果链接",
-            "enum": ["html", "links"],
-            "default": "html"
+            "description": "返回内容的格式，'html' 返回原始搜索结果页面, 'markdown' 返回markdown格式的搜索结果，'links' 返回解析后的搜索结果链接",
+            "enum": ["html", "markdown", "links"],
+            "default": "markdown"
           }
         },
         "required": ["request"]
@@ -58,25 +58,8 @@
   {
     "type": "function",
     "function": {
-      "name": "parse_links",
-      "description": "解析HTML内容中的URL链接",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "content": {
-            "type": "string",
-            "description": "要解析的HTML内容"
-          }
-        },
-        "required": ["content"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "download_file",
-      "description": "从URL下载文件",
+      "description": "从URL下载文件（用于llm不便直接消化但于用户有益的内容，如图片、压缩包等）",
       "parameters": {
         "type": "object",
         "properties": {

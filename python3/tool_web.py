@@ -16,7 +16,7 @@ def invoke_get_content(url: str, return_format: str = "clean_text") -> str:
 
     Args:
         url: 要获取内容的URL地址
-        return_format: 返回内容的格式，'clean_text' 或 'html' 或 'links'
+        return_format: 返回内容的格式，'clean_text' 或 'markdown' 或 'html' 或 'links'
 
     Returns:
         str: 清理后的文本、网页内容或者链接列表的字符串表示
@@ -49,6 +49,16 @@ def invoke_get_content(url: str, return_format: str = "clean_text") -> str:
         elif return_format == "clean_text":
             # 返回清理后的纯文本内容
             return extract_clean_text(content)
+        elif return_format == "markdown":
+            from markdownify import markdownify
+            markdown = markdownify(
+                content,
+                strip=['script', 'style', 'nav', 'footer', 'header', 'aside', 'div', 'span'],
+                autolinks=True,
+                heading_style='ATX'
+            )
+            lines = [line.strip() for line in markdown.split('\n') if line.strip()]
+            return '\n'.join(lines)
         else:
             # 返回清理后的HTML内容
             return clean_html_content(content)
@@ -112,7 +122,27 @@ def get_content_fallback(url: str) -> str:
     except Exception as e:
         return f"Fallback also failed: {str(e)}"
 
-def invoke_search(request: str, base_url: str = "https://html.duckduckgo.com/html/", max_results: int = 10, return_format: str = "html") -> str:
+def preprocess_duckduckgo_html(html_content):
+    """预处理DuckDuckGo HTML，移除导航元素"""
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    # 移除表单和选择框
+    for form in soup.find_all('form'):
+        form.decompose()
+
+    # 移除包含区域和时间选择的div
+    for div in soup.find_all('div', class_='frm__select'):
+        div.decompose()
+
+    # 移除header区域
+    header = soup.find('div', id='header')
+    if header:
+        header.decompose()
+
+    return str(soup)
+
+def invoke_search(request: str, base_url: str = "https://html.duckduckgo.com/html/", max_results: int = 10, return_format: str = "markdown") -> str:
     """
     执行网络搜索
 
@@ -120,7 +150,7 @@ def invoke_search(request: str, base_url: str = "https://html.duckduckgo.com/htm
         request: 搜索关键词或查询内容
         base_url: 搜索引擎的基础URL（默认为DuckDuckGo）
         max_results: 最大返回结果数量
-        return_format: 返回内容的格式，'html' 或 'links'
+        return_format: 返回内容的格式，'html' 或 'markdown' 或 'links'
 
     Returns:
         str: 搜索结果或错误消息
@@ -150,9 +180,19 @@ def invoke_search(request: str, base_url: str = "https://html.duckduckgo.com/htm
 
         response.raise_for_status()
 
-        content = response.text
+        content = preprocess_duckduckgo_html(response.text)
 
-        if return_format == "links":
+        if return_format == "markdown":
+            from markdownify import markdownify
+            markdown = markdownify(
+                content,
+                strip=['script', 'style', 'nav', 'footer', 'header', 'aside', 'div', 'span'],
+                autolinks=True,
+                heading_style='ATX'
+            )
+            lines = [line.strip() for line in markdown.split('\n') if line.strip()]
+            return '\n'.join(lines)
+        elif return_format == "links":
             # 直接返回解析后的链接
             links = invoke_parse_links(content)
 
