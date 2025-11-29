@@ -10,6 +10,123 @@ from pathlib import Path
 
 from toolcommon import sanitize_path
 
+def _remove_data_images(markdown_text):
+    pattern = r'!\[[^\]]*\]\(data:image[^)]+\)'
+    cleaned_text = re.sub(pattern, '', markdown_text)
+    return cleaned_text
+
+def _remove_metas(text):
+    lines = text.split('\n')
+    cleaned_lines = []
+    in_metadata_block = False
+    
+    for line in lines:
+        # 检测metadata行的开始
+        if re.match(r'^(meta-|title:|source_repo=|analytics-)', line.lower()):
+            in_metadata_block = True
+            continue
+        
+        # 检测base64编码的内容行
+        if re.match(r'^[A-Za-z0-9+/]{20,}={0,2}$', line.strip()):
+            in_metadata_block = True
+            continue
+        
+        # 检测分隔符
+        if line.strip() == '---':
+            if in_metadata_block:
+                in_metadata_block = False
+                continue
+            else:
+                cleaned_lines.append(line)
+                continue
+        
+        # 如果不在metadata块中，保留该行
+        if not in_metadata_block:
+            cleaned_lines.append(line)
+    
+    return '\n'.join(cleaned_lines)
+
+def _fix_multiline_links(markdown_text):
+    lines = markdown_text.split('\n')
+    result_lines = []
+    i = 0
+    
+    while i < len(lines):
+        line = lines[i].rstrip()
+        
+        # 检查是否以 "- [" 开头，可能是跨行链接的开始
+        if line.strip().startswith('- [') and not line.strip().endswith(']'):
+            # 收集链接的所有部分
+            link_parts = []
+            j = i
+            
+            # 收集直到找到闭合的 "]"
+            while j < len(lines) and ']' not in lines[j]:
+                link_parts.append(lines[j].strip())
+                j += 1
+            
+            if j < len(lines):
+                link_parts.append(lines[j].strip())
+                # 现在收集URL部分
+                url_line = j
+                while url_line < len(lines) and '(' not in lines[url_line]:
+                    url_line += 1
+                
+                if url_line < len(lines):
+                    # 提取URL
+                    url_match = re.search(r'\(\s*([^)]+)\s*\)', lines[url_line])
+                    if url_match:
+                        url = url_match.group(1).strip()
+                        # 构建单行链接
+                        link_text = ' '.join(' '.join(part.split()) for part in link_parts)
+                        # 清理格式
+                        link_text = re.sub(r'-\s*\[\s*', '- [', link_text)
+                        link_text = re.sub(r'\s*\]\s*', ']', link_text)
+                        result_lines.append(f'{link_text}({url})')
+                        i = url_line + 1
+                        continue
+        
+        # 如果不是跨行链接，直接添加该行
+        result_lines.append(line)
+        i += 1
+    
+    return '\n'.join(result_lines)
+
+def _compress_blank_lines_line_by_line(markdown_text):
+    lines = markdown_text.split('\n')
+    result_lines = []
+    previous_line_was_blank = False
+    
+    for line in lines:
+        # 检查当前行是否为空白行（只包含空白字符或为空）
+        is_blank = line.strip() == ''
+        
+        if is_blank:
+            # 如果前一行不是空白行，则保留这个空白行
+            if not previous_line_was_blank:
+                result_lines.append('')
+                previous_line_was_blank = True
+            # 如果前一行已经是空白行，则跳过这个空白行
+        else:
+            # 非空白行，直接添加
+            result_lines.append(line.rstrip())  # 移除行尾空白
+            previous_line_was_blank = False
+    
+    # 如果最后一行是空白行，移除它
+    if result_lines and result_lines[-1] == '':
+        result_lines.pop()
+    
+    return '\n'.join(result_lines)
+
+def _html_to_markdown(content):
+    from html_to_markdown import convert, ConversionOptions
+    markdown = convert(content)
+    markdown = _remove_data_images(markdown)
+    markdown = _remove_metas(markdown)
+    markdown = _fix_multiline_links(markdown)
+    markdown = _compress_blank_lines_line_by_line(markdown)
+    return markdown
+
 def invoke_get_content(url: str, return_format: str = "clean_text") -> str:
     """
     获取指定URL的网页内容，优先使用elinks导出干净的文本内容
@@ -50,15 +167,7 @@ def invoke_get_content(url: str, return_format: str = "clean_text") -> str:
             # 返回清理后的纯文本内容
             return extract_clean_text(content)
         elif return_format == "markdown":
-            from markdownify import markdownify
-            markdown = markdownify(
-                content,
-                strip=['script', 'style', 'nav', 'footer', 'header', 'aside', 'div', 'span'],
-                autolinks=True,
-                heading_style='ATX'
-            )
-            lines = [line.strip() for line in markdown.split('\n') if line.strip()]
-            return '\n'.join(lines)
+            return _html_to_markdown(content)
         else:
             # 返回清理后的HTML内容
             return clean_html_content(content)
@@ -183,15 +292,7 @@ def invoke_search(request: str, base_url: str = "https://html.duckduckgo.com/htm
         content = preprocess_duckduckgo_html(response.text)
 
         if return_format == "markdown":
-            from markdownify import markdownify
-            markdown = markdownify(
-                content,
-                strip=['script', 'style', 'nav', 'footer', 'header', 'aside', 'div', 'span'],
-                autolinks=True,
-                heading_style='ATX'
-            )
-            lines = [line.strip() for line in markdown.split('\n') if line.strip()]
-            return '\n'.join(lines)
+            return _html_to_markdown(content)
         elif return_format == "links":
             # 直接返回解析后的链接
             links = invoke_parse_links(content)
@@ -559,36 +660,38 @@ def _get_download_output_path(
 
 # 测试代码（如果直接运行）
 if __name__ == "__main__":
-    # 测试 get_content
-    print("Testing get_content with html format...")
-    content = invoke_get_content("https://httpbin.org/html")
-    print(f"Content length: {len(content)}")
+    content = invoke_get_content("https://github.com/QwenLM/Qwen3-Omni/blob/main/README.md", "markdown")
+    print(f"{content}")
+    ## 测试 get_content
+    #print("Testing get_content with html format...")
+    #content = invoke_get_content("https://httpbin.org/html")
+    #print(f"Content length: {len(content)}")
 
-    print("\nTesting get_content with links format...")
-    links_content = invoke_get_content("https://httpbin.org/html", return_format="links")
-    print(f"Links found:\n{links_content}")
+    #print("\nTesting get_content with links format...")
+    #links_content = invoke_get_content("https://httpbin.org/html", return_format="links")
+    #print(f"Links found:\n{links_content}")
 
-    # 测试 parse_links
-    print("\nTesting parse_links...")
-    test_html = '''
-    <html>
-    <body>
-    <a href="https://example.com">Example</a>
-    <a href="/relative">Relative Link</a>
-    <a href="#section">Section</a>
-    </body>
-    </html>
-    '''
-    links = invoke_parse_links(test_html)
-    for link in links:
-        print(f"Link: {link}")
+    ## 测试 parse_links
+    #print("\nTesting parse_links...")
+    #test_html = '''
+    #<html>
+    #<body>
+    #<a href="https://example.com">Example</a>
+    #<a href="/relative">Relative Link</a>
+    #<a href="#section">Section</a>
+    #</body>
+    #</html>
+    #'''
+    #links = invoke_parse_links(test_html)
+    #for link in links:
+    #    print(f"Link: {link}")
 
-    # 测试 search
-    print("\nTesting search with links format...")
-    results = search("python programming", max_results=3, return_format="links")
-    print(results)
+    ## 测试 search
+    #print("\nTesting search with links format...")
+    #results = search("python programming", max_results=3, return_format="links")
+    #print(results)
 
-    # 测试 download_file
-    print("\nTesting download_file...")
-    result = invoke_download_file("https://httpbin.org/image/jpeg", filename="test_image.jpg")
-    print(f"Download result: {result}")
+    ## 测试 download_file
+    #print("\nTesting download_file...")
+    #result = invoke_download_file("https://httpbin.org/image/jpeg", filename="test_image.jpg")
+    #print(f"Download result: {result}")
