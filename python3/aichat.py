@@ -15,6 +15,7 @@ from config import AIAssistantManager
 from logger import Logger
 from tool import ToolManager
 from client import Client
+from tokens import AITokenizer
 
 # Default values
 _DEFAULT_API_KEY_NAME = "DEEPSEEK_API_KEY"
@@ -34,6 +35,7 @@ class AIChat:
         self._llm = None
         self._files = []
         self._config = { 'model': {'name':'deepseek-chat'} }
+        self._tokenizer = AITokenizer()
         if 'zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', ''):
             self._system_prompt = '作为一名严格的编程、软件工程与计算机科学助手，将遵循以下步骤处理每个问题：\n 1. 识别核心问题；\n 2. 提供兼顾可行性与工程实践的解决方案。'
             self._prompt_for_title = '\n此外，请在你的回答末尾，单独一行以“### 建议标题：[简洁标题]”的格式提供一个标题总结本次对话的核心，越短越好，尽量不要超过 30 字。'
@@ -76,6 +78,16 @@ class AIChat:
         self._cli.register("list", self._on_list)
         self._cli.register("use", self._on_use)
         self._cli.register("show", self._on_show)
+
+    def _count_tokens(self, text):
+        tokenizer_name = None
+        if "tokenizer" in self._config['model']:
+            tokenizer_name = self._config['model'].get("tokenizer")
+        elif self._assistant and "tokenizer" in self._assistant:
+            tokenizer_name = self._assistant.get("tokenizer", None)
+        if tokenizer_name:
+            return self._tokenizer.count_tokens(text, tokenizer_name, False)
+        return 0
 
     def _open_llm(self, api_key_name=None, base_url=None):
         """Open llm client with given or default parameters"""
@@ -165,13 +177,16 @@ class AIChat:
             # Append request message
             params['messages'].append(request_msg)
 
+        # apply model configure settings
+        params['model'] = self._config['model'].get('name','')
+        params.update(self._config['model'].get('params',{}))
+
+        # apply session settings
         if 'deepseek-r' in self._config['model'].get("name","").lower():
             valid_opts = ['max_tokens']
         else:
             valid_opts = ['temperature', 'top_p', 'max_tokens', 'presence_penalty', 'frequency_penalty']
-
         params.update({k:v for k,v in self._config.items() if k in valid_opts})
-        params['model'] = self._config['model'].get('name','')
 
         return params;
 
@@ -259,6 +274,7 @@ class AIChat:
         msg.pop('messages', None)
 
         #print(f"params: {params}")
+        start_time = time.time()
 
         if not self._llm:
             self._llm = self._open_llm(api_key_name=self._config.get('api_key_name', _DEFAULT_API_KEY_NAME),
@@ -273,6 +289,11 @@ class AIChat:
                 params['messages'][0]['content'] = params['messages'][0]['content'] + self._prompt_for_title
             if tools := self._tool.get_tools():
                 params['tools'] = tools
+            request_tokens = 0
+            for m in params['messages']:
+                request_tokens = request_tokens + self._count_tokens(m['content'])
+            if request_tokens:
+                print(f"(request-tokens: {request_tokens})")
             stream = self._llm.chat.completions.create(**params)
             for chunk in stream:
                 chunk_message = chunk.choices[0].delta
@@ -316,6 +337,15 @@ class AIChat:
                 msg['reasoning_content'] = reasoning_content
 
         full_response['content'] = ''.join(full_content)
+        if not is_FIM:
+            end_time = time.time()
+            response_tokens = self._count_tokens(full_response['content'])
+            extra_info = []
+            if response_tokens:
+                extra_info.append(f"response-tokens: {response_tokens}")
+            elapsed_time = end_time - start_time
+            extra_info.append(f"elapsed-time: {elapsed_time:.2f} seconds")
+            print(f"\n({', '.join(extra_info)})")
         if full_response['tool_calls']:
             for tool_call in full_response['tool_calls']:
                 function = tool_call['function']

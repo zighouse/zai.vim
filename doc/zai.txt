@@ -149,6 +149,7 @@ A typical AI assistant configuration file content is as follows:
          "name": "deepseek",
          "base-url": "https://api.deepseek.com",
          "api-key-name" : "DEEPSEEK_API_KEY",
+         "tokenizer": "deepseek-ai/DeepSeek-V3.1",
          "model" : ["deepseek-chat", "deepseek-reasoner"]
      },
      {
@@ -156,8 +157,8 @@ A typical AI assistant configuration file content is as follows:
          "base-url": "https://api.moonshot.cn/v1",
          "api-key-name" : "MOONSHOT_API_KEY",
          "model" : [
-             "kimi-k2-0905-preview",
-             "kimi-thinking-preview"
+             {"name": "kimi-k2-0905-preview"},
+             {"name": "kimi-thinking-preview"}
          ]
      },
      {
@@ -165,8 +166,10 @@ A typical AI assistant configuration file content is as follows:
          "base-url": "https://ark.cn-beijing.volces.com/api/v3",
          "api-key-name" : "VOLCES_API_KEY",
          "model" : [
-             "doubao-seed-1-6-250615",
-             "doubao-seed-1-6-thinking-250715"
+             {
+                "name": "doubao-seed-1-6-251015",
+                "comment": "分段计费 2/M 上下文256k 输出32k"
+             }
          ]
      },
      {
@@ -174,7 +177,10 @@ A typical AI assistant configuration file content is as follows:
          "base-url": "https://api.siliconflow.cn",
          "api-key-name" : "SILICONFLOW_API_KEY",
          "model" : [
-             "deepseek-ai/DeepSeek-V3.1",
+             {
+                 "name": "deepseek-ai/DeepSeek-V3.1",
+                 "tokenizer": "deepseek-ai/DeepSeek-V3.1"
+             },
              "deepseek-ai/DeepSeek-R1",
              "moonshotai/Kimi-K2-Instruct-0905",
              "tencent/Hunyuan-MT-7B",
@@ -184,9 +190,20 @@ A typical AI assistant configuration file content is as follows:
              "Qwen/Qwen3-Coder-480B-A35B-Instruct",
              "Qwen/Qwen3-235B-A22B-Thinking-2507",
              "Qwen/Qwen3-235B-A22B-Instruct-2507",
+             {
+               "name": "Qwen/Qwen3-30B-A3B",
+               "comment": "￥2.8/M Tokens 对话 Tools 推理模型 MoE 30B 128K",
+               "tokenizer": "Qwen/Qwen3-30B-A3B",
+               "params": {
+                 "extra_body": {
+                   "chat_template_kwargs": {
+                     "enable_thinking": false
+                   }
+                 }
+               }
+             },
              "baidu/ERNIE-4.5-300B-A47B",
-             "tencent/Hunyuan-A13B-Instruct",
-             "MiniMaxAI/MiniMax-M1-80k"
+             "tencent/Hunyuan-A13B-Instruct"
          ]
      }
  ]

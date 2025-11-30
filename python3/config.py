@@ -250,17 +250,3 @@ class AIAssistantManager:
                 extra_str = f"  ({extra})" if extra else ""
                 print(f"{prefix}{checkmark}{aligned_idx:>3} {name}{extra_str}")
 
-
-if __name__ == "__main__":
-    aiconfig = AIAssistantManager()
-    aiconfig.show_list()
-    aiconfig.use_ai("0", "0")
-    aiconfig.show_provider(aiconfig.get_provider(), "deepseek-chat")
-    assistant = aiconfig.get_port()
-    print(f"assistant: {assistant}")
-    aiconfig.use_ai("1", "2")
-    port = aiconfig.find_port(aiconfig.get_provider(), "4")
-    print(f"find-port: {port}")
-    print(f"get-port: {aiconfig.get_port()}")
-    print(f"get-model: {aiconfig.get_model()}")
-    aiconfig.show_provider(aiconfig.get_provider(), aiconfig.get_model())
