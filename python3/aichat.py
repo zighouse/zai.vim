@@ -33,7 +33,7 @@ class AIChat:
         self._cur_round = {"request":[], "response":[]}
         self._llm = None
         self._files = []
-        self._config = { 'model': 'deepseek-chat' }
+        self._config = { 'model': {'name':'deepseek-chat'} }
         if 'zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', ''):
             self._system_prompt = '作为一名严格的编程、软件工程与计算机科学助手，将遵循以下步骤处理每个问题：\n 1. 识别核心问题；\n 2. 提供兼顾可行性与工程实践的解决方案。'
             self._prompt_for_title = '\n此外，请在你的回答末尾，单独一行以“### 建议标题：[简洁标题]”的格式提供一个标题总结本次对话的核心，越短越好，尽量不要超过 30 字。'
@@ -165,12 +165,13 @@ class AIChat:
             # Append request message
             params['messages'].append(request_msg)
 
-        if 'deepseek-r' in self._config['model'].lower():
-            valid_opts = ['model', 'max_tokens']
+        if 'deepseek-r' in self._config['model'].get("name","").lower():
+            valid_opts = ['max_tokens']
         else:
-            valid_opts = ['model', 'temperature', 'top_p', 'max_tokens', 'presence_penalty', 'frequency_penalty']
+            valid_opts = ['temperature', 'top_p', 'max_tokens', 'presence_penalty', 'frequency_penalty']
 
         params.update({k:v for k,v in self._config.items() if k in valid_opts})
+        params['model'] = self._config['model'].get('name','')
 
         return params;
 
@@ -371,24 +372,27 @@ class AIChat:
             #print(f"rounds: {self._history}")
             self._cur_round = {"request":[], "response":[]}
 
-    def _on_set_model(self, value):
+    def _on_set_model(self, value: str):
         if value.isdigit() and self._assistant:
             id = int(value)
             if 0 <= id < len(self._assistant["model"]):
                 self._config["model"] = self._assistant["model"][id]
-                print(f"model `{self._config['model']}` is applied in AI assistant:")
+                print(f"model `{self._config['model']['name']}` is applied in AI assistant:")
             else:
                 print(f"model [{id}] is not list in AI assistant:")
             self._aiconfig.show_provider(self._assistant, self._config.get("model", _DEFAULT_MODEL))
         elif self._assistant:
-            if value in self._assistant["model"]:
-                self._config["model"] = value
-                print(f"model `{value}` is applied in AI assistant:")
-            else:
+            for model in self._assistant['model']:
+                if value == model['name']:
+                    applied = True
+                    self._config["model"] = model
+                    print(f"model `{value}` is applied in AI assistant:")
+                    break
+            if not applied:
                 print(f"model `{value}` is not list in AI assistant:")
             self._aiconfig.show_provider(self._assistant, self._config.get("model", _DEFAULT_MODEL))
         else:
-            self._config["model"] = value
+            self._config["model"] = {"name": value}
             print(f"model `{value}` is applied")
 
     def set_config(self, name, value):
@@ -489,6 +493,7 @@ class AIChat:
                 provider = self._aiconfig.get_provider()
                 port = self._aiconfig.get_port()
                 model = self._aiconfig.get_model()
+                model_name = model.get("name", "")
                 if changed:
                     print(f"AI assistant `{provider['name']}` is applied, details:")
                     self._aiconfig.show_provider(provider, model)
@@ -507,9 +512,9 @@ class AIChat:
                                 self._config[k] = float(v)
 
                         self._assistant = provider
-                        print(f"Open AI Client: base-url:{base_url}, model:{model}, api_key_name:{api_key_name}")
+                        print(f"Open AI Client: base-url:{base_url}, model:{model_name}, api_key_name:{api_key_name}")
                     except:
-                        print(f"Open AI Client failed: base-url:{base_url}, model:{model}, api_key_name:{api_key_name}")
+                        print(f"Open AI Client failed: base-url:{base_url}, model:{model_name}, api_key_name:{api_key_name}")
                 return True
             if opt.lower() == 'tool':
                 if self._tool.use_tool(list(argv[1:])):
@@ -638,14 +643,15 @@ if __name__ == "__main__":
 
         provider = aichat._aiconfig.get_provider()
         port = aichat._aiconfig.get_port()
+        model = port.get("model", {})
+        model_name = model.get("name", _DEFAULT_MODEL)
         aichat.set_config("base_url", port.get('base_url', _DEFAULT_BASE_URL))
         aichat.set_config("api_key_name", port.get('api_key_name', _DEFAULT_API_KEY_NAME))
-        aichat.set_config("model", port.get('model', _DEFAULT_MODEL))
-        if port:
-            print(f"Using AI assistant: {port.get('name', 'Unknown')} on model: {aichat.get_config('model')}")
-            if 'prompt' in port:
-                aichat.set_config("prompt", port['prompt'])
-            aichat._assistant = provider
+        aichat.set_config("model", model_name)
+        print(f"Using AI assistant: {port.get('name', 'Unknown')} on model: {aichat.get_config('model')['name']}")
+        if 'prompt' in port:
+            aichat.set_config("prompt", port['prompt'])
+        aichat._assistant = provider
     else:
         # Use individual parameters
         aichat.set_config("base_url", args.base_url)

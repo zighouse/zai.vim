@@ -22,16 +22,34 @@ def _strip_comments(text: str) -> str:
         cleaned = cleaned.replace(f'\x00__STR_{idx}__\x00', s)
     return cleaned
 
+def _normalize_model(obj: Any) -> Any:
+    """normalize model field into type of List[Dict[str, Any]]"""
+    out = []
+    if isinstance(obj, str):
+        out.append({"name": obj})
+    elif not isinstance(obj, list):
+        raise TypeError('"model" must be a string or a list')
+    for item in obj:
+        if isinstance(item, str):          # old version
+            out.append({"name": item})
+        elif isinstance(item, dict):       # new version
+            out.append(item)
+        else:
+            raise TypeError("item of list model must be str or dict")
+    return out
+
 def _normalize_keys(obj: Any) -> Any:
-    """filter keys and normalize `-` as `_`"""
+    """filter keys and normalize `-` as `_`, and for model field"""
     if isinstance(obj, list):
         return [_normalize_keys(item) for item in obj]
     elif isinstance(obj, dict):
-        normalized = {}
-        for key, value in obj.items():
-            normalized_key = key.replace('-', '_') if isinstance(key, str) else key
-            normalized[normalized_key] = _normalize_keys(value)
-        return normalized
+        normed: Dict[str, Any] = {}
+        for k, v in obj.items():
+            k = k.replace("-", "_") if isinstance(k, str) else k
+            if k == "model":
+                v = _normalize_model(v)
+            normed[k] = _normalize_keys(v)
+        return normed
     else:
         return obj
 
@@ -77,20 +95,39 @@ class AIAssistantManager:
             return provider
         return {}
 
-    def find_port(self, provider: Dict[str, Any], model: str) -> Dict[str, Any]:
-        if provider:
-            port = provider.copy()
-            model_list = port.pop('model', [])
-            if len(model_list):
-                port['model'] = model_list[0]
-                if model.isdigit():
-                    id = int(model)
-                    if 0 <= id < len(model_list):
-                        port['model'] = model_list[id]
-                elif model in model_list:
-                    port['model'] = model
-            return port
-        return {}
+    def find_port(self, provider: Dict[str, Any], model: Any) -> Dict[str, Any]:
+        """
+        model format:
+          - index in int or string:  0 / 1 / '0' / '1'
+          - name match: 'deepseek-chat'
+        return port['model'] which is a dict with the name of the model
+        """
+        if not provider:
+            return {}
+        port = provider.copy()
+        model_list: List[Dict[str, Any]] = port.pop("model", [])
+        if not model_list:
+            return {}
+
+        selected = model_list[0]
+        model_name = ""
+        if isinstance(model, dict):
+            model_name = model.get("name", "")
+        elif isinstance(model, str):
+            model_name = model
+        else:
+            raise TypeError("'model' must be str or dict with 'name'")
+        if model_name and model_name.isdigit():
+            idx = int(model_name)
+            if 0 <= idx < len(model_list):
+                selected = model_list[idx]
+        else:
+            for m in model_list:
+                if m.get("name") == model_name:
+                    selected = m
+                    break
+        port["model"] = selected          # 直接挂字典
+        return port
 
     def get_provider(self) -> Dict[str, Any]:
         return self._provider.copy() if self._provider else {}
@@ -166,7 +203,10 @@ class AIAssistantManager:
         else:
             print(f"no AI assistants configured, path: '{self._get_config_path()}'")
 
-    def show_provider(self, provider: dict[str, Any], checked_model: Optional[str] = None, indent: int = 4) -> None:
+    def show_provider(self,
+                      provider: dict[str, Any],
+                      checked_model: Optional[Union[str, dict]] = None,
+                      indent: int = 4) -> None:
         if not provider:
             return
 
@@ -191,13 +231,36 @@ class AIAssistantManager:
             for idx, item in enumerate(model_list):
                 prefix = head if idx == 0 else inner_sp
 
+                name = item.get("name", "")
                 if checked_model:
                     # Add checkmark if this checked_model matches the selected one
-                    checkmark = "[ ✓ ]" if checked_model == item else "     "
+                    if isinstance(checked_model, dict):
+                        checked_name = checked_model.get("name","")
+                    elif isinstance(checked_model, str):
+                        checked_name = checked_model
+                    else:
+                        raise TypeError('"checked_model" must be a string or a dict')
+                    checkmark = "[ ✓ ]" if checked_name == name else "     "
                 else:
                     checkmark = ""
 
                 # Adjust spacing to maintain alignment
                 aligned_idx = f"{idx}." if idx < 10 else f"{idx}"
-                print(f"{prefix}{checkmark}{aligned_idx:>3} {item}")
+                extra = ", ".join(f"{k}={v}" for k, v in item.items() if k != "name")
+                extra_str = f"  ({extra})" if extra else ""
+                print(f"{prefix}{checkmark}{aligned_idx:>3} {name}{extra_str}")
 
+
+if __name__ == "__main__":
+    aiconfig = AIAssistantManager()
+    aiconfig.show_list()
+    aiconfig.use_ai("0", "0")
+    aiconfig.show_provider(aiconfig.get_provider(), "deepseek-chat")
+    assistant = aiconfig.get_port()
+    print(f"assistant: {assistant}")
+    aiconfig.use_ai("1", "2")
+    port = aiconfig.find_port(aiconfig.get_provider(), "4")
+    print(f"find-port: {port}")
+    print(f"get-port: {aiconfig.get_port()}")
+    print(f"get-model: {aiconfig.get_model()}")
+    aiconfig.show_provider(aiconfig.get_provider(), aiconfig.get_model())
