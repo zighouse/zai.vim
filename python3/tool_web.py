@@ -255,6 +255,58 @@ def get_content_fallback(url: str) -> str:
     except Exception as e:
         return f"Fallback also failed: {str(e)}"
 
+def process_bing_markdown(markdown_text):
+    """
+    从Bing搜索结果的Markdown文本中提取核心搜索结果部分。
+    策略：定位搜索结果开始和结束的标志性行。
+    """
+    lines = markdown_text.splitlines()
+    start_index = None
+    end_index = None
+
+    # 1. 寻找搜索结果开始的标志：通常是包含"About X results"或第一个明确的结果项标题的行。
+    # 在提供的示例中，'About 10,900,000 results' 是一个很好的开始标志。
+    for i, line in enumerate(lines):
+        if re.search(r'^About\s+[\d,]+.*results', line.strip()):
+            start_index = i
+            break
+    # 如果没找到上述模式，则寻找第一个以数字编号开头的结果项（例如 "1. ["）
+    if start_index is None:
+        for i, line in enumerate(lines):
+            if re.match(r'^\d+\.\s*\[', line.strip()):
+                start_index = i
+                break
+
+    # 2. 寻找搜索结果结束的标志：通常是分页导航（如"Pagination"）或页脚信息（如"增值电信业务"）开始之前。
+    # 在示例中，'#### Pagination' 是结果列表结束的明确信号。
+    for i, line in enumerate(lines):
+        if line.strip().startswith('#### Pagination'):
+            end_index = i
+            break
+    # 如果没有找到分页，则寻找典型的页脚关键词
+    if end_index is None:
+        footer_keywords = ['京ICP备', '京公网安备', 'Privacy', 'Terms', 'All', 'Past 24 hours']
+        for i, line in enumerate(lines):
+            if any(keyword in line for keyword in footer_keywords):
+                end_index = i
+                break
+
+    # 3. 进行切片提取
+    if start_index is not None and end_index is not None and start_index < end_index:
+        extracted_lines = lines[start_index:end_index]
+    elif start_index is not None:
+        # 如果只找到了开始，提取到末尾
+        extracted_lines = lines[start_index:]
+    elif end_index is not None:
+        # 如果只找到了结束，提取从开头到结束
+        extracted_lines = lines[:end_index]
+    else:
+        # 如果都没找到，返回原文本或空字符串，这里选择返回原文本以便检查
+        extracted_lines = lines
+        print("警告：未找到明确的开始或结束边界。返回全部内容。")
+
+    return '\n'.join(extracted_lines)
+
 def preprocess_duckduckgo_html(html_content):
     """预处理DuckDuckGo HTML，移除导航元素"""
     from bs4 import BeautifulSoup
@@ -274,6 +326,77 @@ def preprocess_duckduckgo_html(html_content):
         header.decompose()
 
     return str(soup)
+
+def process_duckduckgo_markdown(markdown_text):
+    """
+    简化 duckduckgo 结果 Markdown内容：每节保留标题链接，去除其他重复链接和图标，保留关键描述
+    """
+    # 分割成不同的部分（每个##开始的部分）
+    sections = re.split(r'\n## ', markdown_text)
+    simplified_sections = []
+
+    index = 1
+    for section in sections:
+        if not section.strip():
+            continue
+
+        # 提取标题行（第一行）
+        lines = section.strip().split('\n')
+        if not lines:
+            continue
+
+        # 提取标题和链接
+        title_match = re.search(r'\[([^\]]+)\]\(([^)]+)\)', lines[0])
+        if not title_match:
+            # 如果没有链接格式，使用原始标题
+            simplified_sections.append("## " + section)
+            continue
+
+        title_text = title_match.group(1)
+        main_url = title_match.group(2)
+
+        # 构建标题行（保留链接）
+        title_line = f"## {index}. [{title_text}]({main_url})"
+        index = index + 1
+
+        # 寻找描述性文本
+        descriptions = []
+        for line in lines[1:]:
+            # 跳过图标行
+            if re.match(r'^\s*\[<img[^>]+>\].*$', line.strip()):
+                continue
+
+            # 提取链接文本（去除链接标记）
+            if '](' in line and line.strip().startswith('['):
+                link_text_match = re.match(r'^\s*\[([^\]]+)\]\([^)]+\)', line)
+                if link_text_match:
+                    link_text = link_text_match.group(1)
+                    descriptions.append(link_text)
+            else:
+                # 普通文本行
+                descriptions.append(line.strip())
+
+        # 如果有描述文本，添加到结果
+        if descriptions:
+            # 去重描述文本
+            unique_descriptions = []
+            seen = set()
+            for desc in descriptions:
+                if desc not in seen and len(desc) > 10:  # 过滤掉太短的文本
+                    seen.add(desc)
+                    unique_descriptions.append(desc)
+
+            # 如果找到了描述文本，只保留第一条有意义的描述
+            if unique_descriptions:
+                # 选择最长的描述文本（通常包含最多信息）
+                best_description = max(unique_descriptions, key=len)
+                simplified_sections.append(f"{title_line}\n{best_description}")
+            else:
+                simplified_sections.append(title_line)
+        else:
+            simplified_sections.append(title_line)
+
+    return "\n\n".join(simplified_sections)
 
 def invoke_search(request: str, base_url: str = "https://html.duckduckgo.com/html/", max_results: int = 10, return_format: str = "markdown") -> str:
     """
@@ -299,6 +422,11 @@ def invoke_search(request: str, base_url: str = "https://html.duckduckgo.com/htm
             'Upgrade-Insecure-Requests': '1'
         }
 
+        #1. DuckDuckGo：使用 POST 请求，参数在 `data` 中
+        #2. Bing：使用 GET 请求，URL 格式为 `/search?q=关键词&form=QBLH`
+        #3. Google：使用 GET 请求，URL 格式为 `/search?q=关键词&hl=en&gl=us`
+        #4. 百度：使用 GET 请求，URL 格式为 `/s?wd=关键词&ie=utf-8`
+
         # DuckDuckGo 搜索参数
         if "duckduckgo.com" in base_url:
             params = {
@@ -306,17 +434,51 @@ def invoke_search(request: str, base_url: str = "https://html.duckduckgo.com/htm
                 'kl': 'us-en'
             }
             response = requests.post(base_url, data=params, headers=headers, timeout=15)
+        elif "bing.com" in base_url or "cn.bing.com" in base_url:
+            # Bing 搜索使用 GET 请求，参数在 URL 中
+            search_url = f"{base_url.rstrip('/')}/search"
+            params = {
+                'q': request,
+                'form': 'QBLH'  # Bing 搜索表单标识
+            }
+            response = requests.get(search_url, params=params, headers=headers, timeout=15)
+        elif "google.com" in base_url:
+            # Google 搜索使用 GET 请求
+            search_url = f"{base_url.rstrip('/')}/search"
+            params = {
+                'q': request,
+                'hl': 'en',      # 语言设置为英文
+                'gl': 'us',      # 国家设置为美国
+                'gws_rd': 'ssl'  # SSL 相关参数
+            }
+            response = requests.get(search_url, params=params, headers=headers, timeout=15)
+        elif "baidu.com" in base_url:
+            # 百度搜索使用 GET 请求
+            search_url = f"{base_url.rstrip('/')}/s"
+            params = {
+                'wd': request,    # 百度使用 wd 参数
+                'ie': 'utf-8'     # 编码设置
+            }
+            response = requests.get(search_url, params=params, headers=headers, timeout=15)
         else:
-            # 其他搜索引擎（简单GET请求）
-            params = {'q': request}
-            response = requests.get(base_url, params=params, headers=headers, timeout=15)
+            # 默认处理：假设是 GET 请求，使用 q 参数
+            search_url = base_url
+            params = {
+                'q': request
+            }
+            response = requests.get(search_url, params=params, headers=headers, timeout=15)
 
         response.raise_for_status()
 
         content = preprocess_duckduckgo_html(response.text)
 
         if return_format == "markdown":
-            return _html_to_markdown(content)
+            markdown_content = _html_to_markdown(content)
+            if "duckduckgo.com" in base_url:
+                return process_duckduckgo_markdown(markdown_content)
+            elif "bing.com" in base_url or "cn.bing.com" in base_url:
+                return process_bing_markdown(markdown_content)
+            return markdown_content
         elif return_format == "links":
             # 直接返回解析后的链接
             links = invoke_parse_links(content)

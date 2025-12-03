@@ -524,6 +524,34 @@ function! zai#chat#Open() abort
     call s:task_start()
 endfunction
 
+function! s:append_raw(selected) abort
+    let l:file_type = zai#util#get_file_type()
+
+    " Remove leading and trailing blank lines
+    if type(a:selected) == v:t_list
+        let l:content = zai#util#strip_list(a:selected)
+    else
+        let l:content = zai#util#strip_list(split(a:selected, '\n'))
+    endif
+    if empty(l:content)
+        return
+    endif
+
+    " Ensure the window and task are open
+    call s:ui_open()
+    call s:task_start()
+
+    " Write to the input buffer
+    let l:win = win_findbuf(s:zai_ibuf)
+    call win_execute(l:win[0], 'setlocal modifiable')
+    let l:end = getbufinfo(s:zai_ibuf)[0].linecount
+
+    for l:line in l:content
+        call appendbufline(s:zai_ibuf, l:end, l:line)
+        let l:end += 1
+    endfor
+endfunction
+
 function! s:append(selected) abort
     let l:file_type = zai#util#get_file_type()
 
@@ -1150,6 +1178,27 @@ endfunction
 function! zai#chat#Help() abort
     let l:help = s:zh_lang ? 'zai@cn' : 'zai'
     execute 'help ' . l:help
+endfunction
+
+function! zai#chat#GotoURL() abort
+    let l:url = zai#util#GetURL()
+    if l:url != ''
+        call s:append_raw(':goto ' . l:url)
+    endif
+endfunction
+
+function! zai#chat#DownloadURL() abort
+    let l:url = zai#util#GetURL()
+    if l:url != ''
+        call s:append_raw(':down ' . l:url)
+    endif
+endfunction
+
+function! zai#chat#OpenPath() abort
+    let l:url = zai#util#GetPath()
+    if l:url != ''
+        call s:append_raw(':open ' . l:url)
+    endif
 endfunction
 
 function! s:setup_buffer_commands()

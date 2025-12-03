@@ -78,6 +78,10 @@ class AIChat:
         self._cli.register("list", self._on_list)
         self._cli.register("use", self._on_use)
         self._cli.register("show", self._on_show)
+        self._cli.register("search", self._on_search)
+        self._cli.register("goto", self._on_goto)
+        self._cli.register("down", self._on_down)
+        self._cli.register("open", self._on_open)
 
     def _count_tokens(self, text):
         tokenizer_name = None
@@ -598,6 +602,45 @@ class AIChat:
             elif opt == 'tool':
                 self._tool.show_toolset(argv[1])
             return True
+
+    def _on_search(self, *argv):
+        request = " ".join(argv)
+        from tool_web import invoke_search
+        #content = invoke_search(request=request, base_url="https://cn.bing.com")
+        content = invoke_search(request=request)
+        print(f"{content}")
+
+    def _on_goto(self, url):
+        from tool_web import invoke_get_content
+        content = invoke_get_content(url=url, return_format="markdown")
+        print(f"{content}")
+
+    def _on_down(self, url):
+        from tool_web import invoke_download_file
+        result = invoke_download_file(url)
+        for k,v in result.items():
+            if k != "url":
+                print(f"  {k:>10}: {v:<10}")
+
+    def _on_open(self, file_path):
+        import subprocess
+        if not os.path.exists(file_path):
+            print(f"ERROR：file not found - {file_path}")
+            return False
+        try:
+            if sys.platform == "linux":
+                subprocess.run(["xdg-open", file_path])
+            elif sys.platform == "darwin":  # macOS
+                subprocess.run(["open", file_path])
+            elif sys.platform == "win32":   # Windows
+                os.startfile(file_path)  # or subprocess.run(["start", file_path], shell=True)
+            else:
+                print(f"Open file is not supported on: {sys.platform}")
+                return False
+            return True
+        except Exception as e:
+            print(f"ERROR: {e}")
+            return False
 
     def set_input_mode(self, input_mode: str):
         self._cli.set_input_mode(input_mode)

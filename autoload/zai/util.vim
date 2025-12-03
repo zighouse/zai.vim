@@ -364,3 +364,161 @@ function! zai#util#Rg(args)
 
     call s:grep_dir(l:pat, l:dir)
 endfunction
+
+function! zai#util#GetURL()
+    " get url under cursor
+    let line_text = getline('.')
+    let col_pos = col('.')
+    let url_pattern = '\v(https?|ftp|file)://[[:alnum:]-._~:/?#\[\]@!$&''*+,;%=]+[^[:space:]()]'
+    let start = 0
+    while 1
+        let match_start = match(line_text, url_pattern, start)
+        if match_start == -1
+            return ''
+        endif
+        let match_end = matchend(line_text, url_pattern, start)
+        " check cursor range
+        if col_pos >= match_start + 1 && col_pos <= match_end
+            let url = matchstr(line_text, url_pattern, start)
+            return url
+        endif
+        let start = match_end
+    endwhile
+endfunction
+
+" 主函数：智能提取光标处的路径并检查是否存在
+function! zai#util#GetPath()
+    "let path = GetPathUnderCursor()
+    let path = GetEnhancedPathUnderCursor()
+    if empty(path)
+        return ''
+    endif
+    if filereadable(path) || filewritable(path) || isdirectory(path)
+        return path
+    endif
+    return ''
+endfunction
+
+" 核心函数：提取光标处的路径字符串
+function! GetPathUnderCursor()
+    let line_text = getline('.')
+    let col_pos = col('.') - 1  " 转换为 0-based
+    
+    " 定义路径模式
+    " 匹配以 / 开头的绝对路径，或包含 ~/ 的家目录路径
+    let path_pattern = '\v(/\S+|~/\S+)'
+    
+    " 尝试匹配更复杂的路径（包含空格需要用引号包裹）
+    let quoted_path_pattern = '\v[''"](\S+)[''"]'
+    
+    " 首先检查是否在引号内的路径
+    let start = 0
+    while 1
+        let match_start = match(line_text, quoted_path_pattern, start)
+        if match_start == -1
+            break
+        endif
+        
+        let match_end = matchend(line_text, quoted_path_pattern, start)
+        
+        " 检查光标是否在匹配范围内
+        if col_pos >= match_start && col_pos < match_end
+            let quoted = matchstr(line_text, quoted_path_pattern, start)
+            " 去掉引号
+            let path = substitute(quoted, '\v[''"](\S+)[''"]', '\1', '')
+            return path
+        endif
+        
+        let start = match_end
+    endwhile
+    
+    " 如果没有在引号内，尝试普通路径匹配
+    let start = 0
+    while 1
+        let match_start = match(line_text, path_pattern, start)
+        if match_start == -1
+            return ''
+        endif
+        
+        let match_end = matchend(line_text, path_pattern, start)
+        
+        " 检查光标是否在匹配范围内
+        if col_pos >= match_start && col_pos < match_end
+            let path = matchstr(line_text, path_pattern, start)
+            
+            " 扩展 ~ 到用户家目录
+            if path =~# '^~/'
+                let path = expand(path)
+            endif
+            
+            return path
+        endif
+        
+        let start = match_end
+    endwhile
+endfunction
+
+" 增强版：支持更多路径格式
+function! GetEnhancedPathUnderCursor()
+    let line_text = getline('.')
+    let col_pos = col('.') - 1
+    
+    " 支持多种路径格式：
+    " 1. 绝对路径: /path/to/file
+    " 2. 家目录: ~/path/to/file
+    " 3. Windows 路径: C:\path\to\file 或 \\server\share
+    " 4. 带空格和特殊字符的引号路径
+    " 5. 相对路径: ./file 或 ../dir/file
+    
+    "let patterns = [
+    "    \ '\v[''"](\S[^''"]+\S)[''"]',           " 引号包裹的路径
+    "    \ '\v(/\S[^[:space:]]*)',                " Unix 绝对路径
+    "    \ '\v(~/\S[^[:space:]]*)',               " 家目录路径
+    "    \ '\v([A-Za-z]:\\[^[:space:]]*)',        " Windows 驱动器路径
+    "    \ '\v(\\\\[^[:space:]]+)',               " Windows 网络路径
+    "    \ '\v(\.{1,2}/\S[^[:space:]]*)',         " 相对路径
+    "    \ '\v(\w[^[:space:]]*/\S[^[:space:]]*)', " 可能包含特殊字符的路径
+    "    \]
+    let patterns = [
+        \ '\v[''"](\S[^''"]+\S)[''"]',
+        \ '\v(/\S[^[:space:]]*)',
+        \ '\v(~/\S[^[:space:]]*)',
+        \ '\v([A-Za-z]:\\[^[:space:]]*)',
+        \ '\v(\\\\[^[:space:]]+)',
+        \ '\v(\.{1,2}/\S[^[:space:]]*)',
+        \ '\v(\w[^[:space:]]*/\S[^[:space:]]*)',
+        \]
+    
+    for pattern in patterns
+        let start = 0
+        while 1
+            let match_start = match(line_text, pattern, start)
+            if match_start == -1
+                break
+            endif
+            
+            let match_end = matchend(line_text, pattern, start)
+            
+            if col_pos >= match_start && col_pos < match_end
+                let path = matchstr(line_text, pattern, start)
+                
+                " 清理引号
+                if path =~# '^[''"]' && path =~# '[''"]$'
+                    let path = path[1:-2]
+                endif
+                
+                " 扩展 ~
+                if path =~# '^~/'
+                    let path = expand(path)
+                endif
+                
+                return path
+            endif
+            
+            let start = match_end
+        endwhile
+    endfor
+    
+    return ''
+endfunction
+
