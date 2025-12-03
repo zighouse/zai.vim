@@ -19,18 +19,18 @@ def _remove_metas(text):
     lines = text.split('\n')
     cleaned_lines = []
     in_metadata_block = False
-    
+
     for line in lines:
         # 检测metadata行的开始
         if re.match(r'^(meta-|title:|source_repo=|analytics-)', line.lower()):
             in_metadata_block = True
             continue
-        
+
         # 检测base64编码的内容行
         if re.match(r'^[A-Za-z0-9+/]{20,}={0,2}$', line.strip()):
             in_metadata_block = True
             continue
-        
+
         # 检测分隔符
         if line.strip() == '---':
             if in_metadata_block:
@@ -39,39 +39,39 @@ def _remove_metas(text):
             else:
                 cleaned_lines.append(line)
                 continue
-        
+
         # 如果不在metadata块中，保留该行
         if not in_metadata_block:
             cleaned_lines.append(line)
-    
+
     return '\n'.join(cleaned_lines)
 
 def _fix_multiline_links(markdown_text):
     lines = markdown_text.split('\n')
     result_lines = []
     i = 0
-    
+
     while i < len(lines):
         line = lines[i].rstrip()
-        
+
         # 检查是否以 "- [" 开头，可能是跨行链接的开始
         if line.strip().startswith('- [') and not line.strip().endswith(']'):
             # 收集链接的所有部分
             link_parts = []
             j = i
-            
+
             # 收集直到找到闭合的 "]"
             while j < len(lines) and ']' not in lines[j]:
                 link_parts.append(lines[j].strip())
                 j += 1
-            
+
             if j < len(lines):
                 link_parts.append(lines[j].strip())
                 # 现在收集URL部分
                 url_line = j
                 while url_line < len(lines) and '(' not in lines[url_line]:
                     url_line += 1
-                
+
                 if url_line < len(lines):
                     # 提取URL
                     url_match = re.search(r'\(\s*([^)]+)\s*\)', lines[url_line])
@@ -85,22 +85,22 @@ def _fix_multiline_links(markdown_text):
                         result_lines.append(f'{link_text}({url})')
                         i = url_line + 1
                         continue
-        
+
         # 如果不是跨行链接，直接添加该行
         result_lines.append(line)
         i += 1
-    
+
     return '\n'.join(result_lines)
 
 def _compress_blank_lines_line_by_line(markdown_text):
     lines = markdown_text.split('\n')
     result_lines = []
     previous_line_was_blank = False
-    
+
     for line in lines:
         # 检查当前行是否为空白行（只包含空白字符或为空）
         is_blank = line.strip() == ''
-        
+
         if is_blank:
             # 如果前一行不是空白行，则保留这个空白行
             if not previous_line_was_blank:
@@ -111,11 +111,11 @@ def _compress_blank_lines_line_by_line(markdown_text):
             # 非空白行，直接添加
             result_lines.append(line.rstrip())  # 移除行尾空白
             previous_line_was_blank = False
-    
+
     # 如果最后一行是空白行，移除它
     if result_lines and result_lines[-1] == '':
         result_lines.pop()
-    
+
     return '\n'.join(result_lines)
 
 def _html_to_markdown(content):
@@ -151,7 +151,31 @@ def invoke_get_content(url: str, return_format: str = "clean_text") -> str:
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()  # 如果状态码不是200，抛出异常
 
-        content = response.text
+        raw_content = response.content
+        # 优先使用HTTP响应头中的编码
+        encoding_from_header = None
+        if 'content-type' in response.headers:
+            content_type = response.headers['content-type'].lower()
+            charset_match = re.search(r'charset\s*=\s*([^\s;]+)', content_type)
+            if charset_match:
+                encoding_from_header = charset_match.group(1).lower()
+                if encoding_from_header == 'gb2312':
+                    encoding_from_header = 'gb18030'
+
+        # 解码为Unicode字符串
+        try:
+            if encoding_from_header:
+                content = raw_content.decode(encoding_from_header, errors='ignore')
+            else:
+                # 尝试使用 chardet 来检测
+                import chardet
+                detected_encoding = chardet.detect(raw_content)['encoding']
+                content = raw_content.decode(detected_encoding, errors='ignore')
+        except (UnicodeDecodeError, LookupError):
+            try:
+                content = raw_content.decode('utf-8', errors='ignore')
+            except UnicodeDecodeError:
+                content = raw_content.decode('latin-1', errors='ignore')
 
         if return_format == "links":
             links = invoke_parse_links(content)
@@ -656,42 +680,3 @@ def _get_download_output_path(
             file_name = f"downloaded_file_{timestamp}"
 
     return output_dir_path / file_name
-
-
-# 测试代码（如果直接运行）
-if __name__ == "__main__":
-    content = invoke_get_content("https://github.com/QwenLM/Qwen3-Omni/blob/main/README.md", "markdown")
-    print(f"{content}")
-    ## 测试 get_content
-    #print("Testing get_content with html format...")
-    #content = invoke_get_content("https://httpbin.org/html")
-    #print(f"Content length: {len(content)}")
-
-    #print("\nTesting get_content with links format...")
-    #links_content = invoke_get_content("https://httpbin.org/html", return_format="links")
-    #print(f"Links found:\n{links_content}")
-
-    ## 测试 parse_links
-    #print("\nTesting parse_links...")
-    #test_html = '''
-    #<html>
-    #<body>
-    #<a href="https://example.com">Example</a>
-    #<a href="/relative">Relative Link</a>
-    #<a href="#section">Section</a>
-    #</body>
-    #</html>
-    #'''
-    #links = invoke_parse_links(test_html)
-    #for link in links:
-    #    print(f"Link: {link}")
-
-    ## 测试 search
-    #print("\nTesting search with links format...")
-    #results = search("python programming", max_results=3, return_format="links")
-    #print(results)
-
-    ## 测试 download_file
-    #print("\nTesting download_file...")
-    #result = invoke_download_file("https://httpbin.org/image/jpeg", filename="test_image.jpg")
-    #print(f"Download result: {result}")
