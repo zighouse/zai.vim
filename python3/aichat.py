@@ -83,15 +83,16 @@ class AIChat:
         self._cli.register("down", self._on_down)
         self._cli.register("open", self._on_open)
 
-    def _count_tokens(self, text):
-        tokenizer_name = None
+    def _get_tokenizer_name(self):
+        tokenizer_name = "cl100k_base"
         if "tokenizer" in self._config['model']:
             tokenizer_name = self._config['model'].get("tokenizer")
         elif self._assistant and "tokenizer" in self._assistant:
             tokenizer_name = self._assistant.get("tokenizer", None)
-        if tokenizer_name:
-            return self._tokenizer.count_tokens(text, tokenizer_name, False)
-        return 0
+        return tokenizer_name;
+
+    def _count_tokens(self, text):
+        return self._tokenizer.count_tokens(text, self._get_tokenizer_name())
 
     def _open_llm(self, api_key_name=None, base_url=None):
         """Open llm client with given or default parameters"""
@@ -341,15 +342,9 @@ class AIChat:
                 msg['reasoning_content'] = reasoning_content
 
         full_response['content'] = ''.join(full_content)
-        if not is_FIM:
-            end_time = time.time()
-            response_tokens = self._count_tokens(full_response['content'])
-            extra_info = []
-            if response_tokens:
-                extra_info.append(f"response-tokens: {response_tokens}")
-            elapsed_time = end_time - start_time
-            extra_info.append(f"elapsed-time: {elapsed_time:.2f} seconds")
-            print(f"\n({', '.join(extra_info)})")
+        reasoning_tokens = self._count_tokens(msg.get('reasoning_content',''))
+        response_tokens = self._count_tokens(full_response.get('content',''))
+        end_time = time.time()
         if full_response['tool_calls']:
             for tool_call in full_response['tool_calls']:
                 function = tool_call['function']
@@ -358,6 +353,12 @@ class AIChat:
         if full_response['content'] or full_response['tool_calls']:
             msg['content'] = full_response['content']
             msg['time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            msg['elapsed_time'] = end_time - start_time
+            if reasoning_tokens:
+                msg['reasoning_tokens'] = reasoning_tokens
+            if response_tokens:
+                msg['content_tokens'] = response_tokens
+            msg['tokenizer'] = self._get_tokenizer_name()
             if full_response['tool_calls']:
                 msg['tool_calls'] = full_response['tool_calls']
             self._logger.append_message(msg)

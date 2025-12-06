@@ -181,6 +181,8 @@ class Logger:
                             if k not in ['role', 'content', 'reasoning_content', 'tool_call_id', 'name', 'tool_calls', 'stop']:
                                 if isinstance(msg[k], str) and "\n" in msg[k]:
                                     print(f"  - {k.replace('_','-')}:<<EOF\n{msg[k]}\nEOF\n")
+                                elif isinstance(msg[k], float):
+                                    print(f"  - {k.replace('_','-')}: {msg[k]:.3f}")
                                 else:
                                     print(f"  - {k.replace('_','-')}: {msg[k]}")
                         print("</small>")
