@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, Union, List, Dict, Any
 from appdirs import user_data_dir
 
 def get_char_width(char):
@@ -155,7 +155,14 @@ class Logger:
         else:
             return False
 
-    def append_message(self, msg: Dict[str, Any]):
+    def append_message(self, msg: Union[Dict[str,Any], List[Dict[str,Any]]]):
+        # append list of messages
+        if isinstance(msg, list):
+            for it in msg:
+                self.append_message(it)
+            return
+
+        # append a single message
         if "role" not in msg:
             return
         if self._ensure_file():

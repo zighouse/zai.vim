@@ -133,7 +133,7 @@ class AIChat:
             result.append({"role":"assistant", "content":"\n"})
         return result
 
-    def _get_completion_params(self):
+    def _get_completion_params(self, current_round = None):
         params = { 'stream': True, 'messages':[] }
         messages = [ {
             "role":    "system",
@@ -155,9 +155,9 @@ class AIChat:
                     filted = self._filter_response(response)
                 messages.extend(filted)
                 count = count + 1
-        if self._cur_round:
-            request = self._cur_round.get("request", {})
-            response = self._cur_round.get("response", [])
+        if current_round:
+            request = current_round.get("request", {})
+            response = current_round.get("response", [])
             if request:
                 messages.append(request)
                 filted = self._filter_response(response)
@@ -170,7 +170,8 @@ class AIChat:
 
         for msg in messages:
             # Create new request message
-            request_msg = {k:v for k,v in msg.items() if k in ['role', 'content', 'tool_calls', 'tool_call_id', 'name']}
+            request_msg = {k:v for k,v in msg.items() if k in
+                    ['role', 'content', 'reasoning_content', 'tool_calls', 'tool_call_id', 'name']}
 
             # Attach files
             if 'files' in msg:
@@ -218,15 +219,10 @@ class AIChat:
                     tool_returns.append(tool_response)
         return tool_returns
 
-    def _generate_response(self, request: Union[Dict[str,Any], List[Dict[str,Any]]]) -> Dict[str,Any]:
+    def _generate_response(self, current_round) -> Dict[str,Any]:
         """Generate and process assistant response"""
-        if not request:
+        if not current_round or not current_round.get("request",{}):
             return None
-        if isinstance(request, list):
-            for it in request:
-                self._logger.append_message(it)
-        else:
-            self._logger.append_message(request)
         full_response = {
                 "role": "assistant",
                 "content": [],
@@ -236,7 +232,7 @@ class AIChat:
         reasoning_content = []
         is_FIM = False
 
-        params = self._get_completion_params()
+        params = self._get_completion_params(current_round)
         msg = {
                 "role":     "assistant",
                 "content":  "",
@@ -294,9 +290,14 @@ class AIChat:
                 params['messages'][0]['content'] = params['messages'][0]['content'] + self._prompt_for_title
             if tools := self._tool.get_tools():
                 params['tools'] = tools
-            request_tokens = 0
+            request_tokens = 0 # FIXME: calculate a correct rolling request tokens.
             for m in params['messages']:
-                request_tokens = request_tokens + self._count_tokens(m['content'])
+                if "content_tokens" in m:
+                    request_tokens = request_tokens + m["content_tokens"]
+                else:
+                    request_tokens = request_tokens + self._count_tokens(m['content'])
+                if "reasoning_tokens" in m:
+                    request_tokens = request_tokens + m["reasoning_tokens"]
             if request_tokens:
                 print(f"(request-tokens: {request_tokens})")
             stream = self._llm.chat.completions.create(**params)
@@ -386,8 +387,13 @@ class AIChat:
             while not self._cli.is_stopped() and request is None:
                 request = self._fetch_request(timeout=0.1)
             if request:
+                request_tokens = self._count_tokens(request.get("content",""))
+                if request_tokens:
+                    request["tokenizer"] = self._get_tokenizer_name()
+                    request["content_tokens"] = request_tokens
+                self._logger.append_message(request)
                 self._cur_round = {"request": request, "response":[]}
-            response = self._generate_response(request)
+                response = self._generate_response(self._cur_round)
             if response:
                 self._cur_round["response"].append(response)
             while not self._cli.is_stopped() and response and 'tool_calls' in response:
@@ -399,8 +405,10 @@ class AIChat:
                         tool_returns.append(request)
                     else:
                         tool_returns = request
-                self._cur_round["response"].append(tool_returns)
-                response = self._generate_response(tool_returns)
+                if tool_returns:
+                    self._logger.append_message(tool_returns)
+                    self._cur_round["response"].append(tool_returns)
+                    response = self._generate_response(self._cur_round)
                 if response:
                     self._cur_round["response"].append(response)
             self._history.append(self._cur_round)
