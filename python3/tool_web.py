@@ -4,11 +4,14 @@ import re
 import subprocess
 import shutil
 import time
+import urllib
 from urllib.parse import urljoin, urlparse
 from typing import List, Dict, Optional, Literal, Any
 from pathlib import Path
 
 from toolcommon import sanitize_path
+
+_DEFAULT_SEARCH_ENGINE = "https://html.duckduckgo.com/html/"
 
 def _remove_data_images(markdown_text):
     pattern = r'!\[[^\]]*\]\(data:image[^)]+\)'
@@ -148,19 +151,27 @@ def invoke_get_content(url: str, return_format: str = "clean_text") -> str:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
 
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()  # 如果状态码不是200，抛出异常
-
-        raw_content = response.content
-        # 优先使用HTTP响应头中的编码
+        parsed = urlparse(url)
         encoding_from_header = None
-        if 'content-type' in response.headers:
-            content_type = response.headers['content-type'].lower()
-            charset_match = re.search(r'charset\s*=\s*([^\s;]+)', content_type)
-            if charset_match:
-                encoding_from_header = charset_match.group(1).lower()
-                if encoding_from_header == 'gb2312':
-                    encoding_from_header = 'gb18030'
+        if parsed.scheme in ('http', 'https'):
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()  # 如果状态码不是200，抛出异常
+
+            raw_content = response.content
+            # 优先使用HTTP响应头中的编码
+            if 'content-type' in response.headers:
+                content_type = response.headers['content-type'].lower()
+                charset_match = re.search(r'charset\s*=\s*([^\s;]+)', content_type)
+                if charset_match:
+                    encoding_from_header = charset_match.group(1).lower()
+                    if encoding_from_header == 'gb2312':
+                        encoding_from_header = 'gb18030'
+        elif parsed.scheme == 'file' or parsed.scheme == '':
+            response = urllib.request.urlopen(url)
+            #content = response.read().decode('utf-8')
+            raw_content = response.read()
+        else:
+            return f"Unsupported get content from `{url}`"
 
         # 解码为Unicode字符串
         try:
@@ -249,9 +260,17 @@ def get_content_fallback(url: str) -> str:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        return extract_clean_text(response.text)
+        parsed = urlparse(url)
+        if parsed.scheme in ('http', 'https'):
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            return extract_clean_text(response.text)
+        elif parsed.scheme == 'file' or parsed.scheme == '':
+            response = urllib.request.urlopen(url)
+            content = response.read().decode('utf-8')
+            return extract_clean_text(content)
+        else:
+            return f"Unsupported get content from `{url}`"
     except Exception as e:
         return f"Fallback also failed: {str(e)}"
 
@@ -398,7 +417,7 @@ def process_duckduckgo_markdown(markdown_text):
 
     return "\n\n".join(simplified_sections)
 
-def invoke_search(request: str, base_url: str = "https://html.duckduckgo.com/html/", max_results: int = 10, return_format: str = "markdown") -> str:
+def invoke_search(request: str, base_url: str = _DEFAULT_SEARCH_ENGINE, max_results: int = 10, return_format: str = "markdown") -> str:
     """
     执行网络搜索
 
