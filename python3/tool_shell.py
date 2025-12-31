@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import base64
+import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
@@ -24,6 +25,103 @@ except ImportError:
     DOCKER_AVAILABLE = False
     DOCKER_ERROR = "Docker Python SDK not installed, please run: pip install docker"
 
+
+def get_host_uid_gid():
+    """获取主机用户的UID和GID，如果是以root身份运行，则尝试通过SUDO_UID获取"""
+    import os
+    try:
+        uid = os.getuid()
+        gid = os.getgid()
+        # 如果是以root身份运行（例如通过sudo），尝试通过环境变量获取原始用户
+        if uid == 0:
+            sudo_uid = os.environ.get('SUDO_UID')
+            sudo_gid = os.environ.get('SUDO_GID')
+            if sudo_uid and sudo_gid:
+                uid = int(sudo_uid)
+                gid = int(sudo_gid)
+            else:
+                # 默认使用常见的非root用户ID
+                uid = 1000
+                gid = 1000
+        return uid, gid
+    except (AttributeError, ValueError):
+        # Windows系统或其他异常情况，使用默认值
+        return 1000, 1000
+
+
+def get_host_timezone():
+    """获取主机系统的时区，返回时区标识符（如 Asia/Shanghai、America/New_York）"""
+    try:
+        # 1. 首先检查环境变量 TZ
+        tz_env = os.environ.get('TZ')
+        if tz_env:
+            # 环境变量 TZ 可能包含时区名称，如 Asia/Shanghai、:Asia/Shanghai、CST-8 等
+            # 如果以冒号开头，去除冒号
+            if tz_env.startswith(':'):
+                tz_env = tz_env[1:]
+            # 检查是否为有效的时区格式（包含 /）
+            if '/' in tz_env:
+                return tz_env
+        
+        # 2. 尝试读取 /etc/timezone（Linux系统）
+        if os.path.exists('/etc/timezone'):
+            try:
+                with open('/etc/timezone', 'r', encoding='utf-8') as f:
+                    tz_content = f.read().strip()
+                if tz_content and '/' in tz_content:
+                    return tz_content
+            except (IOError, OSError, UnicodeDecodeError):
+                pass
+        
+        # 3. 尝试读取 /etc/localtime 链接（Linux系统）
+        if os.path.islink('/etc/localtime'):
+            try:
+                link_target = os.readlink('/etc/localtime')
+                # 通常指向 /usr/share/zoneinfo/Region/City
+                if '/zoneinfo/' in link_target:
+                    tz_name = link_target.split('/zoneinfo/')[-1]
+                    if '/' in tz_name:
+                        return tz_name
+            except (OSError, IOError):
+                pass
+        
+        # 4. 尝试使用 Python 的 datetime 获取时区信息
+        try:
+            import datetime
+            now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+            tz_name = now.tzname()
+            # tzname() 返回时区缩写（如 CST、EST），尝试映射
+            # 这不是完美的方法，但可以处理常见情况
+            tz_abbr = tz_name if tz_name else ''
+            
+            # 简单映射：基于 UTC 偏移和常见缩写
+            import time
+            utc_offset = -time.timezone // 3600  # 转换为小时
+            
+            if utc_offset == 8:
+                return 'Asia/Shanghai'
+            elif utc_offset == 9:
+                return 'Asia/Tokyo'
+            elif utc_offset == 1:
+                return 'Europe/Berlin'
+            elif utc_offset == 0:
+                return 'UTC'
+            elif utc_offset == -5:
+                return 'America/New_York'
+            elif utc_offset == -8:
+                return 'America/Los_Angeles'
+        except (ImportError, AttributeError, ValueError):
+            pass
+        
+        # 5. 最终回退：使用 UTC
+        return 'UTC'
+        
+    except Exception:
+        # 任何异常情况下使用 UTC
+        return 'UTC'
+
+
+# 全局配置
 DEFAULT_IMAGE = "taskbox:latest"
 DEFAULT_WORKDIR = "/sandbox"
 DEFAULT_TIMEOUT = 60
@@ -41,7 +139,21 @@ class TaskboxExecutor:
         self.client = docker.from_env()
         self.persistent = persistent
         self.container = None  # 持久化容器实例
-        self.container_name = CONTAINER_NAME
+        
+        # 确定容器名称：支持项目隔离
+        project_id = os.environ.get('ZAI_PROJECT_ID')
+        if project_id:
+            self.container_name = f"zai-tool-shell-{project_id}"
+        else:
+            self.container_name = CONTAINER_NAME
+        
+        # 确定用户模式：root、host（使用主机UID/GID）或 sandbox（使用sandbox用户）
+        self.user_mode = os.environ.get('ZAI_CONTAINER_USER', 'sandbox').lower()
+        if self.user_mode not in ('root', 'host', 'sandbox'):
+            self.user_mode = 'sandbox'
+        
+        # 获取主机UID/GID（如果需要）
+        self.host_uid, self.host_gid = get_host_uid_gid()
         
         # 验证Docker连接
         try:
@@ -60,11 +172,16 @@ class TaskboxExecutor:
             return False
 
     def _build_image_if_needed(self):
+        """如果镜像不存在，尝试构建默认taskbox镜像"""
         if self._image_exists():
             return
         
         print(f"Image {self.image} doesn't exist, trying to build...", file=sys.stderr)
         
+        # 获取主机UID/GID用于构建参数
+        host_uid, host_gid = get_host_uid_gid()
+        
+        # 首先尝试读取外部的 Dockerfile.taskbox 文件
         dockerfile_path = os.path.join(os.path.dirname(__file__), "Dockerfile.taskbox")
         dockerfile_content = None
         
@@ -83,9 +200,13 @@ class TaskboxExecutor:
 FROM python:3.12-slim
 
 # 设置环境变量，防止交互式弹窗阻塞构建
-ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=Asia/Shanghai
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ={get_host_timezone()}
 
-# --- 步骤 1: 安装基础软件，可能需要替换阿里 APT 源 ---
+# 允许在构建时传递主机用户ID和组ID
+ARG HOST_UID={host_uid}
+ARG HOST_GID={host_gid}
+
+# --- 步骤 1: 替换阿里 APT 源 ---
 # 3.12-slim 目前基于 Debian 12 (bookworm)
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
@@ -101,9 +222,16 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debia
         wget \
         vim \
         ca-certificates \
+        sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# --- 步骤 2: 更新 pip，可能需要替换阿里 PIP 源 ---
+# --- 步骤 2: 创建与主机用户同UID/GID的用户，并赋予sudo权限（无需密码）---
+RUN groupadd -g $HOST_GID sandbox \
+    && useradd -m -u $HOST_UID -g $HOST_GID -s /bin/bash sandbox \
+    && echo "sandbox ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/sandbox \
+    && chmod 0440 /etc/sudoers.d/sandbox
+
+# --- 步骤 3: 替换阿里 PIP 源 ---
 RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
     && pip config set install.trusted-host mirrors.aliyun.com \
     && pip install --upgrade pip
@@ -114,7 +242,15 @@ ENV PATH="/usr/lib/ccache:$PATH"
 # 预设 ccache 目录到规划的 volume 中
 ENV CCACHE_DIR=/ccache
 
+# 创建项目依赖目录，并设置为可被sandbox写入
+RUN mkdir -p /opt/project && chown -R $HOST_UID:$HOST_GID /opt/project
+
 WORKDIR /sandbox
+
+# 默认以root用户运行，但可以通过docker run -u $HOST_UID:$HOST_GID切换
+# 为了保持兼容性，默认保持root身份，但确保/sandbox目录权限正确
+# 注意：如果以sandbox身份运行，某些需要特权的操作可能失败
+# 因此建议在启动容器时决定使用root还是sandbox
 
 # 保持运行
 CMD ["tail", "-f", "/dev/null"]
@@ -130,6 +266,7 @@ CMD ["tail", "-f", "/dev/null"]
                 image, logs = self.client.images.build(
                     path=tmpdir,
                     tag=self.image,
+                    buildargs={'HOST_UID': str(host_uid), 'HOST_GID': str(host_gid), 'TZ': get_host_timezone()},
                     rm=True,
                     forcerm=True
                 )
@@ -141,6 +278,7 @@ CMD ["tail", "-f", "/dev/null"]
                 raise RuntimeError(f"Failed to build image: {e}\n\nYou can build manually:\n1. Save the Dockerfile content above\n2. Run: docker build -t taskbox:latest -f Dockerfile .")
     
     def _prepare_mounts(self) -> Dict[str, Dict[str, str]]:
+        """准备挂载配置：将主机沙盒目录挂载到容器/sandbox，并支持项目卷"""
         mounts = {}
         
         sandbox_root = sandbox_home()
@@ -150,6 +288,31 @@ CMD ["tail", "-f", "/dev/null"]
             "bind": "/sandbox",
             "mode": "rw"
         }
+        
+        # 检查是否有项目卷配置
+        project_volume = os.environ.get('ZAI_PROJECT_VOLUME')
+        if project_volume:
+            # 挂载Docker卷到容器的/opt/project
+            mounts[project_volume] = {
+                "bind": "/opt/project",
+                "mode": "rw"
+            }
+            print(f"挂载项目卷: {project_volume} -> /opt/project", file=sys.stderr)
+        
+        # 检查是否有额外的挂载配置（格式：源路径:目标路径[:模式]）
+        extra_mounts = os.environ.get('ZAI_EXTRA_MOUNTS')
+        if extra_mounts:
+            for mount_spec in extra_mounts.split(','):
+                parts = mount_spec.split(':')
+                if len(parts) >= 2:
+                    source = parts[0].strip()
+                    target = parts[1].strip()
+                    mode = parts[2].strip() if len(parts) > 2 else 'rw'
+                    mounts[source] = {
+                        "bind": target,
+                        "mode": mode
+                    }
+                    print(f"挂载额外卷: {source} -> {target} ({mode})", file=sys.stderr)
         
         return mounts
     
@@ -215,7 +378,7 @@ CMD ["tail", "-f", "/dev/null"]
             
             container_config = {
                 "image": self.image,
-                "command": ["tail", "-f", "/dev/null"],  # Empty command to keep container running
+                "command": ["tail", "-f", "/dev/null"],  # 保持容器运行的空命令
                 "name": self.container_name,
                 "working_dir": DEFAULT_WORKDIR,
                 "volumes": mounts,
@@ -226,6 +389,18 @@ CMD ["tail", "-f", "/dev/null"]
                 "auto_remove": False
             }
             
+            # 根据用户模式设置容器用户
+            if self.user_mode == 'root':
+                print("容器将以root身份运行", file=sys.stderr)
+                container_config['user'] = 'root'
+            elif self.user_mode == 'host':
+                container_config['user'] = f"{self.host_uid}:{self.host_gid}"
+                print(f"容器将以主机用户身份运行: {self.host_uid}:{self.host_gid}", file=sys.stderr)
+            else:  # sandbox
+                container_config['user'] = 'sandbox'
+                print("容器将以sandbox用户身份运行", file=sys.stderr)
+            
+            # 创建并启动容器
             self.container = self.client.containers.create(**container_config)
             self.container.start()
             
@@ -277,9 +452,18 @@ CMD ["tail", "-f", "/dev/null"]
             # 使用 exec_run 执行命令
             # exec_run 返回 (exit_code, output)，其中 output 是合并的 stdout 和 stderr
             # 注意：docker Python SDK 的 exec_run() 不支持 timeout 参数
+            # 根据用户模式确定执行用户
+            if self.user_mode == 'root':
+                exec_user = 'root'
+            elif self.user_mode == 'host':
+                exec_user = f"{self.host_uid}:{self.host_gid}"
+            else:  # sandbox
+                exec_user = 'sandbox'
+            
             result = self.container.exec_run(
                 cmd=final_cmd_list,
                 workdir=working_dir or DEFAULT_WORKDIR,
+                user=exec_user,
                 stdout=True,
                 stderr=True,
                 demux=False  # 不分离 stdout/stderr，返回合并的输出
@@ -417,6 +601,14 @@ CMD ["tail", "-f", "/dev/null"]
             "auto_remove": False
         }
         
+        # 根据用户模式设置容器用户（仅对临时容器）
+        if self.user_mode == 'root':
+            container_config['user'] = 'root'
+        elif self.user_mode == 'host':
+            container_config['user'] = f"{self.host_uid}:{self.host_gid}"
+        else:  # sandbox
+            container_config['user'] = 'sandbox'
+        
         if not enable_network:
             container_config["network_mode"] = "none"
         
@@ -478,6 +670,10 @@ CMD ["tail", "-f", "/dev/null"]
             except:
                 container_status = "not_exists"
         
+        # 获取项目卷配置
+        project_volume = os.environ.get('ZAI_PROJECT_VOLUME')
+        extra_mounts = os.environ.get('ZAI_EXTRA_MOUNTS')
+        
         info = {
             "docker_available": DOCKER_AVAILABLE,
             "image": self.image,
@@ -486,7 +682,10 @@ CMD ["tail", "-f", "/dev/null"]
             "persistent_container": {
                 "enabled": self.persistent,
                 "container_name": self.container_name,
-                "status": container_status
+                "status": container_status,
+                "user_mode": self.user_mode,
+                "host_uid": self.host_uid,
+                "host_gid": self.host_gid
             },
             "security": {
                 "container_isolation": True,
@@ -500,7 +699,13 @@ CMD ["tail", "-f", "/dev/null"]
             "sandbox_home": str(sandbox_home()),
             "default_working_dir": DEFAULT_WORKDIR,
             "default_timeout": DEFAULT_TIMEOUT,
-            "docker_sdk_version": docker.__version__ if DOCKER_AVAILABLE else "Not installed"
+            "docker_sdk_version": docker.__version__ if DOCKER_AVAILABLE else "Not installed",
+            "configuration": {
+                "project_id": os.environ.get('ZAI_PROJECT_ID'),
+                "project_volume": project_volume,
+                "extra_mounts": extra_mounts,
+                "container_user": self.user_mode
+            }
         }
         
         return info
