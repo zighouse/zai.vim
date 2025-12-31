@@ -3,32 +3,32 @@
     "type": "function",
     "function": {
       "name": "execute_shell",
-      "description": "Execute shell or Python commands in a secure Docker container (taskbox, Ubuntu/Debian environment with Python 3.12, C/C++ toolchain, and ccache). Supports persistent container for state retention across calls.",
+      "description": "在安全的 Docker 容器（taskbox，Ubuntu/Debian 环境，包含 Python 3.12、C/C++ 工具链和 ccache）中执行 shell 或 Python 命令。支持持久化容器以在多次调用之间保持状态。",
       "parameters": {
         "type": "object",
         "properties": {
           "command": {
             "type": "string",
-            "description": "The command to execute. For shell: any bash command. For Python: Python code (can be multi-line). Multiple commands can use semicolons or newlines."
+            "description": "要执行的命令。对于 shell：任何 bash 命令。对于 Python：Python 代码（可以是多行）。多个命令可以使用分号或换行分隔。"
           },
           "timeout": {
             "type": "integer",
-            "description": "Maximum execution time in seconds. Default is 60 seconds.",
+            "description": "最大执行时间（秒）。默认为 60 秒。",
             "default": 60
           },
           "working_dir": {
             "type": "string",
-            "description": "Working directory inside the container (mapped to host sandbox). Default is /sandbox.",
+            "description": "容器内的工作目录（映射到主机沙箱）。默认为 /sandbox。",
             "default": "/sandbox"
           },
           "enable_network": {
             "type": "boolean",
-            "description": "Allow external network access. Default is false.",
+            "description": "允许外部网络访问。默认为 false。",
             "default": false
           },
           "language": {
             "type": "string",
-            "description": "Language environment. 'shell' for bash commands, 'python' for Python code. Other languages may be added later.",
+            "description": "语言环境。'shell' 表示 bash 命令，'python' 表示 Python 代码。其他语言可能会在以后添加。",
             "enum": ["shell", "python"],
             "default": "shell"
           },
@@ -37,11 +37,11 @@
             "items": {
               "type": "string"
             },
-            "description": "List of libraries/packages to install before execution. For shell: apt packages (e.g., ['curl', 'jq']). For Python: pip packages (e.g., ['numpy', 'pandas'])."
+            "description": "执行前要安装的库/软件包列表。对于 shell：apt 软件包（例如 ['curl', 'jq']）。对于 Python：pip 软件包（例如 ['numpy', 'pandas']）。"
           },
           "persistent": {
             "type": "boolean",
-            "description": "Whether to use a persistent container that retains state (installed packages, files, etc.) across calls. Default is true. If false, a new temporary container is used for each command. If enable_network is false, persistent container is not used.",
+            "description": "是否使用持久化容器，在多次调用之间保持状态（已安装的软件包、文件等）。默认为 true。如果为 false，则每个命令使用新的临时容器。如果 enable_network 为 false，则不使用持久化容器。",
             "default": true
           }
         },
