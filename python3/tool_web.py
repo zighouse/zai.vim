@@ -130,7 +130,7 @@ def _html_to_markdown(content):
     markdown = _compress_blank_lines_line_by_line(markdown)
     return markdown
 
-def invoke_get_content(url: str, return_format: str = "clean_text") -> str:
+def invoke_web_get_content(url: str, return_format: str = "clean_text") -> str:
     """
     获取指定URL的网页内容，优先使用elinks导出干净的文本内容
 
@@ -417,7 +417,7 @@ def process_duckduckgo_markdown(markdown_text):
 
     return "\n\n".join(simplified_sections)
 
-def invoke_search(request: str, base_url: str = _DEFAULT_SEARCH_ENGINE, max_results: int = 10, return_format: str = "markdown") -> str:
+def invoke_web_search(request: str, base_url: str = _DEFAULT_SEARCH_ENGINE, max_results: int = 10, return_format: str = "markdown") -> str:
     """
     执行网络搜索
 
@@ -522,7 +522,7 @@ def invoke_search(request: str, base_url: str = _DEFAULT_SEARCH_ENGINE, max_resu
     except Exception as e:
         return f"Unexpected search error: {str(e)}"
 
-def invoke_parse_links(content: str) -> List[Dict[str, str]]:
+def invoke_web_parse_links(content: str) -> List[Dict[str, str]]:
     """
     解析HTML内容中的URL链接
 
@@ -651,7 +651,7 @@ def extract_clean_text(html_content: str) -> str:
         text = re.sub(r'\s+', ' ', text)  # 合并多个空白字符
         return text.strip()
 
-def invoke_download_file(
+def invoke_web_download_file(
     url: str,
     output_path: Optional[str] = None,
     output_dir: Optional[str] = None,

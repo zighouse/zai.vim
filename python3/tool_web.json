@@ -2,7 +2,7 @@
   {
     "type": "function",
     "function": {
-      "name": "get_content",
+      "name": "web_get_content",
       "description": "获取指定URL的网页内容",
       "parameters": {
         "type": "object",
@@ -25,7 +25,7 @@
   {
     "type": "function",
     "function": {
-      "name": "search",
+      "name": "web_search",
       "description": "执行网络搜索",
       "parameters": {
         "type": "object",
@@ -58,7 +58,7 @@
   {
     "type": "function",
     "function": {
-      "name": "download_file",
+      "name": "web_download_file",
       "description": "从URL下载文件（用于llm不便直接消化但于用户有益的内容，如图片、压缩包等）",
       "parameters": {
         "type": "object",
