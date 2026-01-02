@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 import os
+# YAML support
+try:
+    import yaml
+    HAVE_YAML = True
+except ImportError:
+    HAVE_YAML = False
+    print(f"PyYAML not available, you should `pip install PyYAML`", file=sys.stderr)
 import json
 import sys
 from pathlib import Path
@@ -59,7 +66,8 @@ def set_sandbox_home(new_path: str):
 
 def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> Optional[Path]:
     """
-    从指定路径开始向上遍历目录树，查找 zai_project.json 文件。
+    从指定路径开始向上遍历目录树，查找 zai_project.yaml 或 zai_project.json 文件。
+    优先使用 YAML 格式，如果存在则直接使用，否则回退到 JSON。
     
     Args:
         start_path: 起始路径（默认为当前工作目录）
@@ -77,9 +85,35 @@ def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> 
     
     # 向上遍历目录树
     while True:
-        config_file = current / "zai_project.json"
-        if config_file.is_file():
-            return config_file
+        # 优先检查 YAML 文件
+        yaml_file = current / "zai_project.yaml"
+        if yaml_file.is_file():
+            return yaml_file
+        
+        # 回退到 JSON 文件
+        json_file = current / "zai_project.json"
+        if json_file.is_file():
+            # 尝试自动转换为 YAML
+            try:
+                import yaml
+                # 读取 JSON
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                # 去除注释
+                cleaned = _strip_comments(content)
+                # 解析 JSON
+                config_data = json.loads(cleaned)
+                # 写入 YAML
+                with open(yaml_file, 'w', encoding='utf-8') as f:
+                    yaml.dump(config_data, f, default_flow_style=False, allow_unicode=True, indent=2)
+                print(f"自动转换 {json_file} 为 YAML 格式: {yaml_file}", file=sys.stderr)
+                return yaml_file
+            except ImportError:
+                print(f"警告: PyYAML 未安装，无法自动转换为 YAML 格式", file=sys.stderr)
+                return json_file
+            except Exception as e:
+                print(f"警告: 自动转换为 YAML 失败: {e}", file=sys.stderr)
+                return json_file
         
         # 到达根目录时停止
         parent = current.parent
@@ -92,7 +126,7 @@ def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> 
 
 def load_project_config(config_file: Optional[Union[str, Path]] = None) -> Optional[List[Dict[str, Any]]]:
     """
-    加载项目配置文件。
+    加载项目配置文件（支持 YAML 和 JSON 格式）。
     
     Args:
         config_file: 配置文件路径。如果为 None，则从当前工作目录向上查找。
@@ -119,15 +153,28 @@ def load_project_config(config_file: Optional[Union[str, Path]] = None) -> Optio
         with open(config_file, 'r', encoding='utf-8') as f:
             content = f.read()
         
-        # 去除注释
-        cleaned = _strip_comments(content)
-        
-        # 解析 JSON
-        config_data = json.loads(cleaned)
+        # 根据文件扩展名选择解析方式
+        if config_file.suffix.lower() in ('.yaml', '.yml'):
+            # 解析 YAML
+            try:
+                import yaml
+                config_data = yaml.safe_load(content)
+                print(f"已加载 YAML 项目配置：{config_file}", file=sys.stderr)
+            except ImportError:
+                print(f"错误：需要 PyYAML 库来解析 YAML 文件 {config_file}", file=sys.stderr)
+                _project_config_cache[config_file_str] = None
+                return None
+        else:
+            # 假设是 JSON 格式
+            # 去除注释
+            cleaned = _strip_comments(content)
+            # 解析 JSON
+            config_data = json.loads(cleaned)
+            print(f"已加载 JSON 项目配置：{config_file}", file=sys.stderr)
         
         # 验证配置格式：应该是一个列表
         if not isinstance(config_data, list):
-            print(f"警告：zai_project.json 应为列表，实际类型为 {type(config_data)}", file=sys.stderr)
+            print(f"警告：配置文件应为列表，实际类型为 {type(config_data)}", file=sys.stderr)
             # 尝试包装为列表
             config_data = [config_data]
         
@@ -139,7 +186,6 @@ def load_project_config(config_file: Optional[Union[str, Path]] = None) -> Optio
         # 只保留字典项
         config_data = [item for item in config_data if isinstance(item, dict)]
         
-        print(f"已加载项目配置：{config_file}", file=sys.stderr)
         if config_data:
             print(f"  找到 {len(config_data)} 个配置项", file=sys.stderr)
             # 打印第一项摘要
@@ -153,8 +199,8 @@ def load_project_config(config_file: Optional[Union[str, Path]] = None) -> Optio
         _project_config_cache[config_file_str] = config_data
         return config_data
     
-    except json.JSONDecodeError as e:
-        print(f"错误：无法解析 JSON 文件 {config_file}: {e}", file=sys.stderr)
+    except (json.JSONDecodeError, yaml.YAMLError) as e:
+        print(f"错误：无法解析配置文件 {config_file}: {e}", file=sys.stderr)
         _project_config_cache[config_file_str] = None
         return None
     except Exception as e:

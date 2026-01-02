@@ -140,8 +140,55 @@ endfunction
 
 function! zai#util#EditAssistants()
     let l:config_file = s:assistants_path()
+    
+    " 检查文件是否存在以及格式
+    if filereadable(l:config_file)
+        " 文件存在，检查是否是JSON格式
+        if l:config_file =~# '\.json$'
+            " 尝试自动转换为YAML
+            let l:yaml_file = substitute(l:config_file, '\.json$', '.yaml', '')
+            
+            " 调用Python函数进行转换
+            let l:python_lines = [
+                \ 'import sys',
+                \ 'sys.path.insert(0, \"' . s:plugin_root . s:path_sep . 'python3\")',
+                \ 'from config import convert_assistants_json_to_yaml',
+                \ 'result = convert_assistants_json_to_yaml()',
+                \ 'print(\"SUCCESS\" if result else \"FAILED\")'
+                \]
+            let l:python_code = join(l:python_lines, "\n")
+            
+            echohl MoreMsg
+            echom "检测到JSON配置文件，正在转换为YAML格式..."
+            echohl None
+            
+            let l:result = trim(system('python3 -c "' . l:python_code . '"'))
+            echohl MoreMsg
+            echom "结果: " . l:result
+            echohl None
+            
+            if l:result =~# 'SUCCESS$' && filereadable(l:yaml_file)
+                " 转换成功，打开YAML文件
+                let l:config_file = l:yaml_file
+                echohl MoreMsg
+                echom "已自动转换到YAML格式: " . l:config_file
+                echohl None
+            else
+                " 转换失败，继续使用JSON
+                echohl WarningMsg
+                echom "YAML转换失败，继续使用JSON格式"
+                echohl None
+            endif
+        endif
+    endif
+    
+    " 打开配置文件
     execute 'new ' . l:config_file
-    if !filereadable(l:config_file)
+    
+    " 设置文件类型
+    if l:config_file =~# '\.yaml$' || l:config_file =~# '\.yml$'
+        setfiletype yaml
+    elseif l:config_file =~# '\.json$'
         setfiletype json
     endif
 endfunction
