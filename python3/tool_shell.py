@@ -298,6 +298,16 @@ CMD ["tail", "-f", "/dev/null"]
                 "mode": "rw"
             }
             print(f"挂载项目卷: {project_volume} -> /opt/project", file=sys.stderr)
+
+        # 绑定时区
+        mounts["/etc/localtime"] = {
+                "bind": "/etc/localtime",
+                "mode": "ro"
+                }
+        mounts["/etc/timezone"] = {
+                "bind": "/etc/timezone",
+                "mode": "ro"
+                }
         
         # 检查是否有额外的挂载配置（格式：源路径:目标路径[:模式]）
         extra_mounts = os.environ.get('ZAI_EXTRA_MOUNTS')
