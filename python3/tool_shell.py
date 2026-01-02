@@ -4,19 +4,18 @@ Shell工具集 - 使用taskbox Docker容器安全地执行shell和Python命令
 完全基于Docker Python SDK，避免subprocess注入风险
 基于taskbox镜像：ubuntu/debian + Python 3.12 + C/C++工具链 + ccache
 支持持久化容器，跨调用保持状态（安装的依赖、文件等）
+支持项目级配置：通过zai_project.json文件配置Docker容器参数
 """
 
 import json
 import os
 import sys
-import tempfile
 import time
 import base64
-import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-from toolcommon import sandbox_home
+from toolcommon import sandbox_home, get_project_config
 
 try:
     import docker
@@ -27,141 +26,106 @@ except ImportError:
 
 
 def get_host_uid_gid():
-    """获取主机用户的UID和GID，如果是以root身份运行，则尝试通过SUDO_UID获取"""
+    """获取主机用户的UID和GID"""
     import os
     try:
         uid = os.getuid()
         gid = os.getgid()
-        # 如果是以root身份运行（例如通过sudo），尝试通过环境变量获取原始用户
-        if uid == 0:
-            sudo_uid = os.environ.get('SUDO_UID')
-            sudo_gid = os.environ.get('SUDO_GID')
-            if sudo_uid and sudo_gid:
-                uid = int(sudo_uid)
-                gid = int(sudo_gid)
-            else:
-                # 默认使用常见的非root用户ID
-                uid = 1000
-                gid = 1000
         return uid, gid
     except (AttributeError, ValueError):
         # Windows系统或其他异常情况，使用默认值
         return 1000, 1000
 
 
-def get_host_timezone():
-    """获取主机系统的时区，返回时区标识符（如 Asia/Shanghai、America/New_York）"""
-    try:
-        # 1. 首先检查环境变量 TZ
-        tz_env = os.environ.get('TZ')
-        if tz_env:
-            # 环境变量 TZ 可能包含时区名称，如 Asia/Shanghai、:Asia/Shanghai、CST-8 等
-            # 如果以冒号开头，去除冒号
-            if tz_env.startswith(':'):
-                tz_env = tz_env[1:]
-            # 检查是否为有效的时区格式（包含 /）
-            if '/' in tz_env:
-                return tz_env
-        
-        # 2. 尝试读取 /etc/timezone（Linux系统）
-        if os.path.exists('/etc/timezone'):
-            try:
-                with open('/etc/timezone', 'r', encoding='utf-8') as f:
-                    tz_content = f.read().strip()
-                if tz_content and '/' in tz_content:
-                    return tz_content
-            except (IOError, OSError, UnicodeDecodeError):
-                pass
-        
-        # 3. 尝试读取 /etc/localtime 链接（Linux系统）
-        if os.path.islink('/etc/localtime'):
-            try:
-                link_target = os.readlink('/etc/localtime')
-                # 通常指向 /usr/share/zoneinfo/Region/City
-                if '/zoneinfo/' in link_target:
-                    tz_name = link_target.split('/zoneinfo/')[-1]
-                    if '/' in tz_name:
-                        return tz_name
-            except (OSError, IOError):
-                pass
-        
-        # 4. 尝试使用 Python 的 datetime 获取时区信息
-        try:
-            import datetime
-            now = datetime.datetime.now(datetime.timezone.utc).astimezone()
-            tz_name = now.tzname()
-            # tzname() 返回时区缩写（如 CST、EST），尝试映射
-            # 这不是完美的方法，但可以处理常见情况
-            tz_abbr = tz_name if tz_name else ''
-            
-            # 简单映射：基于 UTC 偏移和常见缩写
-            import time
-            utc_offset = -time.timezone // 3600  # 转换为小时
-            
-            if utc_offset == 8:
-                return 'Asia/Shanghai'
-            elif utc_offset == 9:
-                return 'Asia/Tokyo'
-            elif utc_offset == 1:
-                return 'Europe/Berlin'
-            elif utc_offset == 0:
-                return 'UTC'
-            elif utc_offset == -5:
-                return 'America/New_York'
-            elif utc_offset == -8:
-                return 'America/Los_Angeles'
-        except (ImportError, AttributeError, ValueError):
-            pass
-        
-        # 5. 最终回退：使用 UTC
-        return 'UTC'
-        
-    except Exception:
-        # 任何异常情况下使用 UTC
-        return 'UTC'
-
-
-# 全局配置
+# 全局默认配置
 DEFAULT_IMAGE = "taskbox:latest"
 DEFAULT_WORKDIR = "/sandbox"
 DEFAULT_TIMEOUT = 60
-CONTAINER_NAME = "zai-tool-shell-taskbox"
+DEFAULT_CONTAINER_NAME = "zai-tool-shell-taskbox"
 
 
 class TaskboxExecutor:
-    """使用taskbox Docker容器执行命令，完全基于Docker SDK，支持持久化容器"""
+    """
+    使用taskbox Docker容器执行命令，完全基于Docker SDK，支持持久化容器
+    支持从zai_project.json加载项目级配置
+    """
     
     def __init__(self, image: str = DEFAULT_IMAGE, persistent: bool = True):
+        """
+        初始化TaskboxExecutor
+        
+        Args:
+            image: 容器镜像名称
+            persistent: 是否使用持久化容器
+        """
         if not DOCKER_AVAILABLE:
             raise RuntimeError(DOCKER_ERROR)
         
-        self.image = image
         self.client = docker.from_env()
         self.persistent = persistent
         self.container = None  # 持久化容器实例
         
-        # 确定容器名称：支持项目隔离
-        project_id = os.environ.get('ZAI_PROJECT_ID')
-        if project_id:
-            self.container_name = f"zai-tool-shell-{project_id}"
-        else:
-            self.container_name = CONTAINER_NAME
-        
-        # 确定用户模式：root、host（使用主机UID/GID）或 sandbox（使用sandbox用户）
-        self.user_mode = os.environ.get('ZAI_CONTAINER_USER', 'sandbox').lower()
-        if self.user_mode not in ('root', 'host', 'sandbox'):
-            self.user_mode = 'sandbox'
-        
-        # 获取主机UID/GID（如果需要）
+        # 获取主机UID/GID
         self.host_uid, self.host_gid = get_host_uid_gid()
+        
+        # 加载项目配置
+        self.project_config = self._load_project_config()
+        
+        # 应用项目配置中的shell_container设置
+        self.shell_container_config = self._get_shell_container_config()
+        
+        # 确定最终配置
+        self.image = self._get_config_value('image', image)
+        self.container_name = self._get_config_value('name', DEFAULT_CONTAINER_NAME)
+        self.working_dir = self._get_config_value('working_dir', DEFAULT_WORKDIR)
+        
+        # 用户配置：默认为主机用户UID:GID
+        self.user = self._get_user_config()
         
         # 验证Docker连接
         try:
             self.client.ping()
         except Exception as e:
-            raise RuntimeError(f"Docker connection failed: {e}\nPlease ensure Docker service is running and current user has permission to access Docker")
+            raise RuntimeError(
+                f"Docker connection failed: {e}\n"
+                "Please ensure Docker service is running and current user has permission to access Docker"
+            )
+    
+    def _load_project_config(self) -> Optional[Dict[str, Any]]:
+        """加载项目配置"""
+        return get_project_config()
+    
+    def _get_shell_container_config(self) -> Dict[str, Any]:
+        """获取shell_container配置"""
+        if not self.project_config:
+            return {}
+        
+        # 从项目配置中提取shell_container
+        shell_container = self.project_config.get('shell_container')
+        if isinstance(shell_container, dict):
+            return shell_container
+        return {}
+    
+    def _get_config_value(self, key: str, default: Any) -> Any:
+        """从shell_container配置中获取值，如果不存在则使用默认值"""
+        return self.shell_container_config.get(key, default)
+    
+    def _get_user_config(self) -> str:
+        """获取用户配置"""
+        user_config = self.shell_container_config.get('user')
+        if user_config is None:
+            # 默认使用主机用户UID:GID
+            return f"{self.host_uid}:{self.host_gid}"
+        
+        if isinstance(user_config, str):
+            return user_config
+        elif isinstance(user_config, int):
+            return str(user_config)
+        else:
+            return f"{self.host_uid}:{self.host_gid}"
     
     def _image_exists(self) -> bool:
+        """检查镜像是否存在"""
         try:
             self.client.images.get(self.image)
             return True
@@ -170,7 +134,7 @@ class TaskboxExecutor:
         except Exception as e:
             print(f"Error checking image: {e}", file=sys.stderr)
             return False
-
+    
     def _build_image_if_needed(self):
         """如果镜像不存在，尝试构建默认taskbox镜像"""
         if self._image_exists():
@@ -178,13 +142,11 @@ class TaskboxExecutor:
         
         print(f"Image {self.image} doesn't exist, trying to build...", file=sys.stderr)
         
-        # 获取主机UID/GID用于构建参数
-        host_uid, host_gid = get_host_uid_gid()
+        # 从配置获取Dockerfile路径
+        dockerfile_path = self.shell_container_config.get('Dockerfile', 'Dockerfile.taskbox')
         
-        # 首先尝试读取外部的 Dockerfile.taskbox 文件
-        dockerfile_path = os.path.join(os.path.dirname(__file__), "Dockerfile.taskbox")
+        # 首先尝试读取指定的Dockerfile文件
         dockerfile_content = None
-        
         if os.path.exists(dockerfile_path):
             try:
                 with open(dockerfile_path, 'r', encoding='utf-8') as f:
@@ -193,18 +155,18 @@ class TaskboxExecutor:
             except Exception as e:
                 print(f"Failed to read external Dockerfile: {e}, using built-in default configuration", file=sys.stderr)
         
-        # 如果没有外部文件，使用内置的默认 Dockerfile（已更新支持用户映射）
+        # 如果没有外部文件，使用内置的默认Dockerfile
         if dockerfile_content is None:
             dockerfile_content = f"""
 # 使用 2025 年主流的 Python 3.12 镜像
 FROM python:3.12-slim
 
 # 设置环境变量，防止交互式弹窗阻塞构建
-ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ={get_host_timezone()}
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=UTC
 
 # 允许在构建时传递主机用户ID和组ID
-ARG HOST_UID={host_uid}
-ARG HOST_GID={host_gid}
+ARG HOST_UID={self.host_uid}
+ARG HOST_GID={self.host_gid}
 
 # --- 步骤 1: 替换阿里 APT 源 ---
 # 3.12-slim 目前基于 Debian 12 (bookworm)
@@ -266,7 +228,11 @@ CMD ["tail", "-f", "/dev/null"]
                 image, logs = self.client.images.build(
                     path=tmpdir,
                     tag=self.image,
-                    buildargs={'HOST_UID': str(host_uid), 'HOST_GID': str(host_gid), 'TZ': get_host_timezone()},
+                    buildargs={
+                        'HOST_UID': str(self.host_uid),
+                        'HOST_GID': str(self.host_gid),
+                        'TZ': 'UTC'
+                    },
                     rm=True,
                     forcerm=True
                 )
@@ -275,54 +241,61 @@ CMD ["tail", "-f", "/dev/null"]
                         print(log['stream'], end='', file=sys.stderr)
                 print(f"\nImage {self.image} built successfully", file=sys.stderr)
             except Exception as e:
-                raise RuntimeError(f"Failed to build image: {e}\n\nYou can build manually:\n1. Save the Dockerfile content above\n2. Run: docker build -t taskbox:latest -f Dockerfile .")
+                raise RuntimeError(
+                    f"Failed to build image: {e}\n\n"
+                    "You can build manually:\n"
+                    "1. Save the Dockerfile content above\n"
+                    "2. Run: docker build -t taskbox:latest -f Dockerfile ."
+                )
     
     def _prepare_mounts(self) -> Dict[str, Dict[str, str]]:
-        """准备挂载配置：将主机沙盒目录挂载到容器/sandbox，并支持项目卷"""
+        """
+        准备挂载配置
+        
+        默认挂载：
+        1. sandbox_home() -> /sandbox
+        2. /etc/localtime -> /etc/localtime:ro
+        3. /etc/timezone -> /etc/timezone:ro
+        
+        如果项目配置中有volumes字段，则合并使用：
+        - 项目配置中的挂载会添加到默认挂载之后
+        - 如果项目配置中的源路径与默认挂载相同，则项目配置会覆盖默认挂载
+        """
         mounts = {}
         
+        # 默认挂载：沙盒目录
         sandbox_root = sandbox_home()
         sandbox_root.mkdir(parents=True, exist_ok=True)
-        
         mounts[str(sandbox_root)] = {
             "bind": "/sandbox",
             "mode": "rw"
         }
         
-        # 检查是否有项目卷配置
-        project_volume = os.environ.get('ZAI_PROJECT_VOLUME')
-        if project_volume:
-            # 挂载Docker卷到容器的/opt/project
-            mounts[project_volume] = {
-                "bind": "/opt/project",
-                "mode": "rw"
-            }
-            print(f"挂载项目卷: {project_volume} -> /opt/project", file=sys.stderr)
-
-        # 绑定时区
+        # 默认挂载：主机时区
         mounts["/etc/localtime"] = {
-                "bind": "/etc/localtime",
-                "mode": "ro"
-                }
+            "bind": "/etc/localtime",
+            "mode": "ro"
+        }
         mounts["/etc/timezone"] = {
-                "bind": "/etc/timezone",
-                "mode": "ro"
-                }
+            "bind": "/etc/timezone",
+            "mode": "ro"
+        }
         
-        # 检查是否有额外的挂载配置（格式：源路径:目标路径[:模式]）
-        extra_mounts = os.environ.get('ZAI_EXTRA_MOUNTS')
-        if extra_mounts:
-            for mount_spec in extra_mounts.split(','):
-                parts = mount_spec.split(':')
-                if len(parts) >= 2:
-                    source = parts[0].strip()
-                    target = parts[1].strip()
-                    mode = parts[2].strip() if len(parts) > 2 else 'rw'
-                    mounts[source] = {
-                        "bind": target,
-                        "mode": mode
-                    }
-                    print(f"挂载额外卷: {source} -> {target} ({mode})", file=sys.stderr)
+        # 从项目配置中获取额外的挂载
+        volumes = self.shell_container_config.get('volumes', [])
+        if isinstance(volumes, list):
+            for vol_spec in volumes:
+                if isinstance(vol_spec, str):
+                    parts = vol_spec.split(':')
+                    if len(parts) >= 2:
+                        source = parts[0].strip()
+                        target = parts[1].strip()
+                        mode = parts[2].strip() if len(parts) > 2 else 'rw'
+                        mounts[source] = {
+                            "bind": target,
+                            "mode": mode
+                        }
+                        print(f"项目配置挂载: {source} -> {target} ({mode})", file=sys.stderr)
         
         return mounts
     
@@ -330,12 +303,10 @@ CMD ["tail", "-f", "/dev/null"]
         """准备Python命令列表，安全地执行Python代码"""
         # 如果代码是单行且简单，直接使用python3 -c
         if "\n" not in code and len(code) < 1000 and '"' not in code and "'" not in code:
-            # 简单代码，直接传递
             return ["python3", "-c", code]
         
-        # 多行或复杂代码使用base64编码，避免引号转义问题
+        # 多行或复杂代码使用base64编码
         encoded = base64.b64encode(code.encode()).decode()
-        # 注意：这里我们使用单引号包裹base64字符串，因为双引号在JSON中可能需要转义
         return ["python3", "-c", f"import base64; exec(base64.b64decode('{encoded}').decode())"]
     
     def _prepare_shell_command(self, command: str, libraries: List[str] = None) -> List[str]:
@@ -343,8 +314,6 @@ CMD ["tail", "-f", "/dev/null"]
         parts = []
         
         if libraries:
-            # 安装库的命令
-            # 使用 || echo "Installation may have failed, continuing..." 来确保即使安装失败也继续
             install_cmd = f"apt-get update && apt-get install -y {' '.join(libraries)} || echo 'Package installation may have failed, continuing execution...'"
             parts.append(install_cmd)
         
@@ -352,18 +321,140 @@ CMD ["tail", "-f", "/dev/null"]
             parts.append(command)
         
         if len(parts) == 0:
-            # 没有命令，返回一个无害的命令
             return ["echo", "No command provided"]
         
         full_command = " && ".join(parts)
         return ["sh", "-c", full_command]
     
+    def _merge_configs(self, base_config: Dict[str, Any], project_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        合并基础配置和项目配置
+        
+        处理规则：
+        1. 简单值（字符串、数字、布尔值）：项目配置覆盖基础配置
+        2. 列表：合并两个列表（基础配置在前，项目配置在后）
+        3. 字典：合并字典，项目配置的值覆盖基础配置的值
+        4. 特殊字段处理：
+           - volumes: 已在_prepare_mounts中特殊处理
+           - command: 直接替换，不合并（因为是要执行的命令）
+           - entrypoint: 直接替换，不合并（Docker容器的入口点）
+        """
+        result = base_config.copy()
+        
+        # 需要直接替换而不是合并的字段
+        replace_fields = {'command', 'entrypoint'}
+        
+        for key, project_value in project_config.items():
+            # 跳过注释字段
+            if key == '//':
+                continue
+                
+            # 如果基础配置中没有这个键，直接使用项目配置的值
+            if key not in result:
+                result[key] = project_value
+                continue
+            
+            base_value = result[key]
+            
+            # 检查是否需要直接替换
+            if key in replace_fields:
+                # 直接替换，不合并
+                result[key] = project_value
+                print(f"项目配置替换字段 {key}: {base_value} -> {project_value}", file=sys.stderr)
+                continue
+            
+            # 根据类型进行合并
+            if isinstance(project_value, list) and isinstance(base_value, list):
+                # 列表合并：基础配置在前，项目配置在后
+                # 对于某些字段如volumes，已经在_prepare_mounts中特殊处理
+                if key == 'volumes':
+                    # volumes已经在_prepare_mounts中处理，跳过
+                    continue
+                # 合并列表
+                merged_list = base_value + project_value
+                result[key] = merged_list
+                print(f"合并列表字段 {key}: 基础配置{len(base_value)}项 + 项目配置{len(project_value)}项 = 总计{len(merged_list)}项", file=sys.stderr)
+                
+            elif isinstance(project_value, dict) and isinstance(base_value, dict):
+                # 字典合并：项目配置的值覆盖基础配置的值
+                merged_dict = base_value.copy()
+                merged_dict.update(project_value)
+                result[key] = merged_dict
+                print(f"合并字典字段 {key}: 基础配置{len(base_value)}项 + 项目配置{len(project_value)}项 = 总计{len(merged_dict)}项", file=sys.stderr)
+                
+            else:
+                # 简单值：项目配置覆盖基础配置
+                if base_value != project_value:
+                    result[key] = project_value
+                    print(f"项目配置覆盖字段 {key}: {base_value} -> {project_value}", file=sys.stderr)
+        
+        return result
+    
+    def _create_container_config(self, cmd_list: List[str] = None, is_persistent: bool = True) -> Dict[str, Any]:
+        """
+        创建容器配置
+        
+        基础配置 + 项目配置中的shell_container设置
+        项目配置中的设置会覆盖基础配置
+        
+        注意：项目配置中的任何有效Docker SDK参数都会被传递，
+        让Docker SDK处理参数验证。
+        """
+        # 基础配置
+        base_config = {
+            "image": self.image,
+            "name": self.container_name,
+            "working_dir": self.working_dir,
+            "volumes": self._prepare_mounts(),
+            "mem_limit": "4g",
+            "cpu_period": 100000,
+            "cpu_quota": 50000,
+            "detach": True,
+            "auto_remove": False
+        }
+        
+        # 确定命令
+        # 如果有显式命令列表，使用它
+        if cmd_list is not None:
+            base_config["command"] = cmd_list
+        # 否则如果是持久化容器，使用项目配置中的命令或默认tail命令
+        elif is_persistent:
+            # 优先使用项目配置中的command
+            project_command = self.shell_container_config.get('command')
+            if project_command:
+                base_config["command"] = project_command
+                print(f"使用项目配置的持久化容器命令: {project_command}", file=sys.stderr)
+            else:
+                base_config["command"] = ["tail", "-f", "/dev/null"]
+        
+        # 设置用户
+        base_config["user"] = self.user
+        
+        # 合并项目配置中的其他Docker SDK参数
+        # 排除已经在基础配置中显式处理的字段和非Docker SDK字段
+        exclude_fields = {'Dockerfile', '//', 'image', 'name', 'working_dir', 'user', 'command', 'volumes'}
+        
+        # 创建要合并的项目配置子集
+        project_config_to_merge = {}
+        for key, value in self.shell_container_config.items():
+            if key not in exclude_fields:
+                project_config_to_merge[key] = value
+        
+        # 合并配置
+        if project_config_to_merge:
+            print(f"合并项目配置字段: {list(project_config_to_merge.keys())}", file=sys.stderr)
+            container_config = self._merge_configs(base_config, project_config_to_merge)
+        else:
+            container_config = base_config
+        
+        return container_config
+    
     def ensure_container_running(self) -> bool:
         """
-        确保持久化容器正在运行。
-        如果容器不存在，则创建并启动一个容器（使用 tail -f /dev/null 保持运行）。
-        如果容器存在但已停止，则启动它。
-        返回容器是否已成功运行。
+        确保持久化容器正在运行
+        
+        如果容器不存在，则创建并启动一个容器
+        如果容器存在但已停止，则启动它
         """
         if not self.persistent:
             return False
@@ -384,40 +475,21 @@ CMD ["tail", "-f", "/dev/null"]
             if not self._image_exists():
                 self._build_image_if_needed()
             
-            mounts = self._prepare_mounts()
+            # 创建持久化容器配置
+            container_config = self._create_container_config(is_persistent=True)
             
-            container_config = {
-                "image": self.image,
-                "command": ["tail", "-f", "/dev/null"],  # 保持容器运行的空命令
-                "name": self.container_name,
-                "working_dir": DEFAULT_WORKDIR,
-                "volumes": mounts,
-                "mem_limit": "4g",
-                "cpu_period": 100000,
-                "cpu_quota": 50000,  # 限制CPU为0.5核
-                "detach": True,
-                "auto_remove": False
-            }
-            
-            # 根据用户模式设置容器用户
-            if self.user_mode == 'root':
-                print("容器将以root身份运行", file=sys.stderr)
-                container_config['user'] = 'root'
-            elif self.user_mode == 'host':
-                container_config['user'] = f"{self.host_uid}:{self.host_gid}"
-                print(f"容器将以主机用户身份运行: {self.host_uid}:{self.host_gid}", file=sys.stderr)
-            else:  # sandbox
-                container_config['user'] = 'sandbox'
-                print("容器将以sandbox用户身份运行", file=sys.stderr)
-            
-            # 创建并启动容器
-            self.container = self.client.containers.create(**container_config)
-            self.container.start()
-            
-            time.sleep(2)
-            print(f"Persistent container {self.container_name} has been started and is running", file=sys.stderr)
-            return True
-            
+            try:
+                # 创建并启动容器
+                self.container = self.client.containers.create(**container_config)
+                self.container.start()
+                
+                time.sleep(2)
+                print(f"Persistent container {self.container_name} has been started and is running", file=sys.stderr)
+                return True
+            except Exception as e:
+                print(f"Failed to create container: {e}", file=sys.stderr)
+                return False
+                
         except Exception as e:
             print(f"Error ensuring container is running: {e}", file=sys.stderr)
             return False
@@ -440,40 +512,22 @@ CMD ["tail", "-f", "/dev/null"]
     
     def _exec_in_container(self, cmd_list: List[str], timeout: int, working_dir: str = None) -> Dict[str, Any]:
         """
-        在持久化容器中执行命令。
-        假设容器已经运行。
-        使用 container.exec_run() 简化操作。
-        注意：docker Python SDK 的 exec_run() 不支持 timeout 参数，
-        我们在命令层面使用 timeout 命令实现超时控制。
+        在持久化容器中执行命令
         """
         if not self.container:
             raise RuntimeError("Container not initialized")
         
         try:
-            # 如果 timeout > 0，使用 timeout 命令包装
-            # timeout 命令在超时时返回退出码 124
+            # 如果timeout > 0，使用timeout命令包装
             if timeout > 0:
-                # 简单地在原命令列表前添加 timeout 命令
-                # 格式: timeout [秒数] 原命令...
                 final_cmd_list = ["timeout", str(timeout)] + cmd_list
             else:
                 final_cmd_list = cmd_list
             
-            # 使用 exec_run 执行命令
-            # exec_run 返回 (exit_code, output)，其中 output 是合并的 stdout 和 stderr
-            # 注意：docker Python SDK 的 exec_run() 不支持 timeout 参数
-            # 根据用户模式确定执行用户
-            if self.user_mode == 'root':
-                exec_user = 'root'
-            elif self.user_mode == 'host':
-                exec_user = f"{self.host_uid}:{self.host_gid}"
-            else:  # sandbox
-                exec_user = 'sandbox'
-            
             result = self.container.exec_run(
                 cmd=final_cmd_list,
-                workdir=working_dir or DEFAULT_WORKDIR,
-                user=exec_user,
+                workdir=working_dir or self.working_dir,
+                user=self.user,
                 stdout=True,
                 stderr=True,
                 demux=False  # 不分离 stdout/stderr，返回合并的输出
@@ -482,8 +536,7 @@ CMD ["tail", "-f", "/dev/null"]
             exit_code = result.exit_code
             output = result.output.decode('utf-8', errors='replace') if isinstance(result.output, bytes) else result.output
             
-            # 检查是否因 timeout 命令而退出（退出码 124）
-            # timeout 命令在超时时返回退出码 124
+            # 检查是否因timeout命令而退出（退出码124）
             if timeout > 0 and exit_code == 124:
                 return {
                     "exit_code": exit_code,
@@ -524,14 +577,14 @@ CMD ["tail", "-f", "/dev/null"]
         self,
         command: str,
         timeout: int = DEFAULT_TIMEOUT,
-        working_dir: str = DEFAULT_WORKDIR,
+        working_dir: str = None,
         enable_network: bool = True,
         language: str = "shell",
         libraries: List[str] = None,
         persistent: bool = None
     ) -> Dict[str, Any]:
         """
-        在taskbox容器中执行命令。
+        在taskbox容器中执行命令
         
         Args:
             command: 要执行的命令
@@ -545,8 +598,6 @@ CMD ["tail", "-f", "/dev/null"]
         Returns:
             执行结果字典
         """
-        start_time = time.time()
-        
         use_persistent = self.persistent if persistent is None else persistent
         
         if not enable_network and use_persistent:
@@ -557,6 +608,7 @@ CMD ["tail", "-f", "/dev/null"]
             if not self._image_exists():
                 self._build_image_if_needed()
             
+            # 准备命令
             if language == "python":
                 cmd_list = self._prepare_python_command(command)
                 if libraries:
@@ -575,14 +627,7 @@ CMD ["tail", "-f", "/dev/null"]
                     print("Warning: Unable to start persistent container, falling back to temporary container", file=sys.stderr)
                     return self._execute_in_temp_container(cmd_list, timeout, working_dir, enable_network)
                 
-                result = self._exec_in_container(cmd_list, timeout, working_dir)
-                
-                # 注意：持久化容器默认启用网络，但我们可以在创建容器时控制网络。
-                # 目前我们假设容器已经创建并具有网络设置。
-                # 如果需要动态启用/禁用网络，可能需要更复杂的逻辑。
-                # 为了简化，我们假设容器创建时启用了网络。
-                
-                return result
+                return self._exec_in_container(cmd_list, timeout, working_dir)
             else:
                 return self._execute_in_temp_container(cmd_list, timeout, working_dir, enable_network)
                 
@@ -593,34 +638,23 @@ CMD ["tail", "-f", "/dev/null"]
                 "stderr": f"Execution failed: {e}",
                 "success": False
             }
-        finally:
-            end_time = time.time()
     
     def _execute_in_temp_container(self, cmd_list: List[str], timeout: int, working_dir: str, enable_network: bool) -> Dict[str, Any]:
-        mounts = self._prepare_mounts()
+        """在临时容器中执行命令"""
+        # 创建临时容器配置
+        container_config = self._create_container_config(cmd_list=cmd_list, is_persistent=False)
         
-        container_config = {
-            "image": self.image,
-            "command": cmd_list,
-            "working_dir": working_dir,
-            "volumes": mounts,
-            "mem_limit": "4g",
-            "cpu_period": 100000,
-            "cpu_quota": 50000,
-            "detach": True,
-            "auto_remove": False
-        }
-        
-        # 根据用户模式设置容器用户（仅对临时容器）
-        if self.user_mode == 'root':
-            container_config['user'] = 'root'
-        elif self.user_mode == 'host':
-            container_config['user'] = f"{self.host_uid}:{self.host_gid}"
-        else:  # sandbox
-            container_config['user'] = 'sandbox'
-        
+        # 网络设置：优先考虑enable_network参数
         if not enable_network:
+            # 禁用网络，覆盖项目配置中的任何网络设置
             container_config["network_mode"] = "none"
+            print("临时容器网络已禁用（network_mode=none）", file=sys.stderr)
+        else:
+            # 启用网络，使用项目配置中的network_mode（如果指定）
+            network_mode = self.shell_container_config.get('network_mode')
+            if network_mode:
+                container_config["network_mode"] = network_mode
+                print(f"使用项目配置的网络模式: {network_mode}", file=sys.stderr)
         
         container = None
         try:
@@ -672,6 +706,7 @@ CMD ["tail", "-f", "/dev/null"]
                     pass
     
     def get_sandbox_info(self) -> Dict[str, Any]:
+        """获取沙盒环境信息"""
         container_status = "unknown"
         if self.persistent:
             try:
@@ -679,10 +714,6 @@ CMD ["tail", "-f", "/dev/null"]
                 container_status = container.status
             except:
                 container_status = "not_exists"
-        
-        # 获取项目卷配置
-        project_volume = os.environ.get('ZAI_PROJECT_VOLUME')
-        extra_mounts = os.environ.get('ZAI_EXTRA_MOUNTS')
         
         info = {
             "docker_available": DOCKER_AVAILABLE,
@@ -693,7 +724,7 @@ CMD ["tail", "-f", "/dev/null"]
                 "enabled": self.persistent,
                 "container_name": self.container_name,
                 "status": container_status,
-                "user_mode": self.user_mode,
+                "user": self.user,
                 "host_uid": self.host_uid,
                 "host_gid": self.host_gid
             },
@@ -707,15 +738,11 @@ CMD ["tail", "-f", "/dev/null"]
                 "command_injection_protection": True
             },
             "sandbox_home": str(sandbox_home()),
-            "default_working_dir": DEFAULT_WORKDIR,
+            "working_dir": self.working_dir,
             "default_timeout": DEFAULT_TIMEOUT,
             "docker_sdk_version": docker.__version__ if DOCKER_AVAILABLE else "Not installed",
-            "configuration": {
-                "project_id": os.environ.get('ZAI_PROJECT_ID'),
-                "project_volume": project_volume,
-                "extra_mounts": extra_mounts,
-                "container_user": self.user_mode
-            }
+            "project_config_loaded": bool(self.project_config),
+            "shell_container_config": self.shell_container_config
         }
         
         return info
@@ -733,7 +760,7 @@ def _get_executor(persistent: bool = True):
 def invoke_execute_shell(
     command: str,
     timeout: int = DEFAULT_TIMEOUT,
-    working_dir: str = DEFAULT_WORKDIR,
+    working_dir: str = None,
     enable_network: bool = True,
     language: str = "shell",
     libraries: List[str] = None,
@@ -862,7 +889,7 @@ def invoke_shell_cleanup():
         executor.stop_container()
         return {
             "success": True,
-            "message": f"Persistent container {CONTAINER_NAME} has been cleaned up"
+            "message": f"Persistent container {DEFAULT_CONTAINER_NAME} has been cleaned up"
         }
     except Exception as e:
         return {
@@ -874,51 +901,14 @@ def invoke_shell_cleanup():
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         if sys.argv[1] == "test":
-            print("Testing taskbox shell execution (Docker SDK only)...")
+            print("Testing taskbox shell execution with project configuration...")
             info = invoke_shell_sandbox_info()
             print(json.dumps(info, indent=2))
             
             if info.get("docker_available", False):
-                print("\nTesting shell command execution with persistent container...")
-                result = invoke_execute_shell(
-                    command="echo 'Hello from taskbox' && pwd && ls -la",
-                    working_dir="/sandbox",
-                    persistent=True
-                )
-                print(json.dumps(result, indent=2))
-                
-                print("\nTesting Python execution...")
-                result = invoke_execute_shell(
-                    command="print('Hello from Python')\nimport sys\nprint(f'Python {sys.version}')",
-                    language="python",
-                    persistent=True
-                )
-                print(json.dumps(result, indent=2))
-                
-                print("\nTesting with libraries (shell)...")
-                result = invoke_execute_shell(
-                    command="curl --version",
-                    language="shell",
-                    libraries=["curl"],
-                    persistent=True
-                )
-                print(json.dumps(result, indent=2))
-                
-                print("\nTesting with libraries (Python)...")
-                result = invoke_execute_shell(
-                    command="import numpy; print(f'numpy version: {numpy.__version__}')",
-                    language="python",
-                    libraries=["numpy"],
-                    persistent=True
-                )
-                print(json.dumps(result, indent=2))
-                
-                print("\nTesting cleanup...")
-                result = invoke_shell_cleanup()
-                print(json.dumps(result, indent=2))
-            else:
-                print("\nDocker Python SDK not available. Please install:")
-                print("    pip install docker")
+                print("\nProject configuration loaded:", info.get("project_config_loaded"))
+                if info.get("shell_container_config"):
+                    print("Shell container config:", info.get("shell_container_config"))
         elif sys.argv[1] == "cleanup":
             result = invoke_shell_cleanup()
             print(json.dumps(result, indent=2))
@@ -926,7 +916,7 @@ if __name__ == "__main__":
             result = invoke_shell_sandbox_info()
             print(json.dumps(result, indent=2))
     else:
-        print("Taskbox shell tool module loaded (Docker SDK only).")
+        print("Taskbox shell tool module loaded (with project configuration support).")
         print("Use 'python tool_shell.py test' to test the environment.")
         print("Use 'python tool_shell.py cleanup' to clean up persistent container.")
         print("Use 'python tool_shell.py info' to get sandbox info.")
