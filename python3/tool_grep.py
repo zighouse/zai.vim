@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
 from toolcommon import sanitize_path, sandbox_home
+MAX_LEN = 4096
 
 
 def invoke_grep(
@@ -51,7 +52,7 @@ def invoke_grep(
                 show_line_numbers, context_lines
             )
         
-        cmd_parts = ["grep"]
+        cmd_parts = ["grep", "-I"]
         
         if not case_sensitive:
             cmd_parts.append("-i")
@@ -102,7 +103,10 @@ def invoke_grep(
         output_lines = result.stdout.strip().split('\n')
         error_lines = result.stderr.strip().split('\n')
         
-        output_lines = [line for line in output_lines if line.strip()]
+        output_lines = [
+            (line[:MAX_LEN] + "..." if len(line) > MAX_LEN else line) 
+            for line in output_lines if line.strip()
+        ]
         
         if max_results > 0 and len(output_lines) > max_results:
             output_lines = output_lines[:max_results]
@@ -238,6 +242,8 @@ def _grep_python(
     
     for i, (file_path, line_num, line_text) in enumerate(results, 1):
         rel_path = file_path.relative_to(sandbox_root)
+        if len(line_text) > MAX_LEN:
+            line_text = line_text[:MAX_LEN] + "..."
         if show_line_numbers:
             result_parts.append(f"{i:3d}: {rel_path}:{line_num}: {line_text}")
         else:
