@@ -128,6 +128,68 @@ def convert_assistants_json_to_yaml() -> bool:
     
     return convert_json_to_yaml(json_path, yaml_path)
 
+def parse_number_from_readable(readable_number: str, *,
+                               kb_base: int = 1024,
+                               max_int_decimal_places: int = 0,
+                               max_float_significant: int = 15) -> Optional[Union[int, float]]:
+    """
+    解析可读数字，支持可选单位 K/M/G/T（基数由 kb_base 决定）。
+    - 优先返回整数：如果乘积是整数或小数位不超过 max_int_decimal_places，则返回 int。
+    - 否则返回 float（保留合理精度）。
+    """
+    if isinstance(readable_number, (int,)) :
+        return readable_number
+    if isinstance(readable_number, float):
+        return readable_number
+
+    if not isinstance(readable_number, str):
+        return None
+
+    s = readable_number.strip().upper().replace(',', '')  # 去掉千分符
+    if not s:
+        return None
+
+    # 提取末尾单位（允许空格）
+    unit = ''
+    if s[-1] in 'K M G T'.split():
+        unit = s[-1]
+        s = s[:-1].strip()
+
+    multipliers = {
+        '': 1,
+        'K': kb_base,
+        'M': kb_base ** 2,
+        'G': kb_base ** 3,
+        'T': kb_base ** 4,
+    }
+    multiplier = multipliers.get(unit, None)
+    if multiplier is None:
+        return None
+
+    # 用 Decimal 保持精度
+    from decimal import Decimal, InvalidOperation, getcontext
+    getcontext().prec = max(28, max_float_significant)  # 提高精度以防止中间误差
+    try:
+        dec = Decimal(s)
+    except InvalidOperation:
+        return None
+
+    product = dec * Decimal(multiplier)
+
+    # 如果小数位数足够小（或为整数），返回 int；否则返回 float。
+    # product.as_tuple().exponent 是负数表示小数位数
+    exponent = -product.as_tuple().exponent if product.as_tuple().exponent < 0 else 0
+    if exponent <= max_int_decimal_places:
+        # 安全地转成整数
+        try:
+            return int(product.to_integral_value())  # 四舍五入到整数（但 exponent <= 0 意味着已经是整数）
+        except (OverflowError, InvalidOperation):
+            # 数太大，退回 float
+            return float(product)
+    else:
+        # 返回 float，但注意可能丢失精度
+        return float(product)
+
 class AIAssistantManager:
     def __init__(self):
         self._conf_path = self._get_config_path()

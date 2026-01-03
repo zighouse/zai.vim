@@ -7,11 +7,11 @@ import time
 import chardet
 
 from datetime import datetime
-from openai import OpenAI
+from openai import OpenAI, BadRequestError, APIError, APIConnectionError, RateLimitError
 from pathlib import Path
 from typing import Dict, List, Any, Union, Optional
 
-from config import AIAssistantManager
+from config import AIAssistantManager, parse_number_from_readable
 from logger import Logger
 from tool import ToolManager
 from client import Client
@@ -196,6 +196,14 @@ class AIChat:
 
         return params;
 
+    def _get_max_context_tokens(self) -> int:
+        """获取当前模型的最大上下文 tokens 限制，缺省为 32K"""
+        model_config = self._config.get('model', {})
+        if isinstance(model_config, dict):
+            context = model_config.get('context', 32768)
+            return parse_number_from_readable(context) or 32768
+        return 32768
+
     def _make_tool_calls(self, response) -> List[Dict[str, Any]]:
         tool_returns = []
         if tool_calls := response.get('tool_calls', []):
@@ -281,10 +289,31 @@ class AIChat:
             self._llm = self._open_llm(api_key_name=self._config.get('api_key_name', _DEFAULT_API_KEY_NAME),
                     base_url=self._config.get('base_url', _DEFAULT_BASE_URL))
         if is_FIM:
-            response = self._llm.completions.create(**params)
-            if content := response.choices[0].text:
-                full_content.append(content)
-                print(content, flush=True)
+            try:
+                response = self._llm.completions.create(**params)
+                if content := response.choices[0].text:
+                    full_content.append(content)
+                    print(content, flush=True)
+            except (BadRequestError, APIError, APIConnectionError, RateLimitError) as e:
+                error_msg = {
+                    "role": "assistant",
+                    "content": f"{type(e).__name__}: Request failed with error: {str(e)}",
+                    "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "elapsed_time": 0,
+                    "api_error": True
+                }
+                self._logger.append_message(error_msg)
+                return error_msg
+            except Exception as e:
+                error_msg = {
+                    "role": "assistant",
+                    "content": f"{type(e).__name__}: Request failed with error: {str(e)}",
+                    "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "elapsed_time": 0,
+                    "unknown_error": True
+                }
+                self._logger.append_message(error_msg)
+                return error_msg
         else:
             if params['messages'][0]['role'] == 'system':
                 params['messages'][0]['content'] = params['messages'][0]['content'] + self._prompt_for_title
@@ -300,7 +329,36 @@ class AIChat:
                     request_tokens = request_tokens + m["reasoning_tokens"]
             if request_tokens:
                 print(f"(request-tokens: {request_tokens})")
-            stream = self._llm.chat.completions.create(**params)
+            
+            # 检查 tokens 是否超限
+            max_context_tokens = self._get_max_context_tokens()
+            if request_tokens > max_context_tokens * 0.9:  # 达到90%阈值时警告
+                print(f"WARNING: Requsted tokens ({request_tokens}) is closing to the {request_tokens/max_context_tokens*100:.1f}% of the maximum context length ({max_context_tokens}).")
+            
+            try:
+                stream = self._llm.chat.completions.create(**params)
+            except (BadRequestError, APIError, APIConnectionError, RateLimitError) as e:
+                error_msg = {
+                    "role": "assistant",
+                    "content": f"{type(e).__name__}: Request failed with error: {str(e)}",
+                    "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "elapsed_time": 0,
+                    "api_error": True
+                }
+                self._logger.append_message(error_msg)
+                return error_msg
+            except Exception as e:
+                error_msg = {
+                    "role": "assistant",
+                    "content": f"{type(e).__name__}: Request failed with error: {str(e)}",
+                    "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "elapsed_time": 0,
+                    "unknown_error": True
+                }
+                self._logger.append_message(error_msg)
+                return error_msg
+            
+            # 正常处理流式响应
             for chunk in stream:
                 chunk_message = chunk.choices[0].delta
                 if not full_content:
@@ -391,12 +449,26 @@ class AIChat:
                 if request_tokens:
                     request["tokenizer"] = self._get_tokenizer_name()
                     request["content_tokens"] = request_tokens
+                
+                # 检查请求 tokens 是否过高
+                max_context_tokens = self._get_max_context_tokens()
+                if request_tokens > max_context_tokens * 0.7:  # 达到70%阈值时警告
+                    print(f"WARNING: Requsted tokens ({request_tokens}) is closing to the {request_tokens/max_context_tokens*100:.1f}% of the maximum context length ({max_context_tokens}).")
+                
                 self._logger.append_message(request)
                 self._cur_round = {"request": request, "response":[]}
                 response = self._generate_response(self._cur_round)
             if response:
                 self._cur_round["response"].append(response)
-            while not self._cli.is_stopped() and response and 'tool_calls' in response:
+            
+            # 检查是否是错误响应（不包含 tool_calls）
+            is_error_response = response and (
+                response.get('context_exceeded', False) or 
+                response.get('api_error', False) or 
+                response.get('unknown_error', False)
+            )
+            
+            while not self._cli.is_stopped() and response and 'tool_calls' in response and not is_error_response:
                 tool_returns = self._make_tool_calls(response)
                 request = self._fetch_request(timeout=0)
                 if request:
