@@ -126,84 +126,97 @@ g:zai_use_ai            配置缺省的 AI 服务。
                         当存在一个配置 AI 助手的 json 文件时，可以使用本这个参
                         数来指定默认应用配置文件中存在的 AI 助手。
 
-                                                        *zai-assistants.json*
+                                                        *zai-assistants.yaml*
 AI 助手配置文件的全路径：
 
-* Linux/Mac: ~/.local/share/zai/assistants.json
-* Windows: %USERPROFILE%\AppData\Local\Zai\assistants.json
+* Linux/Mac: ~/.local/share/zai/assistants.yaml
+* Windows: %USERPROFILE%\AppData\Local\Zai\assistants.yaml
 
 一个典型的 AI 助手配置文件内容如下：
 >
- [
-     {
-         "name": "deepseek",
-         "base-url": "https://api.deepseek.com",
-         "api-key-name" : "DEEPSEEK_API_KEY",
-         "tokenizer": "deepseek-ai/DeepSeek-V3.1",
-         "model" : ["deepseek-chat", "deepseek-reasoner"]
-     },
-     {
-         "name": "月之暗面",
-         "base-url": "https://api.moonshot.cn/v1",
-         "api-key-name" : "MOONSHOT_API_KEY",
-         "model" : [
-             {"name": "kimi-k2-0905-preview"},
-             {"name": "kimi-thinking-preview"}
-         ]
-     },
-     {
-         "name": "火山方舟",
-         "base-url": "https://ark.cn-beijing.volces.com/api/v3",
-         "api-key-name" : "VOLCES_API_KEY",
-         "model" : [
-             {
-                "name": "doubao-seed-1-6-251015",
-                "comment": "分段计费 2/M 上下文256k 输出32k"
-             }
-         ]
-     },
-     {
-         "name": "硅基流动",
-         "base-url": "https://api.siliconflow.cn",
-         "api-key-name" : "SILICONFLOW_API_KEY",
-         "model" : [
-             {
-                 "name": "deepseek-ai/DeepSeek-V3.1",
-                 "tokenizer": "deepseek-ai/DeepSeek-V3.1"
-             },
-             "deepseek-ai/DeepSeek-R1",
-             "moonshotai/Kimi-K2-Instruct-0905",
-             "tencent/Hunyuan-MT-7B",
-             "inclusionAI/Ling-mini-2.0",
-             "ByteDance-Seed/Seed-OSS-36B-Instruct",
-             "zai-org/GLM-4.5",
-             "Qwen/Qwen3-Coder-480B-A35B-Instruct",
-             "Qwen/Qwen3-235B-A22B-Thinking-2507",
-             "Qwen/Qwen3-235B-A22B-Instruct-2507",
-             {
-               "name": "Qwen/Qwen3-30B-A3B",
-               "comment": "￥2.8/M Tokens 对话 Tools 推理模型 MoE 30B 128K",
-               "tokenizer": "Qwen/Qwen3-30B-A3B",
-               "params": {
-                 "extra_body": {
-                   "chat_template_kwargs": {
-                     "enable_thinking": false
-                   }
-                 }
-               }
-             },
-             "baidu/ERNIE-4.5-300B-A47B",
-             "tencent/Hunyuan-A13B-Instruct"
-         ]
-     }
- ]
+- name: deepseek                        # AI助理标识/服务商 (自定义)
+  base-url: https://api.deepseek.com    # api 调用地址
+  api-key-name: DEEPSEEK_API_KEY        # api 调用口令环境变量名
+  tokenizer: deepseek-ai/DeepSeek-V3.2  # 统一的分词器 (可选，用于限制请求长度)
+  model:                                # 服务商提供的模型清单
+  - name: deepseek-chat                       # 模型标识 (要与服务商的清单一致)
+    size: 685.40B                             # 模型尺寸 (暂时仅用作展示)
+    context: 128K                             # 上下文长度 (用于限制请求长度)
+    out-length: { default: 4K, max: 8K }      # 输出长度 (默认, 最大)
+    cost: { hit: 0.2, in: 2, out: 3, unit: RMB/MTk } # 价格：缓冲命中、输入、输出、单位(人民币每百万词)
+    features: json, tool-call, complete, fim         # 支持特性
+  - name: deepseek-reasoner
+    size: 685.40B
+    context: 128K
+    out-length: { default: 32K, max: 64K }
+    cost: { hit: 0.2, in: 2, out: 3, unit: RMB/MTk }
+    features: json, tool-call, complete
+
+- name: Gemini
+  api-key-name: GEMINI_API_KEY
+  base-url: https://generativelanguage.googleapis.com/v1beta/openai/
+  model:
+    - gemini-2.5-flash-lite   # in:$0.1/mtk out:$0.4/mtk free-level no-call
+    - gemini-2.5-flash        # in:$0.30/mtk out:$2.5/mtk free-level no-call
+    - gemini-2.5-pro          # in:$1.25/mtk out:$10/mtk free-level no-call
+    - gemini-3-flash-preview  # in:$0.5/mtk out:$3/mtk free-level no-call
+    - gemini-3-pro-preview    # in:$2/mtk out:$12/mtk non-free
+
+- name: Moonshot
+  api-key-name: MOONSHOT_API_KEY
+  base-url: https://api.moonshot.cn/v1
+  model:
+  - name: kimi-k2-0905-preview # tokens:256k, coder
+  - name: kimi-k2-turbo-preview # tokens:256k
+  - name: moonshot-v1-128k # tokens:128k
+  - name: moonshot-v1-128k-vision-preview
+  - name: kimi-latest # 128k
+  - name: kimi-thinking-preview
+
+- name: "Volces Ark"
+  api-key-name: VOLCES_API_KEY
+  base-url: https://ark.cn-beijing.volces.com/api/v3
+  model:
+  - name: doubao-seed-1-6-251015
+
+- name: "Selicon Flow"
+  api-key-name: SILICONFLOW_API_KEY
+  base-url: https://api.siliconflow.cn
+  model:
+  - name: Qwen/Qwen3-30B-A3B      # ￥2.8/M Tokens 对话 Tools 推理模型 MoE 30B 128K
+    tokenizer: Qwen/Qwen3-30B-A3B # 独立指定分词器
+  - name: Pro/deepseek-ai/DeepSeek-V3.2
+    size: 671B
+    context: 160K
+    out-length: { default: 4K, max: 8K }
+    cost: { in: 2, out: 3, unit: RMB/MTk }
+    features: talk, prefix, tools, infer, moe
+  - name: Pro/zai-org/GLM-4.7
+    size: 355B
+    active: 32B
+    context: 198K
+    cost: { hit: 0.8, in: 4.0, out: 16.0, unit: RMB/MTk }
+    features: talk, prefix, tools, moe, infer
+  - name: Pro/moonshotai/Kimi-K2-Thinking
+    size: 1T
+    context: 256K
+    cost: { in: 4, out: 16, unit: RMB/MTk }
+    features: talk, prefix, tools, infer, moe
+
+- name: aliyun
+  api-key-name: ALIYUN_API_KEY
+  base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  model:
+  - qwen3-max
+  - qwen3-max-preview
+  - qwen3-coder-plus
 <
 
 在按上例提供了 AI 助手配置文件后，下面的例子将缺省应用`硅基流动`的 k2 模型。
 
 >
  let g:zai_use_ai = "硅基流动"
- let g:model = "moonshotai/Kimi-K2-Instruct-0905"
+ let g:model = "Pro/moonshotai/Kimi-K2-Thinking"
 <
 上面使用了 AI 助手和模型的名称，也可以用从0开始的索引号。
 
@@ -327,7 +340,7 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
                         聊天。聊天日志的路径参见 |zai-ui| |zai-log|.
 
                                                         *:ZaiConfig*
-:ZaiConfig              打开 AI 助手配置进行编辑。见 |zai-assistants.json|.
+:ZaiConfig              打开 AI 助手配置进行编辑。见 |zai-assistants.yaml|.
 
 ==============================================================================
 5. 会话命令                                             *zai-chat-commands*
@@ -444,7 +457,7 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
 >
  let g:zai_base_url = "https://api.siliconflow.cn"
  let g:zai_api_key_name = "SILICONFLOW_API_KEY"
- let g:zai_default_model = "Pro/moonshotai/Kimi-K2-Instruct-0905"
+ let g:zai_default_model = "Pro/moonshotai/Kimi-K2-Thinking"
 <
                   注意: 当使用 `:use ai` 或者 `g:zai_use_ai` 成功应用了 AI 助
                         手之后，`:model` 会话命令只允许在配置范围内选值。
@@ -498,7 +511,7 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
 :use ai `<name|idx>`                   应用 AI 助手配置文件中的项。
 :use ai `<name|idx>` model `<name|idx>`  会话命令 |zai-chat-commands|.
                                      可以使用配置的名称，也可以使用索引。
-                                     见 |g:zai_use_ai|、|zai-assistants.json|
+                                     见 |g:zai_use_ai|、|zai-assistants.yaml|
 
                         当使用了 `:use ai` 会话命令成功应用了 AI 助手之后，会
                         影响 `:model` 会话命令，只允许在 AI 助手预先配置的模型
@@ -509,7 +522,7 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
                         见 |zai-chatcmd-useai|.
 
 :list ai                列出可用的 AI 助手。会话命令 |zai-chat-commands|.
-                        见|zai-assistants.json|.
+                        见|zai-assistants.yaml|.
 
 ==============================================================================
 6. 许可证                                               *zai-license*

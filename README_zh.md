@@ -115,74 +115,98 @@ DEEPSEEK_API_KEY=sk-********************************
 
 如果拥有多个模型，又或者拥有多个 AI 聊天服务可以接入，提供 AI 助手配置文件就可以快速切换。AI 助手配置文件的全路径：
 
-* Linux/Mac: ~/.local/share/zai/assistants.json
-* Windows: %USERPROFILE%\AppData\Local\Zai\assistants.json
+* Linux/Mac: ~/.local/share/zai/assistants.yaml
+* Windows: %USERPROFILE%\AppData\Local\Zai\assistants.yaml
 
 一个例子：
-```json
- [
-     {
-         "name": "deepseek",
-         "base-url": "https://api.deepseek.com",
-         "api-key-name" : "DEEPSEEK_API_KEY",
-         "tokenizer": "deepseek-ai/DeepSeek-V3.1",
-         "model" : ["deepseek-chat", "deepseek-reasoner"]
-     },
-     {
-         "name": "月之暗面",
-         "base-url": "https://api.moonshot.cn/v1",
-         "api-key-name" : "MOONSHOT_API_KEY",
-         "model" : [
-             {"name": "kimi-k2-0905-preview"},
-             {"name": "kimi-thinking-preview"}
-         ]
-     },
-     {
-         "name": "火山方舟",
-         "base-url": "https://ark.cn-beijing.volces.com/api/v3",
-         "api-key-name" : "VOLCES_API_KEY",
-         "model" : [
-             {
-                "name": "doubao-seed-1-6-251015",
-                "comment": "分段计费 2/M 上下文256k 输出32k"
-             }
-         ]
-     },
-     {
-         "name": "硅基流动",
-         "base-url": "https://api.siliconflow.cn",
-         "api-key-name" : "SILICONFLOW_API_KEY",
-         "model" : [
-             {
-                 "name": "deepseek-ai/DeepSeek-V3.1",
-                 "tokenizer": "deepseek-ai/DeepSeek-V3.1"
-             },
-             "deepseek-ai/DeepSeek-R1",
-             "moonshotai/Kimi-K2-Instruct-0905",
-             "tencent/Hunyuan-MT-7B",
-             "inclusionAI/Ling-mini-2.0",
-             "ByteDance-Seed/Seed-OSS-36B-Instruct",
-             "zai-org/GLM-4.5",
-             "Qwen/Qwen3-Coder-480B-A35B-Instruct",
-             "Qwen/Qwen3-235B-A22B-Thinking-2507",
-             "Qwen/Qwen3-235B-A22B-Instruct-2507",
-             {
-               "name": "Qwen/Qwen3-30B-A3B",
-               "comment": "￥2.8/M Tokens 对话 Tools 推理模型 MoE 30B 128K",
-               "tokenizer": "Qwen/Qwen3-30B-A3B",
-               "params": {
-                 "extra_body": {
-                   "chat_template_kwargs": {
-                     "enable_thinking": false
-                   }
-                 }
-               }
-             },
-             "baidu/ERNIE-4.5-300B-A47B",
-             "tencent/Hunyuan-A13B-Instruct"
-         ]
-     }
- ]
+```yaml
+- name: deepseek                        # AI助理标识/服务商 (自定义)
+  base-url: https://api.deepseek.com    # api 调用地址
+  api-key-name: DEEPSEEK_API_KEY        # api 调用口令环境变量名
+  tokenizer: deepseek-ai/DeepSeek-V3.2  # 统一的分词器 (可选，用于限制请求长度)
+  model:                                # 服务商提供的模型清单
+  - name: deepseek-chat                       # 模型标识 (要与服务商的清单一致)
+    size: 685.40B                             # 模型尺寸 (可选，暂时仅用作展示)
+    context: 128K                             # 上下文长度 (建议，非必选，默认 32K)
+    out-length: { default: 4K, max: 8K }      # 输出长度 (可选)
+    cost: { hit: 0.2, in: 2, out: 3, unit: RMB/MTk } #  (可选) 价格：缓冲命中、输入、输出、单位(人民币每百万词)
+    features: json, tool-call, complete, fim         # (可选) 支持特性
+  - name: deepseek-reasoner
+    size: 685.40B
+    context: 128K
+    out-length: { default: 32K, max: 64K }
+    cost: { hit: 0.2, in: 2, out: 3, unit: RMB/MTk }
+    features: json, tool-call, complete
+
+- name: Gemini
+  api-key-name: GEMINI_API_KEY
+  base-url: https://generativelanguage.googleapis.com/v1beta/openai/
+  model:
+    - gemini-2.5-flash-lite   # in:$0.1/mtk out:$0.4/mtk free-level no-call
+    - gemini-2.5-flash        # in:$0.30/mtk out:$2.5/mtk free-level no-call
+    - gemini-2.5-pro          # in:$1.25/mtk out:$10/mtk free-level no-call
+    - gemini-3-flash-preview  # in:$0.5/mtk out:$3/mtk free-level no-call
+    - gemini-3-pro-preview    # in:$2/mtk out:$12/mtk non-free
+
+- name: 月之暗面
+  api-key-name: MOONSHOT_API_KEY
+  base-url: https://api.moonshot.cn/v1
+  model:
+  - name: kimi-k2-0905-preview # tokens:256k, 代码
+  - name: kimi-k2-turbo-preview # tokens:256k, 高速版, ~kimi-k2-0905-preview, 输出速度:60~100ps
+  - name: moonshot-v1-128k # tokens:128k, 生成超长文本
+  - name: moonshot-v1-128k-vision-preview # 图生文
+  - name: kimi-latest # 128k 图片理解
+  - name: kimi-thinking-preview # ' 长思考'
+
+- name: 火山方舟
+  api-key-name: VOLCES_API_KEY
+  base-url: https://ark.cn-beijing.volces.com/api/v3
+  model:
+  - name: doubao-seed-1-6-251015 # 分段计费 2/M 上下文256k 输出32k
+
+- name: 硅基流动
+  api-key-name: SILICONFLOW_API_KEY
+  base-url: https://api.siliconflow.cn
+  model:
+  - name: Qwen/Qwen3-30B-A3B      # ￥2.8/M Tokens 对话 Tools 推理模型 MoE 30B 128K
+    tokenizer: Qwen/Qwen3-30B-A3B # 独立指定分词器
+  - name: Pro/deepseek-ai/DeepSeek-V3.2
+    size: 671B
+    context: 160K
+    out-length: { default: 4K, max: 8K }
+    cost: { in: 2, out: 3, unit: RMB/MTk }
+    features: talk, prefix, tools, infer, moe
+  - name: Pro/zai-org/GLM-4.7
+    size: 355B
+    active: 32B
+    context: 198K
+    cost: { hit: 0.8, in: 4.0, out: 16.0, unit: RMB/MTk }
+    features: talk, prefix, tools, moe, infer
+  - name: Pro/moonshotai/Kimi-K2-Thinking
+    size: 1T
+    context: 256K
+    cost: { in: 4, out: 16, unit: RMB/MTk }
+    features: talk, prefix, tools, infer, moe
+  - name: zai-org/GLM-4.6V
+    size: 106B
+    context: 128K
+    cost: { in: 1, out: 3, unit: RMB/MTk }
+    features: talk, prefix, tools, vision, infer, moe
+  - name: MiniMaxAI/MiniMax-M2
+    size: 230B
+    active: 10B
+    context: 192K
+    cost: { in: 2.1, out: 8.4, unit: RMB/MTk }
+    features: talk, prefix, tools, coder, infer, moe
+
+- name: aliyun
+  api-key-name: ALIYUN_API_KEY
+  base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  model:
+  - qwen3-max
+  - qwen3-max-preview
+  - qwen3-coder-plus
 ```
 
 在按上例提供了 AI 助手配置文件后，下面的例子将缺省应用`硅基流动`的 k2 模型。
@@ -402,6 +426,85 @@ PROMPT
 ```
 :->/
 ```
+
+## 项目配置
+
+Zai 支持通过项目目录中的 `zai.project/zai_project.yaml` 文件进行项目级配置。这允许您定义项目特定的设置，如沙盒目录和 `tool_shell` 工具的 Docker 容器配置。
+
+### 配置文件位置
+
+从当前工作目录向上搜索配置文件：
+- `zai.project/zai_project.yaml`（新格式）
+- `zai_project.yaml`（旧格式，会显示警告）
+
+### 配置结构
+
+配置文件应包含配置对象列表。第一个对象用于当前项目。
+
+示例 `zai.project/zai_project.yaml`：
+```yaml
+- sandbox_home: /path/to/project/sandbox
+  shell_container:
+    # 可以包含自选的 Docker SDK 参数
+    # 主要用于 tool_shell 的 docker container，可用项参见 run():
+    # https://docker-py.readthedocs.io/en/stable/containers.html
+    image: taskbox:latest
+    name: my-project-taskbox
+    Dockerfile: "Dockerfile.taskbox"
+    working_dir: /sandbox
+    user: "1000:1000"  # UID:GID 与主机用户匹配，或者用镜像中定义的用户如 "sandbox"
+    volumes:
+      - "/host/path:/container/path:rw"
+      - "/home/for/project/.git:/sandbox/project/.git:ro"
+      - "/ccache/for/project:/ccache/.git:ro"
+    network_mode: "bridge"
+    environment:
+      CCACHE_DIR: "/ccache"
+      CCACHE_MAXSIZE: "10G"
+    mem_limit: "4g"
+    cpu_period: 100000
+    cpu_quota: 50000
+    detach: true
+    auto_remove: true
+    network_mode: "bridge"
+    command: ["tail", "-f", "/dev/null"]
+```
+
+### 配置字段
+
+- `sandbox_home`：沙盒文件操作的目录。默认为 `~/.local/share/zai/sandbox`。
+- `shell_container`：`tool_shell` Docker 容器的配置。
+  - `image`：Docker 镜像名称（默认：`taskbox:latest`）
+  - `name`：容器名称（默认：`zai-tool-shell-taskbox`）
+  - `working_dir`：容器工作目录（默认：`/sandbox`）
+  - `user`：用户 UID:GID（默认：主机用户的 UID:GID）
+  - `volumes`：卷挂载列表，格式为 `host:container:mode`
+  - `network_mode`：Docker 网络模式（默认：`bridge`）
+  - 其他 Docker SDK 参数直接传递给容器创建。
+
+### 工具 Shell
+
+`tool_shell` 工具在 Docker 容器（taskbox）中提供安全的 shell 执行功能：
+- 隔离的环境
+- 跨调用的持久化容器
+- 项目特定配置
+- 网络访问控制
+- 资源限制
+
+在 AI 对话中的示例用法：
+```
+:use tool shell
+请列出当前目录中的文件。
+**助手：**
+  - **tool call**: `execute_shell` ({"command": "ls -la"...)
+  - return: `execute_shell`
+```
+
+如果可用，该工具自动使用项目配置，否则使用默认值。
+
+### 沙盒目录
+
+沙盒目录被文件相关工具（`tool_file`、`tool_shell`）用作安全工作区。出于安全考虑，无法访问沙盒之外的文件。
 
 ## 许可协议
 
