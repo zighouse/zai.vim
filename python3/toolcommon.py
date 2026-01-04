@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 import os
+import sys
+import json
+from pathlib import Path
+from typing import Dict, Any, List, Optional, Union
+from appdirs import user_data_dir
+
 # YAML support
 try:
     import yaml
@@ -7,11 +13,6 @@ try:
 except ImportError:
     HAVE_YAML = False
     print(f"PyYAML not available, you should `pip install PyYAML`", file=sys.stderr)
-import json
-import sys
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
-from appdirs import user_data_dir
 
 # 导入 config 模块中的注释剥离函数
 try:
@@ -37,6 +38,7 @@ except ImportError:
 
 # 默认沙盒路径
 _sandbox_home = None
+_sandbox_home_printed = False
 
 # 项目配置缓存
 _project_config_cache: Dict[str, Optional[List[Dict[str, Any]]]] = {}
@@ -59,6 +61,7 @@ def set_sandbox_home(new_path: str):
     try:
         new_sandbox_path.mkdir(parents=True, exist_ok=True)
         _sandbox_home = new_sandbox_path
+        _sandbox_home_printed = False
         return _sandbox_home
     except Exception as e:
         raise ValueError(f"无法创建沙盒目录 '{new_path}': {e}")
@@ -66,8 +69,8 @@ def set_sandbox_home(new_path: str):
 
 def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> Optional[Path]:
     """
-    从指定路径开始向上遍历目录树，查找 zai_project.yaml 或 zai_project.json 文件。
-    优先使用 YAML 格式，如果存在则直接使用，否则回退到 JSON。
+    从指定路径开始向上遍历目录树，查找 zai.project/zai_project.yaml 文件。
+    为了兼容性，也支持旧格式的 zai_project.yaml 文件。
     
     Args:
         start_path: 起始路径（默认为当前工作目录）
@@ -85,35 +88,16 @@ def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> 
     
     # 向上遍历目录树
     while True:
-        # 优先检查 YAML 文件
-        yaml_file = current / "zai_project.yaml"
-        if yaml_file.is_file():
-            return yaml_file
+        # 优先检查新格式：zai.project/zai_project.yaml
+        new_format_file = current / "zai.project" / "zai_project.yaml"
+        if new_format_file.is_file():
+            return new_format_file
         
-        # 回退到 JSON 文件
-        json_file = current / "zai_project.json"
-        if json_file.is_file():
-            # 尝试自动转换为 YAML
-            try:
-                import yaml
-                # 读取 JSON
-                with open(json_file, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                # 去除注释
-                cleaned = _strip_comments(content)
-                # 解析 JSON
-                config_data = json.loads(cleaned)
-                # 写入 YAML
-                with open(yaml_file, 'w', encoding='utf-8') as f:
-                    yaml.dump(config_data, f, default_flow_style=False, allow_unicode=True, indent=2)
-                print(f"自动转换 {json_file} 为 YAML 格式: {yaml_file}", file=sys.stderr)
-                return yaml_file
-            except ImportError:
-                print(f"警告: PyYAML 未安装，无法自动转换为 YAML 格式", file=sys.stderr)
-                return json_file
-            except Exception as e:
-                print(f"警告: 自动转换为 YAML 失败: {e}", file=sys.stderr)
-                return json_file
+        # 为了兼容性，检查旧格式：zai_project.yaml
+        old_format_file = current / "zai_project.yaml"
+        if old_format_file.is_file():
+            print(f"警告: 使用旧格式配置文件 {old_format_file}，建议迁移到 zai.project/zai_project.yaml", file=sys.stderr)
+            return old_format_file
         
         # 到达根目录时停止
         parent = current.parent
@@ -126,7 +110,7 @@ def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> 
 
 def load_project_config(config_file: Optional[Union[str, Path]] = None) -> Optional[List[Dict[str, Any]]]:
     """
-    加载项目配置文件（支持 YAML 和 JSON 格式）。
+    加载项目配置文件（仅支持 YAML 格式）。
     
     Args:
         config_file: 配置文件路径。如果为 None，则从当前工作目录向上查找。
@@ -153,24 +137,21 @@ def load_project_config(config_file: Optional[Union[str, Path]] = None) -> Optio
         with open(config_file, 'r', encoding='utf-8') as f:
             content = f.read()
         
-        # 根据文件扩展名选择解析方式
-        if config_file.suffix.lower() in ('.yaml', '.yml'):
-            # 解析 YAML
-            try:
-                import yaml
-                config_data = yaml.safe_load(content)
-                print(f"已加载 YAML 项目配置：{config_file}", file=sys.stderr)
-            except ImportError:
-                print(f"错误：需要 PyYAML 库来解析 YAML 文件 {config_file}", file=sys.stderr)
-                _project_config_cache[config_file_str] = None
-                return None
-        else:
-            # 假设是 JSON 格式
-            # 去除注释
-            cleaned = _strip_comments(content)
-            # 解析 JSON
-            config_data = json.loads(cleaned)
-            print(f"已加载 JSON 项目配置：{config_file}", file=sys.stderr)
+        # 只支持 YAML 格式
+        if config_file.suffix.lower() not in ('.yaml', '.yml'):
+            print(f"错误：只支持 YAML 格式配置文件，不支持 {config_file.suffix} 格式", file=sys.stderr)
+            _project_config_cache[config_file_str] = None
+            return None
+        
+        # 解析 YAML
+        try:
+            import yaml
+            config_data = yaml.safe_load(content)
+            print(f"已加载项目配置：{config_file}", file=sys.stderr)
+        except ImportError:
+            print(f"错误：需要 PyYAML 库来解析 YAML 文件 {config_file}", file=sys.stderr)
+            _project_config_cache[config_file_str] = None
+            return None
         
         # 验证配置格式：应该是一个列表
         if not isinstance(config_data, list):
@@ -199,8 +180,8 @@ def load_project_config(config_file: Optional[Union[str, Path]] = None) -> Optio
         _project_config_cache[config_file_str] = config_data
         return config_data
     
-    except (json.JSONDecodeError, yaml.YAMLError) as e:
-        print(f"错误：无法解析配置文件 {config_file}: {e}", file=sys.stderr)
+    except yaml.YAMLError as e:
+        print(f"错误：无法解析 YAML 配置文件 {config_file}: {e}", file=sys.stderr)
         _project_config_cache[config_file_str] = None
         return None
     except Exception as e:
@@ -225,7 +206,6 @@ def get_project_config(cwd: Optional[Union[str, Path]] = None) -> Optional[Dict[
     # 返回第一个配置项
     return config_list[0]
 
-
 def sandbox_home(cwd: Optional[Union[str, Path]] = None) -> Path:
     """
     获取当前沙盒根目录。
@@ -238,10 +218,13 @@ def sandbox_home(cwd: Optional[Union[str, Path]] = None) -> Path:
     Returns:
         沙盒根目录路径
     """
-    global _sandbox_home
+    global _sandbox_home, _sandbox_home_printed
     
     # 如果已经设置了自定义沙盒路径，直接返回
     if _sandbox_home is not None:
+        if not _sandbox_home_printed:
+            print(f"使用命令指定的沙盒目录：{_sandbox_home}", file=sys.stderr)
+            _sandbox_home_printed = True
         return _sandbox_home
     
     # 尝试获取项目配置
@@ -251,7 +234,9 @@ def sandbox_home(cwd: Optional[Union[str, Path]] = None) -> Path:
             sandbox_path = Path(config['sandbox_home']).resolve()
             # 确保目录存在
             sandbox_path.mkdir(parents=True, exist_ok=True)
-            print(f"使用项目配置的沙盒目录：{sandbox_path}", file=sys.stderr)
+            if not _sandbox_home_printed:
+                print(f"使用项目配置的沙盒目录：{sandbox_path}", file=sys.stderr)
+                _sandbox_home_printed = True
             return sandbox_path
     except Exception as e:
         print(f"警告：无法从项目配置获取沙盒目录：{e}", file=sys.stderr)
