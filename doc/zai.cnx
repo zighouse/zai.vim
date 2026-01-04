@@ -123,7 +123,7 @@ g:zai_default_model     配置 AI 服务的缺省模型。见 |zai-chatcmd-model
 
                                                         *g:zai_use_ai*
 g:zai_use_ai            配置缺省的 AI 服务。
-                        当存在一个配置 AI 助手的 json 文件时，可以使用本这个参
+                        当存在一个配置 AI 助手的 YAML 文件时，可以使用本这个参
                         数来指定默认应用配置文件中存在的 AI 助手。
 
                                                         *zai-assistants.yaml*
@@ -521,8 +521,63 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
                         当没有提供 `<name|idx>` 时，显示当前应用的 AI 助手。
                         见 |zai-chatcmd-useai|.
 
-:list ai                列出可用的 AI 助手。会话命令 |zai-chat-commands|.
-                        见|zai-assistants.yaml|.
+:list ai                列出可用的 AI 助手。会话命令 |zai-chat-commands|。
+                        见|zai-assistants.yaml|。
+
+                                                        *zai-chatcmd-listtool*
+:list tool              列出可用的 AI 工具集。会话命令 |zai-chat-commands|。
+
+                                                        *zai-chatcmd-showtool*
+:show tool `[name]`     显示 AI 工具集详情。会话命令 |zai-chat-commands|。
+                        当没有提供 `name` 时，显示所有已加载的工具集。
+
+                                                        *zai-chatcmd-usetool*
+:use tool `XXX`         加载 AI 工具集 XXX 供 AI 调用。会话命令 |zai-chat-commands|。
+:use tool `XXX.xxx`     加载工具集 XXX 中的单个方法 xxx。
+:use tool `XXX: xxx yyy`  加载工具集 XXX 中的多个方法。
+:use tool `file web`    加载多个工具集。
+
+                        支持的工具集名称参见 |zai-toolsets|。
+
+                                                        *zai-chatcmd-sandbox*
+:sandbox path           设置沙盒目录路径。会话命令 |zai-chat-commands|。
+                        用于限制文件操作的范围，保护系统安全。
+
+                                                        *zai-toolsets*
+可用工具集：
+
+    *file*              文件操作工具集
+        ls              列出文件和目录
+        mkdir           创建目录
+        copy_file       复制文件或目录
+        read_file       读取文件内容
+        write_file      写入文件
+        search_in_file  在文件中搜索
+        substitute_file 替换文件内容
+        diff_file       比较文件差异
+        patch_file      应用补丁
+
+    *web*               网页操作工具集
+        web_get_content 获取网页内容
+        web_search      网络搜索
+        web_download_file 下载文件
+
+    *shell*             安全 Shell 执行工具集
+        execute_shell   在 Docker 容器中执行命令
+
+    *grep*              文件搜索工具集
+        grep            搜索文件内容（类似 Unix grep）
+
+    *ai*                AI 操作工具集
+        generate_image  生成图片
+
+    *browser*           浏览器自动化工具集
+        open_browser    打开浏览器
+        get_page_content 获取动态页面内容
+        screenshot      截取网页截图
+
+    *os*                系统信息工具集
+        get_os_info     获取系统信息（日期、地区、版本）
 
 ==============================================================================
 6. 许可证                                               *zai-license*

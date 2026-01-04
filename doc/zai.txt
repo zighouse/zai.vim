@@ -132,7 +132,7 @@ g:zai_default_model     Configures the default model for the AI service.
 
                                                         *g:zai_use_ai*
 g:zai_use_ai            Configures the default AI service.
-                        When an AI assistant configuration JSON file exists,
+                        When an AI assistant configuration YAML file exists,
                         this parameter can be used to specify the default AI
                         assistant from the configuration file.
 
@@ -374,7 +374,7 @@ Zai interaction interface at any time via the :Zai command.
                         For the chat log path, see |zai-ui| |zai-log|.
 
                                                         *:ZaiConfig*
-:ZaiConfig              Open AI assistants configuration json file for edit.
+:ZaiConfig              Open AI assistants configuration YAML file for edit.
                         See |zai-assistants.yaml|.
 
 ==============================================================================
@@ -600,6 +600,60 @@ supported for setting or unsetting:
                         Session command |zai-chat-commands|.
                         See |zai-assistants.yaml|.
 
+                                                        *zai-chatcmd-listtool*
+:list tool              List available AI tool sets. Session command |zai-chat-commands|.
+
+                                                        *zai-chatcmd-showtool*
+:show tool `[name]`     Show AI tool set details. Session command |zai-chat-commands|.
+                        When `name` is not provided, show all loaded tool sets.
+
+                                                        *zai-chatcmd-usetool*
+:use tool `XXX`         Load AI tool set XXX for AI calling. Session command |zai-chat-commands|.
+:use tool `XXX.xxx`     Load single method xxx from tool set XXX.
+:use tool `XXX: xxx yyy`   Load multiple methods from tool set XXX.
+:use tool `file web`    Load multiple tool sets.
+
+                        Supported tool set names see |zai-toolsets|.
+
+                                                        *zai-chatcmd-sandbox*
+:sandbox path           Set sandbox directory path. Session command |zai-chat-commands|.
+                        Used to restrict file operations for system security.
+
+                                                        *zai-toolsets*
+Available tool sets:
+
+    *file*              File operations tool set
+        ls              List files and directories
+        mkdir           Create directories
+        copy_file       Copy files or directories
+        read_file       Read file content
+        write_file      Write to file
+        search_in_file  Search within files
+        substitute_file Replace text in files
+        diff_file       Compare files
+        patch_file      Apply patches
+
+    *web*               Web operations tool set
+        web_get_content Fetch web page content
+        web_search      Search the web
+        web_download_file Download files from URLs
+
+    *shell*             Secure Shell execution tool set
+        execute_shell   Execute commands in Docker container
+
+    *grep*              File searching tool set
+        grep            Search file content (like Unix grep)
+
+    *ai*                AI operations tool set
+        generate_image  Generate images with AI
+
+    *browser*           Browser automation tool set
+        open_browser    Open URLs in browser
+        get_page_content Get dynamic page content
+        screenshot      Take webpage screenshots
+
+    *os*                System information tool set
+        get_os_info     Get system information (date, locale, version)
 ==============================================================================
 6. LICENSE                                              *zai-license*
 

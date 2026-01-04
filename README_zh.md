@@ -285,11 +285,25 @@ Zai 会在展示窗口中同时展示用户发送的请求，以及远程助手�
 - `:api-key-name <key-name>` - 指定访问 AI 服务的密钥环境变量
 - `:model <model-name>` - 指定当前聊天的 AI 模型
 - `:prompt <text>` - 设置当前聊天新的提示词
+- `:prompt<<EOF` - 设置多行提示词（以 EOF 结束）
 - `:-prompt` - 取消设置过的提示词
 - `:temperature <float>` - 设置当前聊天的创造性参数
 - `:-temperature` - 取消之前设置过的创造性参数
+- `:top_p <float>` - 设置 top-p 采样参数 (0-1)
+- `:-top_p` - 取消 top-p 设置
+- `:max_tokens <integer>` - 设置最大词元数
+- `:-max_tokens` - 取消最大词元数设置
+- `:complete_type <str>` - 设置代码补全的文件类型
+- `:prefix <str>` - 设置代码补全的前缀
+- `:prefix<<EOF` - 设置多行前缀（以 EOF 结束）
+- `:suffix <str>` - 设置填充中间补全的后缀
+- `:suffix<<EOF` - 设置多行后缀（以 EOF 结束）
+- `:talk_mode <mode>` - 设置对话模式 (instant, chain)
+- `:logprobs <int>` - 显示顶部词元概率 (0-20)
 - `:no-log` - 关闭聊天日志
 - `:-no-log` - 取消关闭，即打开聊天日志
+- `:load <log-file>` - 从 Zai 日志文件加载上下文
+- `:-<param>` - 重置任意参数为默认值（例如 `:-temperature`）
 
 关于 AI 助手配置文件的会话命令列表
 
@@ -301,10 +315,76 @@ Zai 会在展示窗口中同时展示用户发送的请求，以及远程助手�
 
 关于 AI 工具调用的会话命令列表
 
-- `:list tool` - 列出已经拥有的可供 AI 调用的工具集。当前提供了简单的 file、web 等工具集。
+- `:list tool` - 列出已经拥有的可供 AI 调用的工具集。
 - `:show tool [name]` - 显示指定的 AI 工具集
 - `:use tool [name]` - 加载 AI 工具集供 AI 调用
 - `:sandbox path` - 指定 sandbox 路径。在 file 工具集中用来限制允许操作的文件夹。
+
+### 可用工具集
+
+Zai 提供了多个工具集供 AI 调用以与系统交互：
+
+1. **file** - 文件操作
+   - `ls` - 列出文件和目录
+   - `mkdir` - 创建目录
+   - `copy_file` - 复制文件或目录
+   - `read_file` - 读取文件内容
+   - `write_file` - 写入文件
+   - `search_in_file` - 在文件中搜索
+   - `substitute_file` - 替换文件中的文本
+   - `diff_file` - 比较文件差异
+   - `patch_file` - 应用补丁
+
+2. **web** - 网页操作
+   - `web_get_content` - 获取网页内容
+   - `web_search` - 网络搜索
+   - `web_download_file` - 从 URL 下载文件
+
+3. **shell** - 安全 shell 执行
+   - `execute_shell` - 在 Docker 容器（taskbox）中执行命令
+   - 支持 Python 和 shell 命令，提供隔离环境
+
+4. **grep** - 文件搜索
+   - `grep` - 在文件中搜索模式（类似 Unix grep）
+
+5. **ai** - AI 操作
+   - `generate_image` - 使用 AI 生成图片
+
+6. **browser** - 浏览器自动化
+   - `open_browser` - 在浏览器中打开 URL
+   - `get_page_content` - 获取动态页面内容
+   - `screenshot` - 截取网页截图
+
+7. **os** - 系统信息
+   - `get_os_info` - 获取日期、地区、操作系统版本
+
+### 工具使用示例
+
+加载整个工具集：
+```
+:use tool file
+```
+
+加载工具集中的特定函数：
+```
+:use tool file.read_file
+:use tool file: read_file write_file
+```
+
+加载多个工具集：
+```
+:use tool file web
+```
+
+查看可用工具：
+```
+:list tool
+```
+
+显示工具集详情：
+```
+:show tool file
+```
 
 ### 配置项说明
 

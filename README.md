@@ -264,11 +264,25 @@ Session commands configure AI assistant settings and are processed by Zai's back
 - `:api-key-name <key-name>` - Set variable of API Key to access AI service
 - `:model <name>` - Set AI model
 - `:prompt <text>` - Set system prompt
+- `:prompt<<EOF` - Set multi-line prompt (end with EOF)
 - `:-prompt` - Clear custom prompt
 - `:temperature <float>` - Set creativity parameter (0-2)
 - `:-temperature` - Clear temperature setting
+- `:top_p <float>` - Set top-p sampling (0-1)
+- `:-top_p` - Clear top-p setting
+- `:max_tokens <integer>` - Set maximum tokens
+- `:-max_tokens` - Clear maximum tokens setting
+- `:complete_type <str>` - Set file type for code completion
+- `:prefix <str>` - Set prefix for code completion
+- `:prefix<<EOF` - Set multi-line prefix (end with EOF)
+- `:suffix <str>` - Set suffix for fill-in-middle completion
+- `:suffix<<EOF` - Set multi-line suffix (end with EOF)
+- `:talk_mode <mode>` - Set conversation mode (instant, chain)
+- `:logprobs <int>` - Show top token probabilities (0-20)
 - `:no-log` - Disable logging
 - `:-no-log` - Enable logging
+- `:load <log-file>` - Load context from Zai log file
+- `:-<param>` - Reset any parameter to default (e.g., `:-temperature`)
 
 Session Commands with AI assistants YAML configuration:
 
@@ -284,6 +298,72 @@ Session commands with AI calling tools:
 - `:show tool [name]` - Show details of an AI calling toolset.
 - `:use tool [name]` - Use an AI calling toolset.
 - `:sandbox path` - Specify a sandbox path for file toolset.
+
+### Available Toolsets
+
+Zai provides several tool sets that AI can call to interact with the system:
+
+1. **file** - File operations
+   - `ls` - List files and directories
+   - `mkdir` - Create directories
+   - `copy_file` - Copy files or directories
+   - `read_file` - Read file content
+   - `write_file` - Write to file
+   - `search_in_file` - Search within files
+   - `substitute_file` - Replace text in files
+   - `diff_file` - Compare files
+   - `patch_file` - Apply patches
+
+2. **web** - Web operations
+   - `web_get_content` - Fetch web page content
+   - `web_search` - Search the web
+   - `web_download_file` - Download files from URLs
+
+3. **shell** - Secure shell execution
+   - `execute_shell` - Execute commands in Docker container (taskbox)
+   - Supports Python and shell commands with isolation
+
+4. **grep** - File searching
+   - `grep` - Search for patterns in files (like Unix grep)
+
+5. **ai** - AI operations
+   - `generate_image` - Generate images with AI
+
+6. **browser** - Browser automation
+   - `open_browser` - Open URLs in browser
+   - `get_page_content` - Get dynamic page content
+   - `screenshot` - Take screenshots
+
+7. **os** - System information
+   - `get_os_info` - Get date, locale, OS version
+
+### Tool Usage Examples
+
+Load all tools from a toolset:
+```
+:use tool file
+```
+
+Load specific functions from a toolset:
+```
+:use tool file.read_file
+:use tool file: read_file write_file
+```
+
+Load multiple toolsets:
+```
+:use tool file web
+```
+
+Check available tools:
+```
+:list tool
+```
+
+Show details of a toolset:
+```
+:show tool file
+```
 
 ### Configuration Items
 
