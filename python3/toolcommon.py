@@ -95,7 +95,7 @@ def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> 
         
         # 为了兼容性，检查旧格式：zai_project.yaml
         old_format_file = current / "zai_project.yaml"
-        if old_format_file.is_file():
+        if old_format_file.is_file() and current.name != "zai.project":
             print(f"警告: 使用旧格式配置文件 {old_format_file}，建议迁移到 zai.project/zai_project.yaml", file=sys.stderr)
             return old_format_file
         
