@@ -12,7 +12,8 @@ ZAI.Vim PLUGIN                                          *zai* *zai-plugin*
 3. Zai Configuration ..................................  |zai-config|
 4. VIM Commands .......................................  |zai-commands|
 5. Chat Commands ......................................  |zai-chat-commands|
-6. License ............................................  |zai-license|
+6. Project Configuration ..............................  |zai-project-config|
+7. License ............................................  |zai-license|
 
 ==============================================================================
 1. INTRODUCTION                                         *zai-intro*
@@ -655,7 +656,80 @@ Available tool sets:
     *os*                System information tool set
         get_os_info     Get system information (date, locale, version)
 ==============================================================================
-6. LICENSE                                              *zai-license*
+6. PROJECT CONFIGURATION                                *zai-project-config*
+
+Zai supports project-level configuration through a `zai.project/zai_project.yaml`
+file (or `zai_project.yaml` for backward compatibility) in your project
+directory. This allows you to define project-specific settings like sandbox
+directory and Docker container configuration for the `tool_shell` tool.
+
+                                                        *zai-project-config-location*
+Configuration File Location~
+    The configuration file is searched upward from the current working directory:
+    - `zai.project/zai_project.yaml` (new format)
+    - `zai_project.yaml` (legacy format, prints warning)
+
+                                                        *zai-project-config-structure*
+Configuration Structure~
+    The configuration file should contain a list of configuration objects.
+    The first one is used for the current project.
+
+    Example `zai.project/zai_project.yaml`:
+>
+    - sandbox_home: /path/to/project/sandbox
+      shell_container:
+        # Other Docker SDK parameters can be included
+        # It is used mostly for tool_shell running a docker container
+        image: taskbox:latest
+        name: my-project-taskbox
+        working_dir: /sandbox
+        user: "1000:1000"
+        volumes:
+          - "/host/path:/container/path:rw"
+        network_mode: "bridge"
+        command: ["tail", "-f", "/dev/null"]
+<
+
+                                                        *zai-container-installations*
+Container Startup Installations~
+    Zai now supports automatic software installation when a Docker container
+    starts. You can define packages to be installed in the `zai_project.yaml`
+    file, and they will be automatically installed when the container is
+    created or started.
+
+    Installation Configuration Fields:
+    - `pip_install`: Python packages to install via pip
+    - `apt_install`: Linux packages to install via apt
+    - `post_start_commands`: Generic commands to execute
+
+    Complete Example:
+>
+    - sandbox_home: /path/to/project/sandbox
+      shell_container:
+        image: python:3.11-slim
+        name: my-project-container
+      
+      pip_install:
+        - packages: [PyYAML, appdirs]
+        - packages: [torch, torchvision, torchaudio]
+          options: [--index-url, https://download.pytorch.org/whl/cpu]
+      
+      apt_install:
+        - packages: [vim, curl, git]
+      
+      post_start_commands:
+        - "cargo install bat"
+        - "echo 'Development environment ready'"
+<
+
+                                                        *zai-sandbox-directory*
+Sandbox Directory~
+    The sandbox directory is used by file-related tools (`tool_file`,
+    `tool_shell`) as a safe workspace. Files outside the sandbox cannot be
+    accessed for security.
+
+==============================================================================
+7. LICENSE                                              *zai-license*
 
 Released under the MIT License. For details, see:
 https://github.com/zighouse/zai/blob/main/LICENSE

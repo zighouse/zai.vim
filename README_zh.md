@@ -550,6 +550,80 @@ Zai 支持通过项目目录中的 `zai.project/zai_project.yaml` 文件进行�
     command: ["tail", "-f", "/dev/null"]
 ```
 
+### 容器启动后自动安装
+
+Zai 现在支持在 Docker 容器启动时自动安装软件包。您可以在 `zai_project.yaml` 文件中定义要安装的软件包，它们将在容器创建或启动时自动安装。
+
+#### 安装配置字段
+
+在项目配置中添加以下字段：
+
+1. **`pip_install`**: 通过 pip 安装的 Python 包
+   - 支持多种格式：
+     - 简单列表：`["PyYAML", "appdirs"]`
+     - 带选项的结构化格式：
+       ```yaml
+       - packages: [torch, torchvision, torchaudio]
+         options: [--index-url, https://download.pytorch.org/whl/cpu]
+       ```
+     - 混合格式：`["PyYAML", ["torch", "--index-url", "https://download.pytorch.org/whl/cpu"]]`
+
+2. **`apt_install`**: 通过 apt 安装的 Linux 包
+   - 支持与 `pip_install` 类似的格式
+   - 安装前自动运行 `apt-get update`
+   - 示例：`["vim", "curl", "git"]` 或结构化格式
+
+3. **`post_start_commands`**: 要执行的通用命令
+   - 包安装后要运行的 shell 命令列表
+   - 适用于使用其他包管理器安装工具（cargo、go、npm 等）
+   - 示例：
+     ```yaml
+     - "cargo install bat"
+     - "go install github.com/xxx/tool@latest"
+     - "echo '安装完成'"
+     ```
+
+#### 安装过程
+
+1. 当持久化容器启动时（或首次创建）：
+   - 自动执行 `apt-get update`
+   - 安装 `apt_install` 中的包
+   - 将 `pip` 升级到最新版本
+   - 安装 `pip_install` 中的包
+   - 按顺序执行 `post_start_commands` 中的命令
+
+2. 错误处理：
+   - 如果 `apt-get update` 失败，显示警告但继续安装
+   - 如果 `pip` 升级失败，显示警告但继续安装
+   - 单个包安装失败会被记录但不会停止进程
+   - 所有错误都会记录到 stderr 以便调试
+
+#### 完整示例
+
+```yaml
+- sandbox_home: /path/to/project/sandbox
+  shell_container:
+    image: python:3.11-slim
+    name: my-project-container
+    working_dir: /sandbox
+  
+  # Python 包安装
+  pip_install:
+    - packages: [PyYAML, appdirs, requests]
+    - packages: [torch, torchvision, torchaudio]
+      options: [--index-url, https://download.pytorch.org/whl/cpu]
+  
+  # Linux 包安装
+  apt_install:
+    - packages: [vim, curl, git, build-essential]
+  
+  # 通用命令
+  post_start_commands:
+    - "cargo install bat exa"
+    - "echo '开发环境就绪'"
+    - "python3 --version && pip --version"
+```
+
 ### 配置字段
 
 - `sandbox_home`：沙盒文件操作的目录。默认为 `~/.local/share/zai/sandbox`。

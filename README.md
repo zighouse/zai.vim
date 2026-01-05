@@ -494,6 +494,80 @@ Example `zai.project/zai_project.yaml`:
     command: ["tail", "-f", "/dev/null"]
 ```
 
+### Container Startup Installations
+
+Zai now supports automatic software installation when a Docker container starts. You can define packages to be installed in the `zai_project.yaml` file, and they will be automatically installed when the container is created or started.
+
+#### Installation Configuration Fields
+
+Add the following fields to your project configuration:
+
+1. **`pip_install`**: Python packages to install via pip
+   - Supports multiple formats:
+     - Simple list: `["PyYAML", "appdirs"]`
+     - Structured format with options: 
+       ```yaml
+       - packages: [torch, torchvision, torchaudio]
+         options: [--index-url, https://download.pytorch.org/whl/cpu]
+       ```
+     - Mixed format: `["PyYAML", ["torch", "--index-url", "https://download.pytorch.org/whl/cpu"]]`
+
+2. **`apt_install`**: Linux packages to install via apt
+   - Supports similar formats as `pip_install`
+   - Automatically runs `apt-get update` before installation
+   - Example: `["vim", "curl", "git"]` or structured format
+
+3. **`post_start_commands`**: Generic commands to execute
+   - List of shell commands to run after package installations
+   - Useful for installing tools with other package managers (cargo, go, npm, etc.)
+   - Example: 
+     ```yaml
+     - "cargo install bat"
+     - "go install github.com/xxx/tool@latest"
+     - "echo 'Installation complete'"
+     ```
+
+#### Installation Process
+
+1. When a persistent container is started (or created for the first time):
+   - `apt-get update` is automatically executed
+   - Packages in `apt_install` are installed
+   - `pip` is upgraded to the latest version
+   - Packages in `pip_install` are installed
+   - Commands in `post_start_commands` are executed in order
+
+2. Error handling:
+   - If `apt-get update` fails, a warning is shown but installation continues
+   - If `pip` upgrade fails, a warning is shown but installation continues
+   - Individual package installation failures are logged but don't stop the process
+   - All errors are reported to stderr for debugging
+
+#### Complete Example
+
+```yaml
+- sandbox_home: /path/to/project/sandbox
+  shell_container:
+    image: python:3.11-slim
+    name: my-project-container
+    working_dir: /sandbox
+  
+  # Python package installations
+  pip_install:
+    - packages: [PyYAML, appdirs, requests]
+    - packages: [torch, torchvision, torchaudio]
+      options: [--index-url, https://download.pytorch.org/whl/cpu]
+  
+  # Linux package installations  
+  apt_install:
+    - packages: [vim, curl, git, build-essential]
+  
+  # Generic commands
+  post_start_commands:
+    - "cargo install bat exa"
+    - "echo 'Development environment ready'"
+    - "python3 --version && pip --version"
+```
+
 ### Configuration Fields
 
 - `sandbox_home`: Directory for sandboxed file operations. Defaults to `~/.local/share/zai/sandbox`.

@@ -12,7 +12,8 @@ ZAI.Vim 插件                                            *zai* *zai-plugin*
 3. Zai 配置 ............................................ |zai-config|
 4. VIM 命令............................................. |zai-commands|
 5. 会话命令 ............................................ |zai-chat-commands|
-6. 许可证 .............................................. |zai-license|
+6. 项目配置 ............................................ |zai-project-config|
+7. 许可证 .............................................. |zai-license|
 
 ==============================================================================
 1. 简介                                                 *zai-intro*
@@ -580,7 +581,74 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
         get_os_info     获取系统信息（日期、地区、版本）
 
 ==============================================================================
-6. 许可证                                               *zai-license*
+6. 项目配置                                             *zai-project-config*
+
+Zai 支持通过项目目录中的 `zai.project/zai_project.yaml` 文件进行项目级配置。
+这允许您定义项目特定的设置，如沙盒目录和 `tool_shell` 工具的 Docker 容器配置。
+
+                                                        *zai-project-config-location*
+配置文件位置~
+    从当前工作目录向上搜索配置文件：
+    - `zai.project/zai_project.yaml`（新格式）
+    - `zai_project.yaml`（旧格式，会显示警告）
+
+                                                        *zai-project-config-structure*
+配置结构~
+    配置文件应包含配置对象列表。第一个对象用于当前项目。
+
+    示例 `zai.project/zai_project.yaml`：
+>
+    - sandbox_home: /path/to/project/sandbox
+      shell_container:
+        # 可以包含自选的 Docker SDK 参数
+        # 主要用于 tool_shell 的 docker container
+        image: taskbox:latest
+        name: my-project-taskbox
+        working_dir: /sandbox
+        user: "1000:1000"
+        volumes:
+          - "/host/path:/container/path:rw"
+        network_mode: "bridge"
+        command: ["tail", "-f", "/dev/null"]
+<
+
+                                                        *zai-container-installations*
+容器启动后自动安装~
+    Zai 现在支持在 Docker 容器启动时自动安装软件包。您可以在 `zai_project.yaml`
+    文件中定义要安装的软件包，它们将在容器创建或启动时自动安装。
+
+    安装配置字段：
+    - `pip_install`: 通过 pip 安装的 Python 包
+    - `apt_install`: 通过 apt 安装的 Linux 包
+    - `post_start_commands`: 要执行的通用命令
+
+    完整示例：
+>
+    - sandbox_home: /path/to/project/sandbox
+      shell_container:
+        image: python:3.11-slim
+        name: my-project-container
+      
+      pip_install:
+        - packages: [PyYAML, appdirs]
+        - packages: [torch, torchvision, torchaudio]
+          options: [--index-url, https://download.pytorch.org/whl/cpu]
+      
+      apt_install:
+        - packages: [vim, curl, git]
+      
+      post_start_commands:
+        - "cargo install bat"
+        - "echo '开发环境就绪'"
+<
+
+                                                        *zai-sandbox-directory*
+沙盒目录~
+    沙盒目录被文件相关工具（`tool_file`、`tool_shell`）用作安全工作区。出于
+    安全考虑，无法访问沙盒之外的文件。
+
+==============================================================================
+7. 许可证                                               *zai-license*
 
 MIT 许可证发布，详情见：
 https://github.com/zighouse/zai/blob/main/LICENSE

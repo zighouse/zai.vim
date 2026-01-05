@@ -449,12 +449,216 @@ CMD ["tail", "-f", "/dev/null"]
         
         return container_config
     
+    def _execute_post_start_installations(self):
+        """
+        执行容器启动后的安装命令
+        
+        从项目配置中读取并执行：
+        1. pip_install: Python包安装
+        2. apt_install: Linux包安装  
+        3. post_start_commands: 通用命令安装
+        """
+        if not self.container:
+            return
+        
+        # 从项目配置中获取安装配置
+        if not self.project_config:
+            return
+        
+        print("执行容器启动后安装命令...", file=sys.stderr)
+        
+        # 1. 执行apt安装（如果有）
+        if 'apt_install' in self.project_config:
+            self._execute_apt_installations(self.project_config['apt_install'])
+        
+        # 2. 执行pip安装（如果有）
+        if 'pip_install' in self.project_config:
+            self._execute_pip_installations(self.project_config['pip_install'])
+        
+        # 3. 执行通用命令（如果有）
+        if 'post_start_commands' in self.project_config:
+            self._execute_post_start_commands(self.project_config['post_start_commands'])
+    
+    def _execute_apt_installations(self, apt_config):
+        """
+        执行apt安装命令
+        
+        Args:
+            apt_config: apt安装配置，可以是列表或字典列表
+        """
+        print("执行apt安装...", file=sys.stderr)
+        
+        try:
+            # 首先更新apt包列表
+            print("更新apt包列表...", file=sys.stderr)
+            update_result = self._exec_in_container(["apt-get", "update"], timeout=120)
+            if not update_result["success"]:
+                print(f"警告: apt-get update失败: {update_result['stderr']}", file=sys.stderr)
+                # 继续尝试安装，但可能会失败
+            
+            # 处理不同的配置格式
+            if isinstance(apt_config, list):
+                # 简单列表格式: ["vim", "git", "curl"]
+                if all(isinstance(item, str) for item in apt_config):
+                    packages = apt_config
+                    self._install_apt_packages(packages)
+                # 字典列表格式: [{"packages": ["vim", "git"], "options": ["-y"]}]
+                elif all(isinstance(item, dict) for item in apt_config):
+                    for install_spec in apt_config:
+                        packages = install_spec.get('packages', [])
+                        options = install_spec.get('options', ['-y'])
+                        if packages:
+                            self._install_apt_packages(packages, options)
+                else:
+                    print(f"警告: 无法识别的apt配置格式: {apt_config}", file=sys.stderr)
+            elif isinstance(apt_config, dict):
+                # 字典格式: {"packages": ["vim", "git"], "options": ["-y"]}
+                packages = apt_config.get('packages', [])
+                options = apt_config.get('options', ['-y'])
+                if packages:
+                    self._install_apt_packages(packages, options)
+            else:
+                print(f"警告: 无法识别的apt配置类型: {type(apt_config)}", file=sys.stderr)
+                
+        except Exception as e:
+            print(f"执行apt安装时出错: {e}", file=sys.stderr)
+    
+    def _install_apt_packages(self, packages, options=None):
+        """
+        安装指定的apt包
+        
+        Args:
+            packages: 包名列表
+            options: apt安装选项，默认为['-y']
+        """
+        if not packages:
+            return
+        
+        options = options or ['-y']
+        cmd = ["apt-get", "install"] + options + packages
+        
+        print(f"安装apt包: {' '.join(packages)}", file=sys.stderr)
+        result = self._exec_in_container(cmd, timeout=300)
+        
+        if result["success"]:
+            print(f"成功安装apt包: {' '.join(packages)}", file=sys.stderr)
+        else:
+            print(f"安装apt包失败: {result['stderr']}", file=sys.stderr)
+    
+    def _execute_pip_installations(self, pip_config):
+        """
+        执行pip安装命令
+        
+        Args:
+            pip_config: pip安装配置，可以是列表或字典列表
+        """
+        print("执行pip安装...", file=sys.stderr)
+        
+        try:
+            # 首先升级pip到最新版本
+            print("升级pip到最新版本...", file=sys.stderr)
+            upgrade_result = self._exec_in_container(["pip", "install", "--upgrade", "pip"], timeout=120)
+            if not upgrade_result["success"]:
+                print(f"警告: pip升级失败: {upgrade_result['stderr']}", file=sys.stderr)
+                # 继续尝试安装，但可能会使用旧版本pip
+            # 处理不同的配置格式
+            if isinstance(pip_config, list):
+                # 简单列表格式: ["PyYAML", "appdirs"]
+                if all(isinstance(item, str) for item in pip_config):
+                    packages = pip_config
+                    self._install_pip_packages(packages)
+                # 字典列表格式: [{"packages": ["torch"], "options": ["--index-url", "https://..."]}]
+                elif all(isinstance(item, dict) for item in pip_config):
+                    for install_spec in pip_config:
+                        packages = install_spec.get('packages', [])
+                        options = install_spec.get('options', [])
+                        if packages:
+                            self._install_pip_packages(packages, options)
+                # 混合列表格式: ["PyYAML", ["torch", "--index-url", "https://..."]]
+                else:
+                    for item in pip_config:
+                        if isinstance(item, str):
+                            self._install_pip_packages([item])
+                        elif isinstance(item, list):
+                            # 列表中的第一个元素是包名，其余是选项
+                            if item:
+                                packages = [item[0]] if isinstance(item[0], str) else []
+                                options = item[1:] if len(item) > 1 else []
+                                if packages:
+                                    self._install_pip_packages(packages, options)
+                        else:
+                            print(f"警告: 无法识别的pip配置项: {item}", file=sys.stderr)
+            elif isinstance(pip_config, dict):
+                # 字典格式: {"packages": ["PyYAML"], "options": []}
+                packages = pip_config.get('packages', [])
+                options = pip_config.get('options', [])
+                if packages:
+                    self._install_pip_packages(packages, options)
+            else:
+                print(f"警告: 无法识别的pip配置类型: {type(pip_config)}", file=sys.stderr)
+                
+        except Exception as e:
+            print(f"执行pip安装时出错: {e}", file=sys.stderr)
+    
+    def _install_pip_packages(self, packages, options=None):
+        """
+        安装指定的pip包
+        
+        Args:
+            packages: 包名列表
+            options: pip安装选项
+        """
+        if not packages:
+            return
+        
+        options = options or []
+        cmd = ["pip", "install"] + options + packages
+        
+        print(f"安装pip包: {' '.join(packages)}", file=sys.stderr)
+        if options:
+            print(f"  使用选项: {' '.join(options)}", file=sys.stderr)
+        
+        result = self._exec_in_container(cmd, timeout=300)
+        
+        if result["success"]:
+            print(f"成功安装pip包: {' '.join(packages)}", file=sys.stderr)
+        else:
+            print(f"安装pip包失败: {result['stderr']}", file=sys.stderr)
+    
+    def _execute_post_start_commands(self, commands):
+        """
+        执行通用命令
+        
+        Args:
+            commands: 命令字符串列表
+        """
+        if not commands:
+            return
+        
+        print("执行通用安装命令...", file=sys.stderr)
+        
+        if isinstance(commands, list):
+            for i, cmd in enumerate(commands):
+                if isinstance(cmd, str):
+                    print(f"执行命令 {i+1}/{len(commands)}: {cmd}", file=sys.stderr)
+                    result = self._exec_in_container(["sh", "-c", cmd], timeout=300)
+                    
+                    if result["success"]:
+                        print(f"命令执行成功", file=sys.stderr)
+                    else:
+                        print(f"命令执行失败: {result['stderr']}", file=sys.stderr)
+                else:
+                    print(f"警告: 命令 {i+1} 不是字符串: {type(cmd)}", file=sys.stderr)
+        else:
+            print(f"警告: post_start_commands 应该是列表，实际是 {type(commands)}", file=sys.stderr)
+    
     def ensure_container_running(self) -> bool:
         """
         确保持久化容器正在运行
         
         如果容器不存在，则创建并启动一个容器
         如果容器存在但已停止，则启动它
+        容器启动后，执行配置的安装命令
         """
         if not self.persistent:
             return False
@@ -466,6 +670,8 @@ CMD ["tail", "-f", "/dev/null"]
                 print(f"Container {self.container_name} status is {self.container.status}, starting...", file=sys.stderr)
                 self.container.start()
                 time.sleep(1)
+                # 容器重新启动后，执行安装命令
+                self._execute_post_start_installations()
             
             return True
             
