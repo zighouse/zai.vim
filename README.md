@@ -511,11 +511,38 @@ Add the following fields to your project configuration:
          options: [--index-url, https://download.pytorch.org/whl/cpu]
        ```
      - Mixed format: `["PyYAML", ["torch", "--index-url", "https://download.pytorch.org/whl/cpu"]]`
+   - **Permission note**: If container user is not root, add `--user` flag to options
+     to install packages in user directory and avoid permission errors:
+     ```yaml
+     - packages: [requests, numpy]
+       options: [--user]
+     ```
 
-2. **`apt_install`**: Linux packages to install via apt
-   - Supports similar formats as `pip_install`
-   - Automatically runs `apt-get update` before installation
-   - Example: `["vim", "curl", "git"]` or structured format
+2. **`apt_install`**: System packages to install via package manager
+   - Supports multiple package managers: `apt`, `dnf`, `yum`, `rpm`, `pacman`
+   - Automatically handles `sudo` permissions when needed
+   - Supports multiple formats:
+     - **Simple list** (defaults to `apt`): `["vim", "curl", "git"]`
+     - **Structured format with apt**:
+       ```yaml
+       - packages: [vim, git, build-essential]
+         options: [-y]
+       ```
+     - **Specify package manager**:
+       ```yaml
+       package_manager: dnf
+       packages: [vim, git, curl]
+       options: [-y]
+       ```
+     - **Multiple installation specs**:
+       ```yaml
+       - package_manager: apt
+         packages: [vim, curl]
+         options: [-y]
+       - package_manager: dnf
+         packages: [htop, ncdu]
+         options: [-y]
+       ```
 
 3. **`post_start_commands`**: Generic commands to execute
    - List of shell commands to run after package installations
@@ -530,14 +557,21 @@ Add the following fields to your project configuration:
 #### Installation Process
 
 1. When a persistent container is started (or created for the first time):
-   - `apt-get update` is automatically executed
-   - Packages in `apt_install` are installed
-   - `pip` is upgraded to the latest version
-   - Packages in `pip_install` are installed
-   - Commands in `post_start_commands` are executed in order
+   - **System packages**: Package manager is updated (e.g., `apt-get update`, `dnf check-update`)
+   - **Automatic sudo handling**: If container user is not root, Zai automatically uses `sudo` when available
+   - **Package installation**: Packages in `apt_install` are installed with appropriate package manager
+   - **Python packages**: `pip` is upgraded to the latest version
+   - **Package installation**: Packages in `pip_install` are installed
+   - **Generic commands**: Commands in `post_start_commands` are executed in order
 
-2. Error handling:
-   - If `apt-get update` fails, a warning is shown but installation continues
+2. **Smart permission handling**:
+   - If container user is root (UID=0), commands run directly
+   - If `sudo` is available in container, commands are prefixed with `sudo`
+   - If neither root nor sudo is available, commands run directly (may fail with permission errors)
+   - All package managers (`apt`, `dnf`, `yum`, etc.) benefit from this automatic permission handling
+
+3. **Error handling**:
+   - Package manager update failures show warnings but installation continues
    - If `pip` upgrade fails, a warning is shown but installation continues
    - Individual package installation failures are logged but don't stop the process
    - All errors are reported to stderr for debugging

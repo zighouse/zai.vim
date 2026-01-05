@@ -454,8 +454,8 @@ CMD ["tail", "-f", "/dev/null"]
         执行容器启动后的安装命令
         
         从项目配置中读取并执行：
-        1. pip_install: Python包安装
-        2. apt_install: Linux包安装  
+        1. apt_install: Linux包安装（apt、rpm、dnf）
+        2. pip_install: Python包安装
         3. post_start_commands: 通用命令安装
         """
         if not self.container:
@@ -467,9 +467,9 @@ CMD ["tail", "-f", "/dev/null"]
         
         print("执行容器启动后安装命令...", file=sys.stderr)
         
-        # 1. 执行apt安装（如果有）
+        # 1. 执行系统包安装（如果有）
         if 'apt_install' in self.project_config:
-            self._execute_apt_installations(self.project_config['apt_install'])
+            self._execute_system_package_installations(self.project_config['apt_install'])
         
         # 2. 执行pip安装（如果有）
         if 'pip_install' in self.project_config:
@@ -479,71 +479,212 @@ CMD ["tail", "-f", "/dev/null"]
         if 'post_start_commands' in self.project_config:
             self._execute_post_start_commands(self.project_config['post_start_commands'])
     
-    def _execute_apt_installations(self, apt_config):
+    def _check_sudo_available(self):
         """
-        执行apt安装命令
+        检查容器中是否有sudo命令可用
+        
+        Returns:
+            bool: 如果sudo可用返回True，否则返回False
+        """
+        try:
+            result = self._exec_in_container(["which", "sudo"], timeout=10)
+            return result["success"] and "sudo" in result["stdout"].strip()
+        except:
+            return False
+    
+    def _check_root_user(self):
+        """
+        检查当前容器用户是否为root（UID=0）
+        
+        Returns:
+            bool: 如果当前用户是root返回True，否则返回False
+        """
+        try:
+            result = self._exec_in_container(["id", "-u"], timeout=10)
+            if result["success"]:
+                uid = result["stdout"].strip()
+                return uid == "0"
+        except:
+            pass
+        return False
+    
+    def _build_command_with_privileges(self, command_parts):
+        """
+        构建具有适当权限的命令
+        
+        根据容器环境智能添加sudo：
+        1. 如果当前用户已经是root，不需要sudo
+        2. 如果sudo可用，添加sudo
+        3. 否则直接执行（可能会失败，但让系统处理错误）
         
         Args:
-            apt_config: apt安装配置，可以是列表或字典列表
+            command_parts: 命令部分列表，如["apt-get", "install", "vim"]
+            
+        Returns:
+            list: 可能带有sudo前缀的命令列表
         """
-        print("执行apt安装...", file=sys.stderr)
+        # 如果是root用户，不需要sudo
+        if self._check_root_user():
+            return command_parts
         
+        # 检查sudo是否可用
+        if self._check_sudo_available():
+            return ["sudo"] + command_parts
+        
+        # 既不是root也没有sudo，直接执行
+        print(f"警告: 当前用户不是root且sudo不可用，命令可能因权限不足而失败: {' '.join(command_parts)}", file=sys.stderr)
+        return command_parts
+    
+    def _execute_system_package_installations(self, config):
+        """
+        执行系统包安装命令，支持多种包管理器
+        
+        配置格式支持：
+        1. 简单列表（向后兼容）: ["vim", "git", "curl"] - 默认使用apt
+        2. 字典列表: 
+           - [{"packages": ["vim"], "options": ["-y"]}] - 默认使用apt
+           - [{"package_manager": "dnf", "packages": ["vim"], "options": ["-y"]}]
+        3. 字典:
+           - {"packages": ["vim"], "options": ["-y"]} - 默认使用apt
+           - {"package_manager": "dnf", "packages": ["vim"], "options": ["-y"]}
+        
+        Args:
+            config: 安装配置
+        """
         try:
-            # 首先更新apt包列表
-            print("更新apt包列表...", file=sys.stderr)
-            update_result = self._exec_in_container(["apt-get", "update"], timeout=120)
-            if not update_result["success"]:
-                print(f"警告: apt-get update失败: {update_result['stderr']}", file=sys.stderr)
-                # 继续尝试安装，但可能会失败
+            # 检测包管理器类型
+            package_manager = self._detect_package_manager(config)
+            print(f"执行{package_manager}安装...", file=sys.stderr)
+            
+            # 根据包管理器类型执行更新操作
+            update_commands = {
+                'apt': ["apt-get", "update"],
+                'dnf': ["dnf", "check-update"],  # dnf check-update只检查更新，不实际更新
+                'yum': ["yum", "check-update"],
+                'rpm': [],  # rpm没有统一的更新命令
+                'pacman': ["pacman", "-Sy"]
+            }
+            
+            if package_manager in update_commands and update_commands[package_manager]:
+                print(f"更新{package_manager}包列表...", file=sys.stderr)
+                update_cmd = self._build_command_with_privileges(update_commands[package_manager])
+                update_result = self._exec_in_container(update_cmd, timeout=120)
+                if not update_result["success"]:
+                    # dnf/yum check-update在无更新时返回非零，这是正常的
+                    if package_manager in ['dnf', 'yum'] and "Errno" not in update_result.get("stderr", ""):
+                        print(f"信息: {package_manager} check-update完成（可能没有可用更新）", file=sys.stderr)
+                    else:
+                        print(f"警告: {package_manager}更新失败: {update_result.get('stderr', 'Unknown error')}", file=sys.stderr)
             
             # 处理不同的配置格式
-            if isinstance(apt_config, list):
+            if isinstance(config, list):
                 # 简单列表格式: ["vim", "git", "curl"]
-                if all(isinstance(item, str) for item in apt_config):
-                    packages = apt_config
-                    self._install_apt_packages(packages)
-                # 字典列表格式: [{"packages": ["vim", "git"], "options": ["-y"]}]
-                elif all(isinstance(item, dict) for item in apt_config):
-                    for install_spec in apt_config:
+                if all(isinstance(item, str) for item in config):
+                    packages = config
+                    self._install_system_packages(package_manager, packages)
+                # 字典列表格式
+                elif all(isinstance(item, dict) for item in config):
+                    for install_spec in config:
+                        # 每个安装规格可以指定自己的包管理器
+                        spec_pm = install_spec.get('package_manager', package_manager)
                         packages = install_spec.get('packages', [])
-                        options = install_spec.get('options', ['-y'])
+                        options = install_spec.get('options', self._get_default_options(spec_pm))
                         if packages:
-                            self._install_apt_packages(packages, options)
+                            self._install_system_packages(spec_pm, packages, options)
                 else:
-                    print(f"警告: 无法识别的apt配置格式: {apt_config}", file=sys.stderr)
-            elif isinstance(apt_config, dict):
-                # 字典格式: {"packages": ["vim", "git"], "options": ["-y"]}
-                packages = apt_config.get('packages', [])
-                options = apt_config.get('options', ['-y'])
+                    print(f"警告: 无法识别的配置格式: {config}", file=sys.stderr)
+            elif isinstance(config, dict):
+                # 字典格式
+                packages = config.get('packages', [])
+                options = config.get('options', self._get_default_options(package_manager))
                 if packages:
-                    self._install_apt_packages(packages, options)
+                    self._install_system_packages(package_manager, packages, options)
             else:
-                print(f"警告: 无法识别的apt配置类型: {type(apt_config)}", file=sys.stderr)
+                print(f"警告: 无法识别的配置类型: {type(config)}", file=sys.stderr)
                 
         except Exception as e:
-            print(f"执行apt安装时出错: {e}", file=sys.stderr)
+            print(f"执行系统包安装时出错: {e}", file=sys.stderr)
     
-    def _install_apt_packages(self, packages, options=None):
+    def _detect_package_manager(self, config):
         """
-        安装指定的apt包
+        从配置中检测包管理器类型
+        
+        Returns:
+            str: 包管理器类型，默认为'apt'以保持向后兼容
+        """
+        # 如果配置是字典并且指定了package_manager字段
+        if isinstance(config, dict):
+            pm = config.get('package_manager')
+            if pm and isinstance(pm, str):
+                return pm.lower()
+        
+        # 如果配置是字典列表，检查第一个元素是否指定了package_manager
+        if isinstance(config, list) and config and isinstance(config[0], dict):
+            pm = config[0].get('package_manager')
+            if pm and isinstance(pm, str):
+                return pm.lower()
+        
+        # 默认使用apt（向后兼容）
+        return 'apt'
+    
+    def _get_default_options(self, package_manager):
+        """获取包管理器的默认选项"""
+        defaults = {
+            'apt': ['-y'],
+            'dnf': ['-y'],
+            'yum': ['-y'],
+            'rpm': [],  # rpm安装通常需要指定文件路径
+            'pacman': ['--noconfirm']
+        }
+        return defaults.get(package_manager, [])
+    
+    def _install_system_packages(self, package_manager, packages, options=None):
+        """
+        使用指定的包管理器安装包
         
         Args:
+            package_manager: 包管理器类型
             packages: 包名列表
-            options: apt安装选项，默认为['-y']
+            options: 安装选项
         """
         if not packages:
             return
         
-        options = options or ['-y']
-        cmd = ["apt-get", "install"] + options + packages
+        # 不同包管理器的安装命令
+        install_commands = {
+            'apt': ["apt-get", "install"],
+            'dnf': ["dnf", "install"],
+            'yum': ["yum", "install"],
+            'rpm': ["rpm", "-ivh"],  # rpm需要指定.rpm文件路径
+            'pacman': ["pacman", "-S"]
+        }
         
-        print(f"安装apt包: {' '.join(packages)}", file=sys.stderr)
-        result = self._exec_in_container(cmd, timeout=300)
+        if package_manager not in install_commands:
+            print(f"错误: 不支持的包管理器: {package_manager}", file=sys.stderr)
+            return
+        
+        options = options or self._get_default_options(package_manager)
+        cmd = install_commands[package_manager] + options + packages
+        
+        # 对于rpm，包名应该是文件路径
+        if package_manager == 'rpm':
+            print(f"安装rpm包: {' '.join(packages)}", file=sys.stderr)
+            print(f"注意: rpm安装需要指定完整的.rpm文件路径", file=sys.stderr)
+        else:
+            print(f"安装{package_manager}包: {' '.join(packages)}", file=sys.stderr)
+        
+        # 构建具有适当权限的命令
+        final_cmd = self._build_command_with_privileges(cmd)
+        
+        result = self._exec_in_container(final_cmd, timeout=300)
         
         if result["success"]:
-            print(f"成功安装apt包: {' '.join(packages)}", file=sys.stderr)
+            print(f"成功安装{package_manager}包: {' '.join(packages)}", file=sys.stderr)
         else:
-            print(f"安装apt包失败: {result['stderr']}", file=sys.stderr)
+            print(f"安装{package_manager}包失败: {result.get('stderr', 'Unknown error')}", file=sys.stderr)
+            # 对于apt/dnf/yum，如果失败可能是因为包不存在或网络问题
+            if package_manager in ['apt', 'dnf', 'yum']:
+                print(f"建议: 检查包名是否正确或网络连接是否正常", file=sys.stderr)
     
     def _execute_pip_installations(self, pip_config):
         """
@@ -691,6 +832,10 @@ CMD ["tail", "-f", "/dev/null"]
                 
                 time.sleep(2)
                 print(f"Persistent container {self.container_name} has been started and is running", file=sys.stderr)
+                
+                # 容器首次启动后，执行安装命令
+                self._execute_post_start_installations()
+                
                 return True
             except Exception as e:
                 print(f"Failed to create container: {e}", file=sys.stderr)

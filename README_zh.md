@@ -567,11 +567,38 @@ Zai 现在支持在 Docker 容器启动时自动安装软件包。您可以在 `
          options: [--index-url, https://download.pytorch.org/whl/cpu]
        ```
      - 混合格式：`["PyYAML", ["torch", "--index-url", "https://download.pytorch.org/whl/cpu"]]`
+   - **权限说明**：如果容器用户不是 root，请在选项中添加 `--user` 标志
+     以将包安装到用户目录，避免权限错误：
+     ```yaml
+     - packages: [requests, numpy]
+       options: [--user]
+     ```
 
-2. **`apt_install`**: 通过 apt 安装的 Linux 包
-   - 支持与 `pip_install` 类似的格式
-   - 安装前自动运行 `apt-get update`
-   - 示例：`["vim", "curl", "git"]` 或结构化格式
+2. **`apt_install`**: 通过包管理器安装的系统包
+   - 支持多种包管理器：`apt`、`dnf`、`yum`、`rpm`、`pacman`
+   - 自动处理 `sudo` 权限
+   - 支持多种格式：
+     - **简单列表**（默认使用 `apt`）：`["vim", "curl", "git"]`
+     - **结构化格式（使用 apt）**：
+       ```yaml
+       - packages: [vim, git, build-essential]
+         options: [-y]
+       ```
+     - **指定包管理器**：
+       ```yaml
+       package_manager: dnf
+       packages: [vim, git, curl]
+       options: [-y]
+       ```
+     - **多个安装规格**：
+       ```yaml
+       - package_manager: apt
+         packages: [vim, curl]
+         options: [-y]
+       - package_manager: dnf
+         packages: [htop, ncdu]
+         options: [-y]
+       ```
 
 3. **`post_start_commands`**: 要执行的通用命令
    - 包安装后要运行的 shell 命令列表
@@ -586,14 +613,21 @@ Zai 现在支持在 Docker 容器启动时自动安装软件包。您可以在 `
 #### 安装过程
 
 1. 当持久化容器启动时（或首次创建）：
-   - 自动执行 `apt-get update`
-   - 安装 `apt_install` 中的包
-   - 将 `pip` 升级到最新版本
-   - 安装 `pip_install` 中的包
-   - 按顺序执行 `post_start_commands` 中的命令
+   - **系统包更新**：更新包管理器（如 `apt-get update`、`dnf check-update`）
+   - **自动 sudo 处理**：如果容器用户不是 root，Zai 会自动在有 `sudo` 时使用它
+   - **包安装**：使用适当的包管理器安装 `apt_install` 中的包
+   - **Python 包**：将 `pip` 升级到最新版本
+   - **包安装**：安装 `pip_install` 中的包
+   - **通用命令**：按顺序执行 `post_start_commands` 中的命令
 
-2. 错误处理：
-   - 如果 `apt-get update` 失败，显示警告但继续安装
+2. **智能权限处理**：
+   - 如果容器用户是 root（UID=0），直接运行命令
+   - 如果容器中有 `sudo` 可用，命令会加上 `sudo` 前缀
+   - 如果既不是 root 也没有 sudo，直接运行命令（可能会因权限错误而失败）
+   - 所有包管理器（`apt`、`dnf`、`yum` 等）都受益于此自动权限处理
+
+3. **错误处理**：
+   - 包管理器更新失败会显示警告但继续安装
    - 如果 `pip` 升级失败，显示警告但继续安装
    - 单个包安装失败会被记录但不会停止进程
    - 所有错误都会记录到 stderr 以便调试

@@ -699,8 +699,29 @@ Container Startup Installations~
 
     Installation Configuration Fields:
     - `pip_install`: Python packages to install via pip
-    - `apt_install`: Linux packages to install via apt
+      Supports multiple formats: simple lists, structured format with options,
+      or mixed format.
+
+    - `apt_install`: System packages to install via package manager
+      Supports multiple package managers: `apt`, `dnf`, `yum`, `rpm`, `pacman`
+      Automatically handles `sudo` permissions when needed.
+      Supports multiple formats:
+        * Simple list (defaults to `apt`): `["vim", "curl", "git"]`
+        * Structured format: `{"packages": ["vim"], "options": ["-y"]}`
+        * Specify package manager: 
+          `{"package_manager": "dnf", "packages": ["vim"], "options": ["-y"]}`
+        * Multiple installation specs in a list.
+
     - `post_start_commands`: Generic commands to execute
+      List of shell commands to run after package installations.
+      Useful for installing tools with other package managers (cargo, go, npm, etc.)
+
+    Smart Permission Handling~
+        Zai automatically handles permissions for package installation:
+        - If container user is root (UID=0), commands run directly
+        - If `sudo` is available in container, commands are prefixed with `sudo`
+        - If neither root nor sudo is available, commands run directly
+          (may fail with permission errors)
 
     Complete Example:
 >
@@ -715,7 +736,10 @@ Container Startup Installations~
           options: [--index-url, https://download.pytorch.org/whl/cpu]
       
       apt_install:
-        - packages: [vim, curl, git]
+        - packages: [vim, curl, git]  # Uses apt by default
+        - package_manager: dnf
+          packages: [htop, ncdu]
+          options: [-y]
       
       post_start_commands:
         - "cargo install bat"
