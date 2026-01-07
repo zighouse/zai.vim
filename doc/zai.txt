@@ -457,6 +457,22 @@ via |zai-chat-command-prefix|.
                       the current chat
     `prefix`            Chat Command Prefix              |zai-chatcmd-prefix|
 
+
+                                                        *zai-chatcmd-taskbox*
+:show taskbox           Display taskbox container information.
+                        Chat command |zai-chat-commands|.
+                        Prints details about the Docker sandbox environment,
+                        including container status, image details, and security
+                        settings.
+:start taskbox          Run taskbox Docker container.
+                        Chat command |zai-chat-commands|.
+                        Starts the persistent Docker container for executing
+                        shell commands in a secure sandbox.
+:stop taskbox           Stop taskbox Docker container.
+                        Chat command |zai-chat-commands|.
+                        Stops and removes the persistent Docker container,
+                        freeing system resources.
+
                                                         *zai-chatcmd-file*
 :file `file-path`         Attach the text file specified by `file-path` to the
                         current chat's input request for reference.

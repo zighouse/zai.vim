@@ -407,6 +407,18 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
     `log-file`          记录当前聊天的日志文件全路径     |zai-log|
     `prefix`            会话命令前缀                     |zai-chatcmd-prefix|
 
+                                                        *zai-chatcmd-taskbox*
+:show taskbox           显示 taskbox 容器信息。
+                        会话命令 |zai-chat-commands|。
+                        打印 Docker 沙盒环境的详细信息，包括容器状态、镜像详情和安全
+                        设置。
+:start taskbox          运行 taskbox 容器。
+                        会话命令 |zai-chat-commands|。
+                        启动持久化的 Docker 容器，用于在安全沙盒中执行 shell 命令。
+:stop taskbox           停止 taskbox 容器。
+                        会话命令 |zai-chat-commands|。
+                        停止并移除持久化的 Docker 容器，释放系统资源。
+
                                                         *zai-chatcmd-file*
 :file `file-path`         附加 `file-path` 指定的文本文件到当前聊天的输入请求中用
                         作参考。会话命令 |zai-chat-commands|.

@@ -276,6 +276,9 @@ COMMANDS:
 
   Utility:
     {cmd_prefix}show <config>        - Display configurations or parameters.
+    {cmd_prefix}show taskbox         - Display taskbox information.
+    {cmd_prefix}start taskbox        - Run taskbox docker container.
+    {cmd_prefix}stop taskbox         - Stop taskbox docker container.
 
 EXAMPLES:
   {cmd_prefix}model deepseek-coder

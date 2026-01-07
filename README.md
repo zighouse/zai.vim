@@ -258,6 +258,9 @@ Session commands configure AI assistant settings and are processed by Zai's back
 - `:help` - Show help information
 - `:exit`/`:quit` - Force exit remote AI service
 - `:show <config>` - Display configuration items
+- `:show taskbox` - Display taskbox information.
+- `:start taskbox` - Run taskbox docker container.
+- `:stop taskbox` - Stop taskbox docker container.
 - `:file <file-path>` - Attach text file
 - `:-file` - Clear all attachments
 - `:base-url <url>` - Set base url of AI service

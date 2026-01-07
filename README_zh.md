@@ -279,6 +279,9 @@ Zai 会在展示窗口中同时展示用户发送的请求，以及远程助手�
 - `:help` - 显示会话命令帮助
 - `:exit`/`:quit` - 强制退出远程 AI 服务
 - `:show <config>` - 显示 AI 助手的配置项
+- `:show taskbox` - 显示 taskbox 容器信息
+- `:start taskbox` - 运行 taskbox 容器
+- `:stop taskbox` - 停止 taskbox 容器
 - `:file <file-path>` - 附加指定文本文件
 - `:-file` - 清除所有附件
 - `:base-url <url>` - 指定当前聊天的 AI 服务 base-url

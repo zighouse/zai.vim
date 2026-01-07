@@ -14,6 +14,7 @@ from typing import Dict, List, Any, Union, Optional
 from config import AIAssistantManager, parse_number_from_readable
 from logger import Logger
 from tool import ToolManager
+from tool_shell import invoke_shell_sandbox_info, invoke_shell_cleanup, invoke_execute_shell
 from client import Client
 from tokens import AITokenizer
 
@@ -82,6 +83,8 @@ class AIChat:
         self._cli.register("goto", self._on_goto)
         self._cli.register("down", self._on_down)
         self._cli.register("open", self._on_open)
+        self._cli.register("start", self._on_start)
+        self._cli.register("stop", self._on_stop)
 
     def _get_tokenizer_name(self):
         tokenizer_name = "cl100k_base"
@@ -663,6 +666,15 @@ class AIChat:
             elif opt == 'no_log':
                 print(f"{not self._logger.is_enable()}")
                 return True
+            elif argv[0] == 'taskbox':
+                try:
+                    from tool_shell import invoke_shell_sandbox_info
+                    info = invoke_shell_sandbox_info()
+                    import json
+                    print(json.dumps(info, indent=2))
+                except Exception as e:
+                    print(f"Error showing taskbox info: {e}")
+                return True
             else:
                 value = ''
                 print(f"Option `{argv[0]}` is unspecified.")
@@ -744,6 +756,33 @@ class AIChat:
     def open_log(self, log_dir="", log_filename=""):
         self._logger.open(log_dir, log_filename)
 
+    def _on_start(self, *argv):
+        if len(argv) == 1 and argv[0] == 'taskbox':
+            try:
+                from tool_shell import invoke_execute_shell
+                result = invoke_execute_shell(command="echo 'Starting taskbox container...'", timeout=2, persistent=True)
+                if result.get('success'):
+                    print('Taskbox container started.')
+                else:
+                    print(f'Failed to start taskbox: {result.get("error", "unknown error")}')
+            except Exception as e:
+                print(f'Error starting taskbox: {e}')
+        else:
+            print('Usage: start taskbox')
+
+    def _on_stop(self, *argv):
+        if len(argv) == 1 and argv[0] == 'taskbox':
+            try:
+                from tool_shell import invoke_shell_cleanup
+                result = invoke_shell_cleanup()
+                if result.get('success'):
+                    print('Taskbox container stopped.')
+                else:
+                    print(f'Failed to stop taskbox: {result.get("error", "unknown error")}')
+            except Exception as e:
+                print(f'Error stopping taskbox: {e}')
+        else:
+            print('Usage: stop taskbox')
     def start(self):
         self._cli.start()
         self._main_chat_loop()
