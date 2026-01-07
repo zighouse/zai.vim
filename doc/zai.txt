@@ -623,7 +623,7 @@ supported for setting or unsetting:
                                                         *zai-toolsets*
 Available tool sets:
 
-    *file*              File operations tool set
+    *file*                File operations tool set
         ls              List files and directories
         mkdir           Create directories
         copy_file       Copy files or directories
@@ -635,26 +635,26 @@ Available tool sets:
         patch_file      Apply patches
 
     *web*               Web operations tool set
-        web_get_content Fetch web page content
-        web_search      Search the web
+        web_get_content   Fetch web page content
+        web_search        Search the web
         web_download_file Download files from URLs
 
     *shell*             Secure Shell execution tool set
         execute_shell   Execute commands in Docker container
 
     *grep*              File searching tool set
-        grep            Search file content (like Unix grep)
+        grep              Search file content (like Unix grep)
 
-    *ai*                AI operations tool set
-        generate_image  Generate images with AI
+    *ai*                AI operations tool set (experimental)
+        generate_image    Generate images with AI
 
-    *browser*           Browser automation tool set
-        open_browser    Open URLs in browser
-        get_page_content Get dynamic page content
-        screenshot      Take webpage screenshots
+    *browser*           Browser automation tool set (experimental)
+        open_browser      Open URLs in browser
+        get_page_content  Get dynamic page content
+        screenshot        Take webpage screenshots
 
     *os*                System information tool set
-        get_os_info     Get system information (date, locale, version)
+        get_os_info       Get system information (date, locale, version)
 ==============================================================================
 6. PROJECT CONFIGURATION                                *zai-project-config*
 

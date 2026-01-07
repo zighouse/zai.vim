@@ -347,10 +347,10 @@ Zai 提供了多个工具集供 AI 调用以与系统交互：
 4. **grep** - 文件搜索
    - `grep` - 在文件中搜索模式（类似 Unix grep）
 
-5. **ai** - AI 操作
+5. **ai** - AI 操作 （实验性功能）
    - `generate_image` - 使用 AI 生成图片
 
-6. **browser** - 浏览器自动化
+6. **browser** - 浏览器自动化 （实验性功能）
    - `open_browser` - 在浏览器中打开 URL
    - `get_page_content` - 获取动态页面内容
    - `screenshot` - 截取网页截图
@@ -528,10 +528,10 @@ Zai 支持通过项目目录中的 `zai.project/zai_project.yaml` 文件进行�
     # 可以包含自选的 Docker SDK 参数
     # 主要用于 tool_shell 的 docker container，可用项参见 run():
     # https://docker-py.readthedocs.io/en/stable/containers.html
-    image: taskbox:latest
-    name: my-project-taskbox
-    Dockerfile: "Dockerfile.taskbox"
-    working_dir: /sandbox
+    image: taskbox:latest            # 指定使用的镜像名
+    name: my-project-taskbox         # 指定使用的容器名
+    Dockerfile: Dockerfile.taskbox   # 如果镜像不存在，使用这个 dockerfile 创建镜像
+    working_dir: /sandbox            # 指定容器的默认进入目录
     user: "1000:1000"  # UID:GID 与主机用户匹配，或者用镜像中定义的用户如 "sandbox"
     volumes:
       - "/host/path:/container/path:rw"

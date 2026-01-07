@@ -26,7 +26,6 @@ except ImportError:
 
 
 def get_host_uid_gid():
-    """获取主机用户的UID和GID"""
     import os
     try:
         uid = os.getuid()
@@ -37,11 +36,10 @@ def get_host_uid_gid():
         return 1000, 1000
 
 
-# 全局默认配置
 DEFAULT_IMAGE = "taskbox:latest"
 DEFAULT_WORKDIR = "/sandbox"
 DEFAULT_TIMEOUT = 60
-DEFAULT_CONTAINER_NAME = "zai-tool-shell-taskbox"
+DEFAULT_CONTAINER_NAME = "zai-taskbox"
 
 
 class TaskboxExecutor:
@@ -51,13 +49,6 @@ class TaskboxExecutor:
     """
     
     def __init__(self, image: str = DEFAULT_IMAGE, persistent: bool = True):
-        """
-        初始化TaskboxExecutor
-        
-        Args:
-            image: 容器镜像名称
-            persistent: 是否使用持久化容器
-        """
         if not DOCKER_AVAILABLE:
             raise RuntimeError(DOCKER_ERROR)
         
@@ -69,7 +60,7 @@ class TaskboxExecutor:
         self.host_uid, self.host_gid = get_host_uid_gid()
         
         # 加载项目配置
-        self.project_config = self._load_project_config()
+        self.project_config = get_project_config()
         
         # 应用项目配置中的shell_container设置
         self.shell_container_config = self._get_shell_container_config()
@@ -91,32 +82,21 @@ class TaskboxExecutor:
                 "Please ensure Docker service is running and current user has permission to access Docker"
             )
     
-    def _load_project_config(self) -> Optional[Dict[str, Any]]:
-        """加载项目配置"""
-        return get_project_config()
-    
     def _get_shell_container_config(self) -> Dict[str, Any]:
-        """获取shell_container配置"""
         if not self.project_config:
             return {}
-        
-        # 从项目配置中提取shell_container
         shell_container = self.project_config.get('shell_container')
         if isinstance(shell_container, dict):
             return shell_container
         return {}
     
     def _get_config_value(self, key: str, default: Any) -> Any:
-        """从shell_container配置中获取值，如果不存在则使用默认值"""
         return self.shell_container_config.get(key, default)
     
     def _get_user_config(self) -> str:
-        """获取用户配置"""
         user_config = self.shell_container_config.get('user')
         if user_config is None:
-            # 默认使用主机用户UID:GID
             return f"{self.host_uid}:{self.host_gid}"
-        
         if isinstance(user_config, str):
             return user_config
         elif isinstance(user_config, int):
@@ -125,7 +105,6 @@ class TaskboxExecutor:
             return f"{self.host_uid}:{self.host_gid}"
     
     def _image_exists(self) -> bool:
-        """检查镜像是否存在"""
         try:
             self.client.images.get(self.image)
             return True
@@ -136,16 +115,11 @@ class TaskboxExecutor:
             return False
     
     def _build_image_if_needed(self):
-        """如果镜像不存在，尝试构建默认taskbox镜像"""
         if self._image_exists():
             return
         
         print(f"Image {self.image} doesn't exist, trying to build...", file=sys.stderr)
-        
-        # 从配置获取Dockerfile路径
         dockerfile_path = self.shell_container_config.get('Dockerfile', 'Dockerfile.taskbox')
-        
-        # 首先尝试读取指定的Dockerfile文件
         dockerfile_content = None
         if os.path.exists(dockerfile_path):
             try:
@@ -155,10 +129,9 @@ class TaskboxExecutor:
             except Exception as e:
                 print(f"Failed to read external Dockerfile: {e}, using built-in default configuration", file=sys.stderr)
         
-        # 如果没有外部文件，使用内置的默认Dockerfile
         if dockerfile_content is None:
             dockerfile_content = f"""
-# 使用 2025 年主流的 Python 3.12 镜像
+# 主流 python 源，3.12-slim 目前基于 Debian 12 (bookworm)
 FROM python:3.12-slim
 
 # 设置环境变量，防止交互式弹窗阻塞构建
@@ -168,8 +141,7 @@ ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=UTC
 ARG HOST_UID={self.host_uid}
 ARG HOST_GID={self.host_gid}
 
-# --- 步骤 1: 替换阿里 APT 源 ---
-# 3.12-slim 目前基于 Debian 12 (bookworm)
+# 替换阿里 APT 源，并默认安装开发相关工具集
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -187,32 +159,25 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debia
         sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# --- 步骤 2: 创建与主机用户同UID/GID的用户，并赋予sudo权限（无需密码）---
+# 创建与主机用户同UID/GID的用户，并赋予sudo权限（无需密码）
 RUN groupadd -g $HOST_GID sandbox \
     && useradd -m -u $HOST_UID -g $HOST_GID -s /bin/bash sandbox \
     && echo "sandbox ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/sandbox \
     && chmod 0440 /etc/sudoers.d/sandbox
 
-# --- 步骤 3: 替换阿里 PIP 源 ---
+# 替换阿里 PIP 源
 RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
     && pip config set install.trusted-host mirrors.aliyun.com \
     && pip install --upgrade pip
 
-# --- 步骤 3: 配置 ccache 环境 ---
-# 将 ccache 路径加入 PATH 顶层，使其接管编译命令
+# 配置 ccache 环境，接管编译命令
 ENV PATH="/usr/lib/ccache:$PATH"
-# 预设 ccache 目录到规划的 volume 中
 ENV CCACHE_DIR=/ccache
+RUN mkdir -p /ccache && chown -R $HOST_UID:$HOST_GID /ccache
 
-# 创建项目依赖目录，并设置为可被sandbox写入
-RUN mkdir -p /opt/project && chown -R $HOST_UID:$HOST_GID /opt/project
-
+# 配置 sandbox，并作容器进入目录
+RUN mkdir -p /sandbox && chown -R $HOST_UID:$HOST_GID /sandbox
 WORKDIR /sandbox
-
-# 默认以root用户运行，但可以通过docker run -u $HOST_UID:$HOST_GID切换
-# 为了保持兼容性，默认保持root身份，但确保/sandbox目录权限正确
-# 注意：如果以sandbox身份运行，某些需要特权的操作可能失败
-# 因此建议在启动容器时决定使用root还是sandbox
 
 # 保持运行
 CMD ["tail", "-f", "/dev/null"]
@@ -366,7 +331,6 @@ CMD ["tail", "-f", "/dev/null"]
             # 根据类型进行合并
             if isinstance(project_value, list) and isinstance(base_value, list):
                 # 列表合并：基础配置在前，项目配置在后
-                # 对于某些字段如volumes，已经在_prepare_mounts中特殊处理
                 if key == 'volumes':
                     # volumes已经在_prepare_mounts中处理，跳过
                     continue
@@ -410,7 +374,7 @@ CMD ["tail", "-f", "/dev/null"]
             "cpu_period": 100000,
             "cpu_quota": 50000,
             "detach": True,
-            "auto_remove": False
+            "auto_remove": True
         }
         
         # 确定命令
@@ -1249,25 +1213,25 @@ def invoke_shell_cleanup():
         }
 
 
-if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "test":
-            print("Testing taskbox shell execution with project configuration...")
-            info = invoke_shell_sandbox_info()
-            print(json.dumps(info, indent=2))
-            
-            if info.get("docker_available", False):
-                print("\nProject configuration loaded:", info.get("project_config_loaded"))
-                if info.get("shell_container_config"):
-                    print("Shell container config:", info.get("shell_container_config"))
-        elif sys.argv[1] == "cleanup":
-            result = invoke_shell_cleanup()
-            print(json.dumps(result, indent=2))
-        elif sys.argv[1] == "info":
-            result = invoke_shell_sandbox_info()
-            print(json.dumps(result, indent=2))
-    else:
-        print("Taskbox shell tool module loaded (with project configuration support).")
-        print("Use 'python tool_shell.py test' to test the environment.")
-        print("Use 'python tool_shell.py cleanup' to clean up persistent container.")
-        print("Use 'python tool_shell.py info' to get sandbox info.")
+#if __name__ == "__main__":
+#    if len(sys.argv) > 1:
+#        if sys.argv[1] == "test":
+#            print("Testing taskbox shell execution with project configuration...")
+#            info = invoke_shell_sandbox_info()
+#            print(json.dumps(info, indent=2))
+#            
+#            if info.get("docker_available", False):
+#                print("\nProject configuration loaded:", info.get("project_config_loaded"))
+#                if info.get("shell_container_config"):
+#                    print("Shell container config:", info.get("shell_container_config"))
+#        elif sys.argv[1] == "cleanup":
+#            result = invoke_shell_cleanup()
+#            print(json.dumps(result, indent=2))
+#        elif sys.argv[1] == "info":
+#            result = invoke_shell_sandbox_info()
+#            print(json.dumps(result, indent=2))
+#    else:
+#        print("Taskbox shell tool module loaded (with project configuration support).")
+#        print("Use 'python tool_shell.py test' to test the environment.")
+#        print("Use 'python tool_shell.py cleanup' to clean up persistent container.")
+#        print("Use 'python tool_shell.py info' to get sandbox info.")

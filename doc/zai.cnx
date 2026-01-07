@@ -569,10 +569,10 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
     *grep*              文件搜索工具集
         grep            搜索文件内容（类似 Unix grep）
 
-    *ai*                AI 操作工具集
+    *ai*                AI 操作工具集（实验性功能）
         generate_image  生成图片
 
-    *browser*           浏览器自动化工具集
+    *browser*           浏览器自动化工具集（实验性功能）
         open_browser    打开浏览器
         get_page_content 获取动态页面内容
         screenshot      截取网页截图

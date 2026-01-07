@@ -326,10 +326,10 @@ Zai provides several tool sets that AI can call to interact with the system:
 4. **grep** - File searching
    - `grep` - Search for patterns in files (like Unix grep)
 
-5. **ai** - AI operations
+5. **ai** - AI operations (experimental)
    - `generate_image` - Generate images with AI
 
-6. **browser** - Browser automation
+6. **browser** - Browser automation (experimental)
    - `open_browser` - Open URLs in browser
    - `get_page_content` - Get dynamic page content
    - `screenshot` - Take screenshots
@@ -472,10 +472,10 @@ Example `zai.project/zai_project.yaml`:
     # Other Docker SDK parameters can be included
     # It is used mostly for tool_shell running a docker container, see to run():
     # https://docker-py.readthedocs.io/en/stable/containers.html
-    image: taskbox:latest
-    name: my-project-taskbox
-    Dockerfile: "Dockerfile.taskbox"
-    working_dir: /sandbox
+    image: taskbox:latest            # the docker image to use
+    name: my-project-taskbox         # name of this container
+    Dockerfile: Dockerfile.taskbox   # if the image is not exist, use this dockerfile to create a new one.
+    working_dir: /sandbox            # working dir
     user: "1000:1000"  # UID:GID as host user, or any user provided in docker image, e.g. "sandbox"
     volumes:
       - "/host/path:/container/path:rw"
