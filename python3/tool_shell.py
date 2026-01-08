@@ -824,6 +824,7 @@ CMD ["tail", "-f", "/dev/null"]
             pass  # 容器不存在，无需操作
         except Exception as e:
             print(f"Error stopping container: {e}", file=sys.stderr)
+            self.container = None
     
     def _exec_in_container(self, cmd_list: List[str], timeout: int, working_dir: str = None) -> Dict[str, Any]:
         """
