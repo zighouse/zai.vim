@@ -13,6 +13,12 @@ from toolcommon import sanitize_path
 
 _DEFAULT_SEARCH_ENGINE = "https://html.duckduckgo.com/html/"
 
+try:
+    import uuid
+    _SESSION_ID = uuid.uuid4().hex.upper()
+except ImportError:
+    _SESSION_ID = '06704B834B262359974E927A4F93EC45'
+
 def _remove_data_images(markdown_text):
     pattern = r'!\[[^\]]*\]\(data:image[^)]+\)'
     cleaned_text = re.sub(pattern, '', markdown_text)
@@ -457,8 +463,16 @@ def invoke_web_search(request: str, base_url: str = _DEFAULT_SEARCH_ENGINE, max_
             # Bing 搜索使用 GET 请求，参数在 URL 中
             search_url = f"{base_url.rstrip('/')}/search"
             params = {
-                'q': request,
-                'form': 'QBLH'  # Bing 搜索表单标识
+                'q': request,    # 搜索关键词
+                'cvid': _SESSION_ID,    # 会话标识符
+                'responseFilter': '-images,-videos', # 过滤掉图片、视频等
+                'qs': 'n',              # 搜索建议 normal
+                'sp': '-1',             # 没有使用搜索建议
+                'lq': '0',              # 是否按字面意思做精确匹配
+                'form': 'QBRE'          # 请求来源: QBRE(官页), QBLH(导航栏)
+                                        # 这里应该使用 QBRE 而不是 QBLH，因为 requests 会按表单格式
+                                        # 编码搜索关键词，这时 bing 应该按官页的表单提交方式来理解，
+                                        # 否则，当遇到多关键词时，会得到错误的搜索结果。
             }
             response = requests.get(search_url, params=params, headers=headers, timeout=15)
         elif "google.com" in base_url:
