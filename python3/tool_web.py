@@ -934,22 +934,25 @@ def process_duckduckgo_markdown(markdown_text):
 
     return "\n\n".join(simplified_sections)
 
+_driver = None
 def _google_search_by_uc(query, base_url = "https://www.google.com", timeout=15):
+    global _driver
     import undetected_chromedriver as uc
 
     options = uc.ChromeOptions()
     options.add_argument('--no-sandbox') # 必须，尤其是以 root 或在虚拟机运行时
     #options.add_argument('--disable-dev-shm-usage')
 
-    driver = uc.Chrome(
-        #headless=True, # 不要使用无头模型，否则有概率被 google 反爬虫策略阻挡。
-        options=options
-    )
+    if _driver is None:
+        _driver = uc.Chrome(
+            #headless=True, # 不要使用无头模型，否则有概率被 google 反爬虫策略阻挡。
+            options=options
+        )
 
     content = "Search failed."
     try:
         search_url = f"{base_url.rstrip('/')}/search?q={quote_plus(query)}"
-        driver.get(search_url)
+        _driver.get(search_url)
 
         try:
             # 这里我们等待包含 AI 文本的容器出现
@@ -957,31 +960,34 @@ def _google_search_by_uc(query, base_url = "https://www.google.com", timeout=15)
             # 主搜索清单节点: #search
             # 2026年 google AI 概览尾部致谢链接: a[href*="support.google.com/websearch?p=ai_overviews"]
             selector = 'a[href*="support.google.com/websearch?p=ai_overviews"]'
-            wait = WebDriverWait(driver, timeout)
+            wait = WebDriverWait(_driver, timeout)
             ai_overview = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
         except:
             pass
 
-        #search_results_container = driver.find_element(By.ID, "search")
-        search_results_container = driver.find_element(By.ID, "rcnt")
+        #search_results_container = _driver.find_element(By.ID, "search")
+        search_results_container = _driver.find_element(By.ID, "rcnt")
         content = search_results_container.get_attribute('innerHTML')
 
     finally:
-        driver.quit() # 关闭浏览器
+        #driver.quit() # 关闭浏览器
+        pass
 
     return content
 
 def _bing_search_by_uc(query, base_url = "https://cn.bing.com", timeout=15):
     import undetected_chromedriver as uc
+    global _driver
 
     options = uc.ChromeOptions()
     options.add_argument('--no-sandbox') # 必须，尤其是以 root 或在虚拟机运行时
     #options.add_argument('--disable-dev-shm-usage')
 
-    driver = uc.Chrome(
-        #headless=True, # 不要使用无头模型，否则有概率被 bing 反爬虫策略阻挡。
-        options=options
-    )
+    if _driver is None:
+        _driver = uc.Chrome(
+            #headless=True, # 不要使用无头模型，否则有概率被 bing 反爬虫策略阻挡。
+            options=options
+        )
 
     content = "Search failed."
     try:
@@ -991,7 +997,7 @@ def _bing_search_by_uc(query, base_url = "https://cn.bing.com", timeout=15):
                 f'form=QBLH',          # 请求来源: QBRE(官页), QBLH(导航栏)
                 ]
         search_url = f"{base_url.rstrip('/')}/search?{'&'.join(fields)}"
-        driver.get(search_url)
+        _driver.get(search_url)
 
         # bing 搜索结果页面 DOM:
         # 结果顶节点: ol#b_results
@@ -1007,16 +1013,16 @@ def _bing_search_by_uc(query, base_url = "https://cn.bing.com", timeout=15):
             # 2026年 bing AI 概览尾部来源链接:
             #selector = 'li.gs_tkn.gs_cit_stry_item'
             selector = 'div#gs_main'
-            wait = WebDriverWait(driver, timeout)
+            wait = WebDriverWait(_driver, timeout)
             wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
         except:
             pass
 
-        #res_top = driver.find_element(By.ID, "b_results")
+        #res_top = _driver.find_element(By.ID, "b_results")
         #content = res_top.get_attribute('innerHTML')
-        res_ai = driver.find_element(By.CSS_SELECTOR, 'div#gs_main')
-        res_list = driver.find_elements(By.CSS_SELECTOR, 'li.b_algo')
-        res_news = driver.find_elements(By.CSS_SELECTOR, 'li.b_ans.b_nwsAns')
+        res_ai = _driver.find_element(By.CSS_SELECTOR, 'div#gs_main')
+        res_list = _driver.find_elements(By.CSS_SELECTOR, 'li.b_algo')
+        res_news = _driver.find_elements(By.CSS_SELECTOR, 'li.b_ans.b_nwsAns')
         htmls = [ res_ai.get_attribute('innerHTML') ]
         for elt in res_list:
             htmls.append(elt.get_attribute('innerHTML'))
@@ -1025,7 +1031,8 @@ def _bing_search_by_uc(query, base_url = "https://cn.bing.com", timeout=15):
         content = ''.join(htmls)
 
     finally:
-        driver.quit() # 关闭浏览器
+        #driver.quit() # 关闭浏览器
+        pass
 
     return content
 
@@ -1552,7 +1559,8 @@ def _get_download_output_path(
 if __name__ == "__main__":
     #content = _google_search("格林兰岛 压力")
     #content = _google_search_by_uc("AI LLM 新进展")
-    content = invoke_web_search("格林兰 局势 新进展", engine='bing')
+    #content = invoke_web_search("格林兰 局势 新进展", engine='bing')
+    content = invoke_web_search("委内瑞拉 局势 新进展", engine='bing')
     text = _html_to_markdown(content)
     text = _remove_images(text)
     text = _remove_empty_links(text)
