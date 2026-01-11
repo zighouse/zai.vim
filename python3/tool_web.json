@@ -34,9 +34,15 @@
             "type": "string",
             "description": "搜索关键词或查询内容"
           },
+          "engine": {
+            "type": "string",
+            "description": "搜索引擎名称，可选值：'duckduckgo', 'google', 'bing', 'auto'。如果未指定，则使用base_url或默认配置",
+            "enum": ["duckduckgo", "google", "bing", "auto"],
+            "default": "duckduckgo"
+          },
           "base_url": {
             "type": "string",
-            "description": "搜索引擎的基础URL（可选，默认为DuckDuckGo）",
+            "description": "搜索引擎的基础URL（可选，如果指定engine则忽略此参数）",
             "default": "https://html.duckduckgo.com/html/"
           },
           "max_results": {

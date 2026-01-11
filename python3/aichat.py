@@ -698,9 +698,8 @@ class AIChat:
 
     def _on_search(self, *argv):
         request = " ".join(argv)
-        from tool_web import invoke_search
-        #content = invoke_search(request=request, base_url="https://cn.bing.com")
-        content = invoke_search(request=request)
+        from tool_web import invoke_web_search
+        content = invoke_web_search(request=request, engine='google')
         print(f"{content}")
 
     def _on_goto(self, url):
