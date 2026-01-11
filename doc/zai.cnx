@@ -572,7 +572,8 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
 
     *web*               网页操作工具集
         web_get_content 获取网页内容
-        web_search      网络搜索
+        web_search      网络搜索. 当使用 bing、google 搜索时会打开 chrome 窗口，
+                        为了不对当前工作造成干扰，建议把它移到别的工作空间上。
         web_download_file 下载文件
 
     *shell*             安全 Shell 执行工具集

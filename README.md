@@ -319,7 +319,7 @@ Zai provides several tool sets that AI can call to interact with the system:
 
 2. **web** - Web operations
    - `web_get_content` - Fetch web page content
-   - `web_search` - Search the web
+   - `web_search` - Search the web. **When using Bing or Google search, a Chrome window will open**. To avoid interfering with current work, it is recommended to move it to another workspace.
    - `web_download_file` - Download files from URLs
 
 3. **shell** - Secure shell execution
