@@ -1,0 +1,86 @@
+# Zai.Vim Python 依赖项
+# ========================
+
+# 核心依赖（必需）
+# ---------------
+openai>=1.0.0           # OpenAI API客户端
+requests>=2.28.0        # HTTP请求库
+appdirs>=1.4.0          # 应用目录管理
+chardet>=5.0.0          # 字符编码检测
+PyYAML>=6.0.0           # YAML配置文件解析
+tiktoken>=0.5.0         # OpenAI token计数
+
+# 可选依赖：Web相关功能
+# ---------------------
+beautifulsoup4>=4.12.0  # HTML解析 (bs4)
+selenium>=4.10.0        # 浏览器自动化
+undetected-chromedriver>=3.5.0  # 防检测的Chrome驱动
+html-to-markdown>=1.0.0 # HTML转Markdown转换
+
+# Web功能系统依赖（需要额外安装）：
+# 1. Chrome浏览器：sudo apt install chromium-browser 或从官网安装Google Chrome
+# 2. ChromeDriver：与Chrome版本匹配的驱动程序
+# 3. undetected-chromedriver会自动管理ChromeDriver，但需要系统上有Chrome浏览器
+
+# 可选依赖：Docker容器功能（shell工具）
+# -----------------------------------
+docker>=6.0.0           # Docker Python SDK
+
+# Docker功能系统依赖（需要额外安装）：
+# 1. Docker引擎：sudo apt install docker.io docker-compose
+# 2. 用户加入docker组：sudo usermod -aG docker $USER
+# 3. 重启Docker服务：sudo systemctl restart docker
+# 4. 确认安装：docker --version
+
+# 可选依赖：文件操作和系统工具
+# ----------------------------
+python-magic>=0.4.27    # 文件类型检测
+distro>=1.8.0           # Linux发行版检测
+
+# 可选依赖：AI相关工具
+# -------------------
+transformers>=4.30.0    # Hugging Face Transformers库
+# 注意：transformers可能依赖torch，如果不需要可以跳过
+
+# 可选依赖：特殊功能
+# -----------------
+lunarcalendar>=0.0.9    # 农历日历
+
+# 注意：html-to-markdown 项目地址：https://github.com/Goldziher/html-to-markdown
+# 如果安装失败，可以尝试其他HTML转Markdown库或使用BeautifulSoup替代方案
+
+# 安装说明
+# ========
+
+# 1. 仅安装核心依赖：
+#    pip install openai requests appdirs chardet PyYAML tiktoken
+
+# 2. 安装所有Python依赖：
+#    pip install -r requirements.txt
+
+# 3. 使用安装脚本（推荐）：
+#    python3 python3/install.py --all-optional
+
+# 4. 系统依赖安装（Linux Ubuntu/Debian）：
+#    # Chrome浏览器（用于Web搜索）
+#    sudo apt install chromium-browser
+#    
+#    # Docker（用于shell工具）
+#    sudo apt install docker.io docker-compose
+#    sudo usermod -aG docker $USER
+#    sudo systemctl restart docker
+#    # 注销并重新登录使docker组生效
+#    
+#    # 其他可能的依赖
+#    sudo apt install build-essential python3-dev
+
+# 5. 测试安装：
+#    # 测试核心功能
+#    python3 -c "import openai, requests, yaml; print('核心依赖OK')"
+#    
+#    # 测试Web功能
+#    python3 -c "import selenium, bs4, html_to_markdown; print('Web依赖OK')"
+#    
+#    # 测试Docker功能
+#    python3 -c "import docker; print('Docker SDK OK')"
+#    docker --version

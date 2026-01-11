@@ -35,10 +35,53 @@ Zai.Vim 是一款将 AI 助手直接集成到 Vim 编辑器的插件，管理着
    - Python 3.6+
    - AI API KEY
      - 例如: DeepSeek API 密钥（设置到`DEEPSEEK_API_KEY`环境变量）
-   - 必需Python包：
-     - `openai`（缺失时自动安装）
-   - 可选 iamcco/markdown-preview.nvim
-   - 可选 junegunn/fzf.vim
+
+   - 必需Python包（核心依赖）：
+     - `openai` - OpenAI API客户端
+     - `requests` - HTTP请求库
+     - `appdirs` - 应用目录管理
+     - `chardet` - 字符编码检测
+     - `PyYAML` - YAML配置文件解析
+     - `tiktoken` - OpenAI token计数
+   
+   - 可选Python包（按需安装）：
+     - Web功能: `beautifulsoup4`, `selenium`, `undetected-chromedriver`, `html-to-markdown`
+     - 文件操作: `python-magic` (文件类型检测)
+     - 系统工具: `distro` (Linux发行版检测), `docker` (Docker Python SDK)
+     - AI工具: `transformers` (Hugging Face库)
+     - 实用工具: `lunarcalendar` (农历日历)
+   
+   - 系统依赖（Linux推荐）：
+     - Docker引擎（用于安全shell执行）：
+       ```
+       # Ubuntu/Debian
+       sudo apt install docker.io docker-compose
+       sudo usermod -aG docker $USER
+       sudo systemctl restart docker
+       # 注销并重新登录使docker组生效
+       ```
+     - Chrome/Chromium浏览器（用于Web搜索）：
+       ```
+       # Ubuntu/Debian
+       sudo apt install chromium-browser
+       # 或从官网安装Google Chrome
+       ```
+     - 其他开发工具：
+       ```
+       sudo apt install build-essential python3-dev
+       ```
+     注意：Windows上Docker和Chrome也可用，但配置较复杂，建议使用Linux。
+   
+   - 可选Vim插件：
+     - iamcco/markdown-preview.nvim (聊天预览)
+     - junegunn/fzf.vim (日志搜索)
+   
+   - 安装方法：
+     1. 使用 requirements.txt: `pip install -r requirements.txt`
+     2. 使用安装脚本: `python3 python3/install.py`
+     3. 仅安装核心依赖: `python3 python3/install.py --skip-core` (如果已安装)
+     4. 安装完整功能: `python3 python3/install.py --all-optional`
+     5. 安装系统依赖（Linux）: 见上方系统依赖部分
 <
 
 2.2 通过插件管理器安装                                  *zai-plugin-managers*
