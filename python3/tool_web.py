@@ -1056,7 +1056,7 @@ def process_bing_markdown(markdown_text):
     text = '\n\n'.join(paras_new)
     return text
 
-def invoke_web_search(request: str, engine: str = "auto", base_url: str = _DEFAULT_SEARCH_ENGINE, max_results: int = 10, return_format: str = "markdown") -> str:
+def invoke_web_search(request: str, engine: str = "duckduckgo", base_url: str = _DEFAULT_SEARCH_ENGINE, max_results: int = 10, return_format: str = "markdown") -> str:
     """
     执行网络搜索
 
@@ -1524,7 +1524,6 @@ def _download_with_curl(
         print(f"curl下载失败: {str(e)}")
         return None
 
-
 def _get_download_output_path(
     url: str,
     output_path: Optional[str],
@@ -1534,18 +1533,13 @@ def _get_download_output_path(
     """获取下载文件的输出路径"""
     if output_path:
         return sanitize_path(output_path)
-
-    # 确定输出目录
     if output_dir:
         output_dir_path = sanitize_path(output_dir)
     else:
         output_dir_path = sanitize_path() / "downloads"
-
-    # 确定文件名
     if filename:
         file_name = filename
     else:
-        # 从URL中提取文件名，或使用时间戳
         parsed_url = urlparse(url)
         url_filename = Path(parsed_url.path).name
         if url_filename and url_filename != "/":
@@ -1553,17 +1547,5 @@ def _get_download_output_path(
         else:
             timestamp = int(time.time())
             file_name = f"downloaded_file_{timestamp}"
-
     return output_dir_path / file_name
 
-if __name__ == "__main__":
-    #content = _google_search("格林兰岛 压力")
-    #content = _google_search_by_uc("AI LLM 新进展")
-    #content = invoke_web_search("格林兰 局势 新进展", engine='bing')
-    content = invoke_web_search("委内瑞拉 局势 新进展", engine='bing')
-    text = _html_to_markdown(content)
-    text = _remove_images(text)
-    text = _remove_empty_links(text)
-    text = _process_url_fragment(text)
-    with open('/tmp/bing.md', 'w', encoding='utf-8') as f:
-        print(f'{text}', file=f)

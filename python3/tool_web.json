@@ -36,7 +36,7 @@
           },
           "engine": {
             "type": "string",
-            "description": "搜索引擎名称，可选值：'duckduckgo', 'google', 'bing', 'auto'。如果未指定，则使用base_url或默认配置",
+            "description": "搜索引擎名称，可选值：'duckduckgo', 'google', 'bing', 'auto'。如果未指定（即指定为空字符串''），则使用base_url或默认配置",
             "enum": ["duckduckgo", "google", "bing", "auto"],
             "default": "duckduckgo"
           },
