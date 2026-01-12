@@ -279,6 +279,9 @@ COMMANDS:
     {cmd_prefix}show taskbox         - Display taskbox information.
     {cmd_prefix}start taskbox        - Run taskbox docker container.
     {cmd_prefix}stop taskbox         - Stop taskbox docker container.
+    {cmd_prefix}search <key words>   - Search the web (by google).
+    {cmd_prefix}goto url             - Fetch the content of url.
+    {cmd_prefix}down url             - Download file from url.
 
 EXAMPLES:
   {cmd_prefix}model deepseek-coder

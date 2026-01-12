@@ -20,13 +20,49 @@ Zai.Vim is a Vim plugin that integrates AI assistants directly into your Vim edi
 - Vim 8.0+ or Neovim
 - Python 3.6+
 - AI API KEY
-  - Example: DeepSeek API key (set as `DEEPSEEK_API_KEY` environment variable)
-- Required Python packages:
-  - `openai` (automatically installed if missing)
-- Optional: iamcco/markdown-preview.nvim
-- Optional: junegunn/fzf.vim
-- Optional: apt install rg
-- Optional: pip install lunarcalendar
+  - Example: DeepSeek API Key (set to the `DEEPSEEK_API_KEY` environment variable)
+- Required Python Packages (Core Dependencies):
+  - `openai` - OpenAI API client
+  - `requests` - HTTP request library
+  - `appdirs` - Application directory management
+  - `chardet` - Character encoding detection
+  - `PyYAML` - YAML configuration file parsing
+  - `tiktoken` - OpenAI token counting
+- Optional Python Packages (Install as needed):
+  - Web Features: `beautifulsoup4`, `selenium`, `undetected-chromedriver`, `html-to-markdown`
+  - File Operations: `python-magic` (File type detection)
+  - System Tools: `distro` (Linux distribution detection), `docker` (Docker Python SDK)
+  - AI Tools: `transformers` (Hugging Face library)
+  - Utility Tools: `lunarcalendar` (Lunar calendar)
+- System Dependencies (Recommended for Linux):
+  - Docker Engine (for secure shell execution):
+    ```bash
+    # Ubuntu/Debian
+    sudo apt install docker.io docker-compose
+    sudo usermod -aG docker $USER
+    sudo systemctl restart docker
+    # Log out and log back in for the docker group to take effect
+    ```
+  - Chrome/Chromium Browser (for web search):
+    ```bash
+    # Ubuntu/Debian
+    sudo apt install chromium-browser
+    # Or install Google Chrome from the official website
+    ```
+  - Other Development Tools:
+    ```bash
+    sudo apt install build-essential python3-dev
+    ```
+  Note: Docker and Chrome are also available on Windows, but configuration is more complex. Using Linux is recommended.
+- Optional Vim Plugins:
+  - iamcco/markdown-preview.nvim (Chat preview)
+  - junegunn/fzf.vim (Log search)
+- Installation Methods:
+  - Using requirements.txt: `pip install -r requirements.txt`
+  - Using the installation script: `python3 python3/install.py`
+  - Install core dependencies only: `python3 python3/install.py --skip-core` (if already installed)
+  - Install full functionality: `python3 python3/install.py --all-optional`
+  - Install system dependencies (Linux): See the System Dependencies section above
 
 ### Using a plugin manager
 
@@ -56,20 +92,22 @@ Manual Installation:
 
 Linux/Mac:
 ```bash
-pip install appdirs chardet openai
 mkdir -p ~/.vim/pack/plugins/start
 cd ~/.vim/pack/plugins/start
-git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
-git checkout
+git clone https://github.com/zighouse/zai.vim.git
+pip install -r requirements.txt
+# or use install.py
+python python3/install.py
 ```
 
 Windows:
 ```dos
-pip install appdirs chardet openai
 md %USERPROFILE%\vimfiles\pack\plugins\start
 cd %USERPROFILE%\vimfiles\pack\plugins\start
-git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
-git checkout
+git clone https://github.com/zighouse/zai.vim.git
+pip install -r requirements.txt
+# or use install.py
+python python3\install.py
 ```
 
 Run `git pull` in the installation directory to update manually.
@@ -258,9 +296,6 @@ Session commands configure AI assistant settings and are processed by Zai's back
 - `:help` - Show help information
 - `:exit`/`:quit` - Force exit remote AI service
 - `:show <config>` - Display configuration items
-- `:show taskbox` - Display taskbox information.
-- `:start taskbox` - Run taskbox docker container.
-- `:stop taskbox` - Stop taskbox docker container.
 - `:file <file-path>` - Attach text file
 - `:-file` - Clear all attachments
 - `:base-url <url>` - Set base url of AI service
@@ -301,6 +336,19 @@ Session commands with AI calling tools:
 - `:show tool [name]` - Show details of an AI calling toolset.
 - `:use tool [name]` - Use an AI calling toolset.
 - `:sandbox path` - Specify a sandbox path for file toolset.
+
+Session commands with taskbox docker container:
+
+- `:show taskbox` - Display taskbox information.
+- `:start taskbox` - Run taskbox docker container.
+- `:stop taskbox` - Stop taskbox docker container.
+
+Session commands with web tools:
+
+- `:search <key words>` - Search the web (default by google).
+- `:goto url`           - Fetch the content of url.
+- `:down url`           - Download file from url.
+
 
 ### Available Toolsets
 

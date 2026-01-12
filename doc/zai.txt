@@ -33,14 +33,52 @@ freely, control at will.
 
 2.1 Requirements                                        *zai-requirements*
 >
-   - Vim 8.0+ or Neovim
-   - Python 3.6+
-   - AI API KEY
-     - e.g., DeepSeek API Key (set in the `DEEPSEEK_API_KEY` environment variable)
-   - Required Python packages:
-     - `openai` (automatically installed if missing)
-   - Optional iamcco/markdown-preview.nvim
-   - Optional junegunn/fzf.vim
+  - Vim 8.0+ or Neovim
+  - Python 3.6+
+  - AI API KEY
+    - Example: DeepSeek API Key (set to the `DEEPSEEK_API_KEY` environment variable)
+  - Required Python Packages (Core Dependencies):
+    - `openai` - OpenAI API client
+    - `requests` - HTTP request library
+    - `appdirs` - Application directory management
+    - `chardet` - Character encoding detection
+    - `PyYAML` - YAML configuration file parsing
+    - `tiktoken` - OpenAI token counting
+  - Optional Python Packages (Install as needed):
+    - Web Features: `beautifulsoup4`, `selenium`, `undetected-chromedriver`, `html-to-markdown`
+    - File Operations: `python-magic` (File type detection)
+    - System Tools: `distro` (Linux distribution detection), `docker` (Docker Python SDK)
+    - AI Tools: `transformers` (Hugging Face library)
+    - Utility Tools: `lunarcalendar` (Lunar calendar)
+  - System Dependencies (Recommended for Linux):
+    - Docker Engine (for secure shell execution):
+      ```bash
+      # Ubuntu/Debian
+      sudo apt install docker.io docker-compose
+      sudo usermod -aG docker $USER
+      sudo systemctl restart docker
+      # Log out and log back in for the docker group to take effect
+      ```
+    - Chrome/Chromium Browser (for web search):
+      ```bash
+      # Ubuntu/Debian
+      sudo apt install chromium-browser
+      # Or install Google Chrome from the official website
+      ```
+    - Other Development Tools:
+      ```bash
+      sudo apt install build-essential python3-dev
+      ```
+    Note: Docker and Chrome are also available on Windows, but configuration is more complex. Using Linux is recommended.
+  - Optional Vim Plugins:
+    - iamcco/markdown-preview.nvim (Chat preview)
+    - junegunn/fzf.vim (Log search)
+  - Installation Methods:
+    - Using requirements.txt: `pip install -r requirements.txt`
+    - Using the installation script: `python3 python3/install.py`
+    - Install core dependencies only: `python3 python3/install.py --skip-core` (if already installed)
+    - Install full functionality: `python3 python3/install.py --all-optional`
+    - Install system dependencies (Linux): See the System Dependencies section above
 <
 
 2.2 Installation via Plugin Manager                     *zai-plugin-managers*

@@ -19,7 +19,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from typing import List, Dict, Optional, Literal, Any, Tuple
-from urllib.parse import quote_plus, urljoin
+from urllib.parse import urlparse, quote_plus, urljoin
 
 from toolcommon import sanitize_path
 

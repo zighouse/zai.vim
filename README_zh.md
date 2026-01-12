@@ -19,12 +19,53 @@ Zai.Vim 是一款将 AI 助手直接集成到 Vim 编辑器的插件，管理着
 - Python 3.6+
 - AI API KEY
   - 例如: DeepSeek API 密钥（设置到`DEEPSEEK_API_KEY`环境变量）
-- 必需Python包：
-  - `openai`（缺失时自动安装）
-- 可选 iamcco/markdown-preview.nvim
-- 可选 junegunn/fzf.vim
-- 可选 apt install rg
-- 可选 pip install lunarcalendar
+
+- 必需Python包（核心依赖）：
+  - `openai` - OpenAI API客户端
+  - `requests` - HTTP请求库
+  - `appdirs` - 应用目录管理
+  - `chardet` - 字符编码检测
+  - `PyYAML` - YAML配置文件解析
+  - `tiktoken` - OpenAI token计数
+
+- 可选Python包（按需安装）：
+  - Web功能: `beautifulsoup4`, `selenium`, `undetected-chromedriver`, `html-to-markdown`
+  - 文件操作: `python-magic` (文件类型检测)
+  - 系统工具: `distro` (Linux发行版检测), `docker` (Docker Python SDK)
+  - AI工具: `transformers` (Hugging Face库)
+  - 实用工具: `lunarcalendar` (农历日历)
+
+- 系统依赖（Linux推荐）：
+  - Docker引擎（用于安全shell执行）：
+    ```bash
+    # Ubuntu/Debian
+    sudo apt install docker.io docker-compose
+    sudo usermod -aG docker $USER
+    sudo systemctl restart docker
+    # 注销并重新登录使docker组生效
+    ```
+  - Chrome/Chromium浏览器（用于Web搜索）：
+    ```bash
+    # Ubuntu/Debian
+    sudo apt install chromium-browser
+    # 或从官网安装Google Chrome
+    ```
+  - 其他开发工具：
+    ```bash
+    sudo apt install build-essential python3-dev
+    ```
+  注意：Windows上Docker和Chrome也可用，但配置较复杂，建议使用Linux。
+
+- 可选Vim插件：
+  - iamcco/markdown-preview.nvim (聊天预览)
+  - junegunn/fzf.vim (日志搜索)
+
+- 安装方法：
+  - 使用 requirements.txt: `pip install -r requirements.txt`
+  - 使用安装脚本: `python3 python3/install.py`
+  - 仅安装核心依赖: `python3 python3/install.py --skip-core` (如果已安装)
+  - 安装完整功能: `python3 python3/install.py --all-optional`
+  - 安装系统依赖（Linux）: 见上方系统依赖部分
 
 ### 使用插件管理器
 
@@ -54,20 +95,22 @@ return {
 
 在 Linux/Mac 上的内嵌终端命令窗口上执行的命令：
 ```bash
-pip install appdirs chardet openai
 mkdir -p ~/.vim/pack/plugins/start
 cd ~/.vim/pack/plugins/start
-git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
-git checkout
+git clone https://github.com/zighouse/zai.vim.git
+pip install -r requirements.txt
+# 或者使用脚本 install.py
+python python3/install.py
 ```
 
 在 Windows 上的内嵌终端命令窗口上执行的命令：
 ```dos
-pip install appdirs chardet openai
 md %USERPROFILE%\vimfiles\pack\plugins\start
 cd %USERPROFILE%\vimfiles\pack\plugins\start
-git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
-git checkout
+git clone https://github.com/zighouse/zai.vim.git
+pip install -r requirements.txt
+# 或者使用脚本 install.py
+python python3\install.py
 ```
 
 进入安装目录下执行 `git pull` 即可手动更新。
@@ -279,9 +322,6 @@ Zai 会在展示窗口中同时展示用户发送的请求，以及远程助手�
 - `:help` - 显示会话命令帮助
 - `:exit`/`:quit` - 强制退出远程 AI 服务
 - `:show <config>` - 显示 AI 助手的配置项
-- `:show taskbox` - 显示 taskbox 容器信息
-- `:start taskbox` - 运行 taskbox 容器
-- `:stop taskbox` - 停止 taskbox 容器
 - `:file <file-path>` - 附加指定文本文件
 - `:-file` - 清除所有附件
 - `:base-url <url>` - 指定当前聊天的 AI 服务 base-url
@@ -322,6 +362,19 @@ Zai 会在展示窗口中同时展示用户发送的请求，以及远程助手�
 - `:show tool [name]` - 显示指定的 AI 工具集
 - `:use tool [name]` - 加载 AI 工具集供 AI 调用
 - `:sandbox path` - 指定 sandbox 路径。在 file 工具集中用来限制允许操作的文件夹。
+
+关于使用 docker 容器 taskbox 的会话命令列表
+
+- `:show taskbox` - 显示 taskbox 容器信息
+- `:start taskbox` - 运行 taskbox 容器
+- `:stop taskbox` - 停止 taskbox 容器
+
+关于使用 web 工具的会话命令列表
+
+- `:search <key words>` - 搜索网络 (默认使用 google)
+- `:goto url`           - 获得 url 的内容
+- `:down url`           - 从 url 下载文件
+
 
 ### 可用工具集
 

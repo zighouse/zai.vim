@@ -703,13 +703,13 @@ class AIChat:
         print(f"{content}")
 
     def _on_goto(self, url):
-        from tool_web import invoke_get_content
-        content = invoke_get_content(url=url, return_format="markdown")
+        from tool_web import invoke_web_get_content
+        content = invoke_web_get_content(url=url, return_format="markdown")
         print(f"{content}")
 
     def _on_down(self, url):
-        from tool_web import invoke_download_file
-        result = invoke_download_file(url)
+        from tool_web import invoke_web_download_file
+        result = invoke_web_download_file(url)
         for k,v in result.items():
             if k != "url":
                 print(f"  {k:>10}: {v:<10}")
