@@ -684,14 +684,42 @@ def _compress_blank_lines_line_by_line(markdown_text):
     return '\n'.join(result_lines)
 
 def _html_to_markdown(content):
-    from html_to_markdown import convert, ConversionOptions
-    markdown = convert(content)
-    markdown = _remove_data_images(markdown)
-    markdown = _remove_metas(markdown)
-    markdown = _fix_multiline_links(markdown)
-    markdown = _remove_empty_links(markdown)
-    markdown = _compress_blank_lines_line_by_line(markdown)
-    return markdown
+    """
+    使用 html2text 将 HTML 转换为 Markdown，相比 html_to_markdown 更稳定。
+    FIXME: 处理这个 url 时发生了 convert 的崩溃:
+    https://blog.csdn.net/qq_43252731/article/details/148872910
+    """
+    try:
+        import html2text
+        h = html2text.HTML2Text()
+        h.ignore_links = False
+        h.ignore_images = False
+        h.body_width = 0  # 不换行
+        markdown = h.handle(content)
+        markdown = _remove_data_images(markdown)
+        markdown = _remove_metas(markdown)
+        markdown = _fix_multiline_links(markdown)
+        markdown = _remove_empty_links(markdown)
+        markdown = _compress_blank_lines_line_by_line(markdown)
+        return markdown
+    except Exception as e:
+        import traceback
+        import tempfile
+
+        timestamp = int(time.time())
+        temp_dir = tempfile.gettempdir()
+        error_file = os.path.join(temp_dir, f"error_{timestamp}.log")
+        try:
+            with open(error_file, 'w', encoding='utf-8') as f:
+                f.write(content[:50000])  # 只保存前50000字符避免过大
+                f.write('\n\n=== Error ===\n')
+                f.write(str(e))
+                f.write('\n')
+                f.write(traceback.format_exc())
+            print(f"[html2text error] convert content failed, error content is saved in {error_file}", file=sys.stderr)
+        except Exception as log_err:
+            print(f"[html2text error] convert content failed: {e}", file=sys.stderr)
+        return "convert content failed"
 
 def invoke_web_get_content(url: str, return_format: str = "clean_text") -> str:
     """

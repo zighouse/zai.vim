@@ -88,8 +88,8 @@ def check_dependency(package_name: str) -> bool:
     """检查依赖是否已安装"""
     try:
         # 特殊处理带连字符的包名
-        if package_name == "html-to-markdown":
-            import html_to_markdown
+        if package_name == "html2text":
+            import html2text
             return True
         elif package_name == "PyYAML":
             import yaml

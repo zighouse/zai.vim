@@ -45,7 +45,7 @@ Zai.Vim 是一款将 AI 助手直接集成到 Vim 编辑器的插件，管理着
      - `tiktoken` - OpenAI token计数
    
    - 可选Python包（按需安装）：
-     - Web功能: `beautifulsoup4`, `selenium`, `undetected-chromedriver`, `html-to-markdown`
+     - Web功能: `beautifulsoup4`, `selenium`, `undetected-chromedriver`, `html2text`
      - 文件操作: `python-magic` (文件类型检测)
      - 系统工具: `distro` (Linux发行版检测), `docker` (Docker Python SDK)
      - AI工具: `transformers` (Hugging Face库)

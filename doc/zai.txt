@@ -45,7 +45,7 @@ freely, control at will.
     - `PyYAML` - YAML configuration file parsing
     - `tiktoken` - OpenAI token counting
   - Optional Python Packages (Install as needed):
-    - Web Features: `beautifulsoup4`, `selenium`, `undetected-chromedriver`, `html-to-markdown`
+    - Web Features: `beautifulsoup4`, `selenium`, `undetected-chromedriver`, `html2text`
     - File Operations: `python-magic` (File type detection)
     - System Tools: `distro` (Linux distribution detection), `docker` (Docker Python SDK)
     - AI Tools: `transformers` (Hugging Face library)
