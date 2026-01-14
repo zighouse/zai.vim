@@ -780,7 +780,7 @@ def invoke_web_get_content(url: str, return_format: str = "clean_text") -> str:
                 content = raw_content.decode('latin-1', errors='ignore')
 
         if return_format == "links":
-            links = invoke_parse_links(content)
+            links = invoke_web_parse_links(content, base_url=url)
             if links:
                 result = []
                 for link in links:
@@ -793,6 +793,7 @@ def invoke_web_get_content(url: str, return_format: str = "clean_text") -> str:
             # 返回清理后的纯文本内容
             return extract_clean_text(content)
         elif return_format == "markdown":
+            content = make_links_absolute(content, url)
             text = _html_to_markdown(content)
             text = _clean_url_labels(text)
             text = _remove_empty_links(text)
@@ -802,6 +803,7 @@ def invoke_web_get_content(url: str, return_format: str = "clean_text") -> str:
             return text
         else:
             # 返回清理后的HTML内容
+            content = make_links_absolute(content, url)
             return clean_html_content(content)
 
     except requests.exceptions.RequestException as e:
@@ -1074,6 +1076,82 @@ def process_google_markdown(markdown_text):
     text = '\n\n'.join(paras)
     return text
 
+def make_links_absolute(html_content: str, base_url: str) -> str:
+    """
+    将HTML内容中的所有相对链接补全为绝对链接
+    Args:
+        html_content: HTML内容
+        base_url: 基准URL，用于补全相对链接
+    Returns:
+        str: 补全链接后的HTML内容
+    """
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_content, 'html.parser')
+        # 补全所有 <a> 标签的 href 属性
+        for a_tag in soup.find_all('a', href=True):
+            try:
+                href = a_tag['href']
+                # 跳过锚点链接、javascript链接等
+                if href and not href.startswith('#') and not href.startswith('javascript:'):
+                    # 补全相对链接
+                    absolute_url = urljoin(base_url, href)
+                    a_tag['href'] = absolute_url
+            except Exception as e:
+                # 如果补全失败，保持原样
+                pass
+        # 补全所有 <img> 标签的 src 属性
+        for img_tag in soup.find_all('img', src=True):
+            try:
+                src = img_tag['src']
+                if src:
+                    absolute_url = urljoin(base_url, src)
+                    img_tag['src'] = absolute_url
+            except Exception as e:
+                pass
+        # 补全其他可能有链接的属性
+        for tag in soup.find_all(True):
+            for attr in ['src', 'href', 'action', 'data-src', 'data-href']:
+                if tag.has_attr(attr):
+                    try:
+                        value = tag[attr]
+                        if value and not value.startswith('#') and not value.startswith('javascript:'):
+                            absolute_url = urljoin(base_url, value)
+                            tag[attr] = absolute_url
+                    except Exception as e:
+                        pass
+        return str(soup)
+    except ImportError:
+        # 如果没有BeautifulSoup，使用正则表达式进行简单补全
+        # 只处理最常见的href属性
+        import re
+        # 匹配 href="..." 或 href='...'
+        def replace_href(match):
+            quote_char = match.group(1)  # " 或 '
+            href = match.group(2)
+            # 如果已经是绝对链接或特殊链接，保持原样
+            if (href.startswith('http://') or href.startswith('https://') or 
+                href.startswith('#') or href.startswith('javascript:')):
+                return match.group(0)
+            try:
+                absolute_url = urljoin(base_url, href)
+                return f'href={quote_char}{absolute_url}{quote_char}'
+            except:
+                return match.group(0)
+        # 处理双引号和单引号的href属性
+        html_content = re.sub(r'href=(["\'])(.*?)\1', replace_href, html_content, flags=re.IGNORECASE)
+        return html_content
+
+def preprocess_html_with_absolute_links(html_content: str, base_url: str) -> str:
+    """
+    预处理HTML内容，将相对链接补全为绝对链接
+    Args:
+        html_content: HTML内容
+        base_url: 基准URL
+    Returns:
+        str: 补全链接后的HTML内容
+    """
+    return make_links_absolute(html_content, base_url)
 def process_bing_markdown(markdown_text):
     text = _remove_images(markdown_text)
     text = _clean_url_labels(text)
@@ -1199,7 +1277,7 @@ def invoke_web_search(request: str, engine: str = "duckduckgo", base_url: str = 
             return markdown_content
         elif return_format == "links":
             # 直接返回解析后的链接
-            links = invoke_parse_links(content)
+            links = invoke_web_parse_links(content, base_url=url)
 
             # 过滤和格式化结果
             results = []
@@ -1244,12 +1322,13 @@ def invoke_web_search(request: str, engine: str = "duckduckgo", base_url: str = 
             manager.report_error(selected_engine_name)
         return f"Unexpected search error: {str(e)}"
 
-def invoke_web_parse_links(content: str) -> List[Dict[str, str]]:
+def invoke_web_parse_links(content: str, base_url: str = None) -> List[Dict[str, str]]:
     """
-    解析HTML内容中的URL链接
+    解析HTML内容中的URL链接，并可选地将相对链接补全为绝对链接
 
     Args:
         content: 要解析的HTML内容
+        base_url: 基准URL，用于补全相对链接。如果为None，则返回原始链接
 
     Returns:
         List[Dict]: 包含URL和可选标题的链接列表
@@ -1265,6 +1344,13 @@ def invoke_web_parse_links(content: str) -> List[Dict[str, str]]:
         for url, caption in matches:
             # 清理标题文本
             caption = re.sub(r'\s+', ' ', caption.strip())
+            # 补全相对链接
+            if url and base_url:
+                try:
+                    url = urljoin(base_url, url)
+                except Exception as e:
+                    # 如果urljoin失败，保持原样
+                    pass
 
             # 过滤掉空链接和常见的不需要的链接
             if url and not url.startswith('#') and len(caption) > 0:
@@ -1281,6 +1367,13 @@ def invoke_web_parse_links(content: str) -> List[Dict[str, str]]:
 
             for url in href_matches:
                 if url and not url.startswith('#') and not url.startswith('javascript:'):
+                    # 补全相对链接
+                    if base_url:
+                        try:
+                            url = urljoin(base_url, url)
+                        except Exception as e:
+                            # 如果urljoin失败，保持原样
+                            pass
                     links.append({
                         'url': url,
                         'caption': 'Link'
