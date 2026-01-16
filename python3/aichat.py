@@ -367,10 +367,11 @@ class AIChat:
                 if not full_content:
                     if hasattr(chunk_message, 'reasoning_content'):
                         if think := chunk_message.reasoning_content:
-                            if not reasoning_content:
+                            if not reasoning_content and think.strip():
                                 print('<think>')
-                            print(think, end='', flush=True)
-                            reasoning_content.append(think)
+                            if reasoning_content or think.strip():
+                                print(think, end='', flush=True)
+                                reasoning_content.append(think)
                             time.sleep(random.uniform(0.01, 0.05))
 
                 if hasattr(chunk_message, 'tool_calls') and chunk_message.tool_calls:
