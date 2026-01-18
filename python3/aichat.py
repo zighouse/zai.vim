@@ -1,10 +1,12 @@
 import argparse
+import chardet
+import hashlib
 import json
 import os
 import random
+import re
 import sys
 import time
-import chardet
 
 from datetime import datetime
 from openai import OpenAI, BadRequestError, APIError, APIConnectionError, RateLimitError
@@ -33,16 +35,28 @@ class AIChat:
         self._system_prompt = ""
         self._history = [] # [{request:msg, response:[msg]}]
         self._cur_round = {"request":[], "response":[]}
+        self._has_archives = False
         self._llm = None
         self._files = []
         self._config = { 'model': {'name':'deepseek-chat'} }
         self._tokenizer = AITokenizer()
         if 'zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', ''):
-            self._system_prompt = '作为一名严格的编程、软件工程与计算机科学助手，将遵循以下步骤处理每个问题：\n 1. 识别核心问题；\n 2. 提供兼顾可行性与工程实践的解决方案。'
-            self._prompt_for_title = '\n此外，请在你的回答末尾，单独一行以“### 建议标题：[简洁标题]”的格式提供一个标题总结本次对话的核心，越短越好，尽量不要超过 30 字。'
+            self._system_prompt = "作为一名严格的编程、软件工程与计算机科学助手，" + \
+                    "将遵循以下步骤处理每个问题：\n " + \
+                    "1. 识别核心问题；\n " + \
+                    "2. 提供兼顾可行性与工程实践的解决方案。"
+            self._prompt_for_title = "\n此外，请在你的回答末尾，单独一行以“### 建议标题：[简洁标题]”" + \
+                    "的格式提供一个标题总结本次对话的核心，" + \
+                    "越短越好，尽量不要超过 30 字。"
         else:
-            self._system_prompt = 'You are a strict assistant in programming, software engineering and computer science. For each query:\n 1. Identify key issues.\n 2. Propose solutions with pragmatical considerations.'
-            self._prompt_for_title = '\nAdditionally, please provide a line for title in English at the end of your response in the format "### Title: [concise title]" to summarize the core suggestion.'
+            self._system_prompt = "You are a strict assistant in programming, " + \
+                    "software engineering and computer science. " + \
+                    "For each query:\n " + \
+                    "1. Identify key issues.\n " + \
+                    "2. Propose solutions with pragmatical considerations."
+            self._prompt_for_title = "\nAdditionally, please provide a line for title in English " + \
+                    "at the end of your response in the format " + \
+                    '"### Title: [concise title]" to summarize the core suggestion.'
 
         self._cli.register("base_url", lambda v: self.set_config("base_url", v))
         self._cli.register("api_key_name", lambda v: self.set_config("api_key_name", v))
@@ -94,8 +108,95 @@ class AIChat:
             tokenizer_name = self._assistant.get("tokenizer", None)
         return tokenizer_name;
 
-    def _count_tokens(self, text):
-        return self._tokenizer.count_tokens(text, self._get_tokenizer_name())
+    def _count_tokens(self, text: str) -> int:
+        """用 AITokenizer 精确计数；若不可用则退回启发式估算（chars / 4）。"""
+        try:
+            return self._tokenizer.count_tokens(text, self._get_tokenizer_name())
+        except Exception:
+            pass
+        # 退回估算：平均 4 字符 = 1 token（粗略）
+        return max(1, len(text) // 4)
+
+    def _round_token_estimate(self, round_obj: Dict[str, Any]) -> int:
+        """估算一轮对话的 tokens：request + 所有 response 的 content/token 字段之和。"""
+        total = 0
+        req = round_obj.get("request")
+        if req and isinstance(req, dict) and "content" in req:
+            total += self._count_tokens(req["content"])
+        for resp in round_obj.get("response", []):
+            if isinstance(resp, dict):
+                if "content" in resp:
+                    total += self._count_tokens(resp["content"])
+                if "reasoning_content" in resp:
+                    total += self._count_tokens(resp["reasoning_content"])
+        return total
+
+    def _prune_and_compact_history(self, max_history_tokens: int = 8192, keep_last_n: int = 6):
+        """
+        根据 token 预算修剪并压缩历史：
+          - 保留最近 keep_last_n 轮完整内容（如果 token 预算允许）
+          - 将更早轮合并为一个 summary 条目，summary 长度会被截短到 max_history_tokens - window_tokens
+        结果会把 self._history 转换为： [ {summary:True, content: "..."}, round1, round2, ... ]
+        """
+        if not self._history:
+            return
+        # 先计算每轮 token 并累加
+        rounds = list(self._history)
+        rounds_tokens = [self._round_token_estimate(r) for r in rounds]
+        total = sum(rounds_tokens)
+        # 快速路径：如果总量在预算内且轮数小于等于 keep_last_n，啥也不做
+        if total <= max_history_tokens and len(rounds) <= keep_last_n:
+            return
+
+        # 计算保留 window 的 tokens
+        window = rounds[-keep_last_n:] if keep_last_n > 0 else []
+        window_tokens = sum(self._round_token_estimate(r) for r in window)
+        # 预算给 summary 的 tokens
+        summary_budget = max(0, max_history_tokens - window_tokens)
+        # 如果 summary_budget 为 0，则完全丢弃更早历史，只保留 window
+        if summary_budget <= 0:
+            self._history = window
+            return
+
+        # 构建简易 summary（本地剪裁）。可选项：若可用 LLM，可用 LLM 生成更好摘要（见注释）
+        earlier = rounds[: max(0, len(rounds) - len(window))]
+        # 简单摘要策略：提取每轮 request/first response 的前若干字符拼接，直到预算耗尽
+        # TODO 可以抽取提纲作为摘要，并把原始内容存档
+        parts = []
+        used = 0
+        # 估算每字符对应的 token（保守）：1 token ~ 4 chars
+        chars_budget = summary_budget * 4
+        for r in earlier:
+            req = r.get("request", {}) or {}
+            reqc = req.get("content", "")
+            # take short snippet from request and first response
+            snippet = (reqc.strip().splitlines()[0] if reqc else "")
+            if not snippet and r.get("response"):
+                # 尝试从第一个 response 取
+                resp0 = r["response"][0].get("content", "")
+                snippet = (resp0.strip().splitlines()[0] if resp0 else "")
+            if snippet:
+                # 限制每轮 snippet 长度，避免某一轮占满预算
+                snip = snippet[: min(200, chars_budget - used)]
+                if snip:
+                    parts.append(f"- {snip}")
+                    used += len(snip)
+            if used >= chars_budget:
+                break
+
+        summary_text = "Earlier conversation summary (short):\n" + "\n".join(parts)
+        # 若 parts 为空则直接丢弃 earlier 历史
+        if parts:
+            # 插入 summary 作为一个伪 round（便于后续统一处理）
+            summary_round = {
+                    "summary": True,
+                    "request": {"role": "assistant", "content": summary_text},
+                    "response": [],
+                    "tokens": summary_budget
+                    }
+            self._history = [summary_round] + window
+        else:
+            self._history = window
 
     def _open_llm(self, api_key_name=None, base_url=None):
         """Open llm client with given or default parameters"""
@@ -114,50 +215,204 @@ class AIChat:
     def _filter_request(self, request):
         return request
 
-    def _filter_response(self, response, filter_out=[], filter_toolcalls=False):
+    def _archive_content(self, long_content: str) -> str:
+        #"""
+        #归档长内容，返回摘要版本
+        #    ‹archive id={archive_id} length={len(long_content)}›
+        #    {long_content[:100]}...{long_content[-100:]}
+        #    ‹/archive›
+        #"""
+        """
+        归档长内容，返回摘要版本
+            ===========
+            [归档引用]
+            - 归档文件:{archive_id}
+            - 内容长度:{len(long_content)}
+            - 内容摘要:{long_content[:100]}...{long_content[-100:]}
+            ============
+        """
+        if len(long_content) <= 500:
+            return long_content
+        archive_dir = self._config.get('archive_dir', '/tmp/zai.archive')
+        os.makedirs(archive_dir, exist_ok=True)
+        rnd_int = random.randint(0, 10000)
+        archive_id = hashlib.md5(f"{time.time()}_{rnd_int}".encode()).hexdigest()[:12]
+        filename = f"{archive_id}.txt"
+        filepath = os.path.join(archive_dir, filename)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(long_content)
+        self._has_archives = True
+        self._tool._use_tool('archive')
+        #return f"‹archive id={archive_id} length={len(long_content)}›\n" + \
+        #       f"{long_content[:100]}...{long_content[-100:]}\n" + \
+        #       f"‹/archive›\n"
+        return f"===========\n" + \
+               f"[归档引用]\n" + \
+               f"- 归档文件:{filename}\n" + \
+               f"- 内容长度:{len(long_content)}\n" + \
+               f"- 内容摘要:{long_content[:100]}...{long_content[-100:]}\n" + \
+               f"============\n"
+
+    def _archive_tool_calls(self, calls: dict) -> str:
+        #"""
+        #归档工具调用序列。
+        #1. 提取工具名称生成摘要文本 (如: ls,ls)
+        #2. 将完整数据序列化为 JSON 并存入文件
+        #3. 返回特定格式的归档字符串
+        #   ‹archive id=a1b2c3d4›ls,ls‹/archive›
+        #"""
+        """
+        归档工具调用序列。
+        1. 提取工具名称生成摘要文本 (如: ls,ls)
+        2. 将完整数据序列化为 JSON 并存入文件
+        3. 返回特定格式的归档字符串
+            ===========
+            [归档引用]
+            - 归档文件:{archive_id}
+            - 内容长度:{len(long_content)}
+            - 调用工具:ls
+            ============
+        """
+        if not calls or not isinstance(calls, dict):
+            return ""
+
+        # 提取工具名称
+        # 假设数据结构为 {"tool_calls": [{"function": {"name": "ls"}}, ...], "returns": [...]}
+        tool_names = []
+        for call in calls.get('tool_calls', []):
+            func = call.get('function', {})
+            name = func.get('name', '')
+            if name:
+                tool_names.append(name)
+        summary_content = ",".join(tool_names)
+
+        # ensure_ascii=False 保证中文字符能正常存储
+        json_content = json.dumps(calls, ensure_ascii=False, indent=2)
+        archive_dir = self._config.get('archive_dir', '/tmp/zai.archive')
+        os.makedirs(archive_dir, exist_ok=True)
+        
+        # 生成唯一文件名 (引入随机数和时间戳防冲突)
+        rnd_int = random.randint(0, 10000)
+        archive_id = hashlib.md5(f"{time.time()}_{rnd_int}_{summary_content}".encode()).hexdigest()[:12]
+        filename = f"{archive_id}.txt"
+
+        filepath = os.path.join(archive_dir, filename)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(json_content)
+        self._has_archives = True
+        self._tool.use_tool('archive')
+        #return f"‹archive id={archive_id}›{summary_content}‹/archive›"
+        return f"===========\n" + \
+               f"[归档引用]\n" + \
+               f"- 归档文件:{filename}\n" + \
+               f"- 内容长度:{len(json_content)}\n" + \
+               f"- 调用工具:{summary_content}\n" + \
+               f"============\n"
+
+    def _filter_response(self, response, archive_reasoning=False, archive_toolcalls=False):
         result = []
+
+        # 这里的 response 有多种形态
+        # 1. {assistant}
+        # 2. [ {assistant}, [{tool}, ..., {tool}] ]
+        # 3. [ {assistant}, [{tool}, ..., {tool}], {user} ]
+        # 当遇到带了 tool_calls 的 assistant 时，需要把 tool 和 assistant 一并做归档处理，
+        # 所以需要重组一下结构，做成 [ [ {assistant}, {tool}, ..., {tool} ], [ {user} ], ... ]
+        groups = []
         if isinstance(response, dict):
-            filted = {k:v for k,v in response.items() if k not in filter_out}
-            result.append(filted)
+            groups.append([response])
         elif isinstance(response, list):
-            if filter_toolcalls:
-                filter_out.append("tool_calls")
+            group = []
+            role = ""
             for it in response:
                 if isinstance(it, dict):
-                    filted = {k:v for k,v in it.items() if k not in filter_out}
-                    if not filter_toolcalls or filted["role"] != "tool":
-                        result.append(filted)
+                    if not role:
+                        group.append(it)
+                        role = it["role"]
+                    elif role == "assistant" and it["role"] == "tool":
+                        group.append(it)
+                    else:
+                        groups.append(group)
+                        group = [it]
+                        role = it["role"]
                 elif isinstance(it, list):
-                    for i in it:
-                        filted = {k:v for k,v in i.items() if k not in filter_out}
-                        if not filter_toolcalls or filted["role"] != "tool":
-                            result.append(filted)
+                    group.extend(it)
+            if group:
+                groups.append(group)
+
+        # 按分组做归档
+        for group in groups:
+            if len(group) == 1:
+                if group[0]["role"] == "user":
+                    result.append(self._filter_request(group[0].copy()))
+                elif group[0]["role"] == "assistant":
+                    filted = {k: v if not archive_reasoning or k!="reasoning_content"
+                              else self._archive_content(v) for k,v in group[0].items()}
+                    result.append(filted)
+                else:
+                    result.append(group[0].copy())
+            else:
+                if group[0]["role"] != "assistant":
+                    result.extends([it.copy for it in group])
+                else:
+                    filted = {k: v if not archive_reasoning or k!="reasoning_content"
+                              else self._archive_content(v) for k,v in group[0].items()}
+                    if archive_toolcalls:
+                        calls = {
+                                "tool_calls": [it.copy() for it in group[0].get("tool_calls",[])],
+                                "returns": [it.copy() for it in group[1:]]
+                                }
+                        tool_call_arc = self._archive_tool_calls(calls)
+                        content_name = "content"
+                        if filted.get("content", "").strip() == "" and \
+                                filted.get("reasoning_content", "").strip() == "":
+                              content_name = "reasoning_content"
+                        filted[content_name] = f"{filted[content_name]}\n{tool_call_arc}"
+                        del filted["tool_calls"]
+                        result.append(filted)
+                    else:
+                        result.append(filted)
+                        result.extend(group[1:].copy())
         if not result:
             result.append({"role":"assistant", "content":"\n"})
         return result
 
-    def _get_completion_params(self, current_round = None):
+    def _get_completion_params(self,
+                               current_round: Optional[Dict[str, Any]] = None,
+                               max_history_tokens: int = 8192,
+                               keep_last_n: int = 6) -> List[Dict[str, Any]]:
+        """
+        把 self._history 和 current_round 转换成 models 接受的 messages 列表。
+        这个函数会先调用 _prune_and_compact_history，
+        然后把 summary（若存在）和 window 按顺序展开为 messages。
+        """
         params = { 'stream': True, 'messages':[] }
         messages = [ {
             "role":    "system",
             "content": self._config.get("prompt", self._system_prompt)
             } ]
         if self._history and self._config.get("talk_mode", "chain") == "chain":
-            count = 0
-            length = len(self._history)
-            for round in self._history:
-                request = self._filter_request(round.get("request", {}))
-                response = round.get("response", [])
-                if request:
-                    messages.append(request)
-                if count + 2 < length:
-                    filted = self._filter_response(response,
-                            filter_out=["reasoning_content"],
-                            filter_toolcalls=True)
-                else:
-                    filted = self._filter_response(response)
-                messages.extend(filted)
-                count = count + 1
+            # 展开 history（summary round 会作为 system/request 插入短 summary）
+            for round_obj in self._history:
+                if round_obj.get("summary"):
+                    # summary 被包装成 system/request
+                    req = round_obj.get("request", {})
+                    if req:
+                        messages.append({k: v for k, v in req.items() if k in ['role', 'content', 'name']})
+                    continue
+
+                req = self._filter_request(round_obj.get("request", {}))
+                if req:
+                    messages.append(req)
+                if not round_obj.get("is_archived", False):
+                    filted = self._filter_response(round_obj.get("response", []),
+                                                   archive_reasoning=True,
+                                                   archive_toolcalls=True)
+                    round_obj["is_archived"] = True
+                    round_obj["response"] = filted
+
+                messages.extend(round_obj.get("response",[]))
+
         if current_round:
             request = current_round.get("request", {})
             response = current_round.get("response", [])
@@ -168,8 +423,10 @@ class AIChat:
 
         if len(messages) > 0:
             last = messages[-1]
-            if last["role"] == "assistant" and last["content"].strip() == "" and "tool_calls" not in last:
-                messages.remove(messages[-1])
+            if last["role"] == "assistant" and \
+                    last["content"].strip() == "" and \
+                    "tool_calls" not in last:
+                messages.pop()
 
         for msg in messages:
             # Create new request message
@@ -319,7 +576,13 @@ class AIChat:
                 return error_msg
         else:
             if params['messages'][0]['role'] == 'system':
-                params['messages'][0]['content'] = params['messages'][0]['content'] + self._prompt_for_title
+                sys_prompt = [ params['messages'][0]['content'] ]
+                if self._has_archives:
+                    from tool_archive import get_prompt, set_config
+                    set_config(self._config)
+                    sys_prompt.append(get_prompt(True))
+                sys_prompt.append(self._prompt_for_title)
+                params['messages'][0]['content'] = "\n".join(sys_prompt)
             if tools := self._tool.get_tools():
                 params['tools'] = tools
             request_tokens = 0 # FIXME: calculate a correct rolling request tokens.
@@ -472,7 +735,8 @@ class AIChat:
                 response.get('unknown_error', False)
             )
             
-            while not self._cli.is_stopped() and response and 'tool_calls' in response and not is_error_response:
+            while not self._cli.is_stopped() and \
+                    response and 'tool_calls' in response and not is_error_response:
                 tool_returns = self._make_tool_calls(response)
                 request = self._fetch_request(timeout=0)
                 if request:
@@ -671,7 +935,6 @@ class AIChat:
                 try:
                     from tool_shell import invoke_shell_sandbox_info
                     info = invoke_shell_sandbox_info()
-                    import json
                     print(json.dumps(info, indent=2))
                 except Exception as e:
                     print(f"Error showing taskbox info: {e}")
@@ -783,6 +1046,7 @@ class AIChat:
                 print(f'Error stopping taskbox: {e}')
         else:
             print('Usage: stop taskbox')
+
     def start(self):
         self._cli.start()
         self._main_chat_loop()
