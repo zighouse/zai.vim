@@ -284,7 +284,15 @@ class AIChat:
             name = func.get('name', '')
             if name:
                 tool_names.append(name)
-        summary_content = ",".join(tool_names)
+        if len(tool_names) == 1 and tool_names[0] == "fetch_archive":
+            # 阻止对读档操作再次进行归档
+            call = calls.get('tool_calls')[0]
+            func = call.get('function')
+            args = func.get('arguments')
+            arcf = args.get('archive_file')
+            return f"读取归档文件: {arcf}\n"
+        else:
+            summary_content = ",".join(tool_names)
 
         # ensure_ascii=False 保证中文字符能正常存储
         json_content = json.dumps(calls, ensure_ascii=False, indent=2)
