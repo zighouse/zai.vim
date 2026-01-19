@@ -242,7 +242,7 @@ class AIChat:
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(long_content)
         self._has_archives = True
-        self._tool._use_tool('archive')
+        self._tool.use_tool('archive')
         #return f"‹archive id={archive_id} length={len(long_content)}›\n" + \
         #       f"{long_content[:100]}...{long_content[-100:]}\n" + \
         #       f"‹/archive›\n"
@@ -373,9 +373,9 @@ class AIChat:
                         tool_call_arc = self._archive_tool_calls(calls)
                         content_name = "content"
                         if filted.get("content", "").strip() == "" and \
-                                filted.get("reasoning_content", "").strip() == "":
+                                filted.get("reasoning_content", "").strip() != "":
                               content_name = "reasoning_content"
-                        filted[content_name] = f"{filted[content_name]}\n{tool_call_arc}"
+                        filted[content_name] = f"{filted.get(content_name,'')}\n{tool_call_arc}"
                         del filted["tool_calls"]
                         result.append(filted)
                     else:
@@ -400,6 +400,7 @@ class AIChat:
             "content": self._config.get("prompt", self._system_prompt)
             } ]
         if self._history and self._config.get("talk_mode", "chain") == "chain":
+            self._prune_and_compact_history(10240)
             # 展开 history（summary round 会作为 system/request 插入短 summary）
             for round_obj in self._history:
                 if round_obj.get("summary"):
