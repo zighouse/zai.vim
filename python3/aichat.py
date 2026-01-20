@@ -333,8 +333,8 @@ class AIChat:
             # 阻止对读档操作再次进行归档
             call = calls.get('tool_calls')[0]
             func = call.get('function')
-            args = func.get('arguments')
-            arcf = args.get('archive_file')
+            args = json.loads(func.get('arguments')) if function['arguments'] else {}
+            arcf = args.get('archive_file','')
             return f"读取归档文件: {arcf}\n"
         else:
             summary_content = ",".join(tool_names)
@@ -421,7 +421,8 @@ class AIChat:
                                 filted.get("reasoning_content", "").strip() != "":
                               content_name = "reasoning_content"
                         filted[content_name] = f"{filted.get(content_name,'')}\n{tool_call_arc}"
-                        del filted["tool_calls"]
+                        if "tool_calls" in filted:
+                            del filted["tool_calls"]
                         result.append(filted)
                     else:
                         result.append(filted)
