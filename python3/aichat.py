@@ -38,7 +38,11 @@ class AIChat:
         self._has_archives = False
         self._llm = None
         self._files = []
-        self._config = { 'model': {'name':'deepseek-chat'} }
+        self._config = {
+            'model': {'name':'deepseek-chat'},
+            'history_safety_factor': 0.25,
+            'history_keep_last_n': 6
+        }
         self._tokenizer = AITokenizer()
         if 'zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', ''):
             self._system_prompt = "作为一名严格的编程、软件工程与计算机科学助手，" + \
@@ -83,6 +87,10 @@ class AIChat:
         self._cli.register("-logprobs", lambda: self._config.pop("frequence_penalty", None))
         self._cli.register("max_tokens", lambda v: self.set_config("max_tokens", int(v)))
         self._cli.register("-max_tokens", lambda: self._config.pop("max_tokens", None))
+        self._cli.register("history_safety_factor", lambda v: self.set_config("history_safety_factor", float(v)))
+        self._cli.register("-history_safety_factor", lambda: self._config.pop("history_safety_factor", None))
+        self._cli.register("history_keep_last_n", lambda v: self.set_config("history_keep_last_n", int(v)))
+        self._cli.register("-history_keep_last_n", lambda: self._config.pop("history_keep_last_n", None))
         self._cli.register("prompt", lambda v: self.set_config("prompt", v.strip()), use_raw_cmd=True)
         self._cli.register("-prompt", lambda: self._config.pop("prompt", None))
         self._cli.register("file", self._on_file_attach)
@@ -131,13 +139,17 @@ class AIChat:
                     total += self._count_tokens(resp["reasoning_content"])
         return total
 
-    def _prune_and_compact_history(self, max_history_tokens: int = 8192, keep_last_n: int = 6):
+    def _prune_and_compact_history(self, max_history_tokens: int = 8192, keep_last_n: Optional[int] = None):
         """
         根据 token 预算修剪并压缩历史：
           - 保留最近 keep_last_n 轮完整内容（如果 token 预算允许）
           - 将更早轮合并为一个 summary 条目，summary 长度会被截短到 max_history_tokens - window_tokens
         结果会把 self._history 转换为： [ {summary:True, content: "..."}, round1, round2, ... ]
         """
+        # 获取 keep_last_n 配置，默认值为 6，确保为正整数
+        if keep_last_n is None:
+            keep_last_n = self._config.get('history_keep_last_n', 6)
+        keep_last_n = max(1, int(keep_last_n))  # 至少保留一轮
         if not self._history:
             return
         # 先计算每轮 token 并累加
@@ -400,7 +412,13 @@ class AIChat:
             "content": self._config.get("prompt", self._system_prompt)
             } ]
         if self._history and self._config.get("talk_mode", "chain") == "chain":
-            self._prune_and_compact_history(10240)
+            # 动态计算历史 tokens 限制
+            current_request = None
+            if current_round and current_round.get("request"):
+                current_request = current_round["request"]
+            max_history_tokens = self._calculate_max_history_tokens(current_request)
+            keep_last_n = self._config.get('history_keep_last_n', 6)
+            self._prune_and_compact_history(max_history_tokens, keep_last_n)
             # 展开 history（summary round 会作为 system/request 插入短 summary）
             for round_obj in self._history:
                 if round_obj.get("summary"):
@@ -472,6 +490,57 @@ class AIChat:
             context = model_config.get('context', 32768)
             return parse_number_from_readable(context) or 32768
         return 32768
+
+    def _calculate_max_history_tokens(self, current_request: Optional[Dict[str, Any]] = None) -> int:
+        """
+        动态计算历史可用的最大 tokens
+
+        考虑因素：
+        1. 模型的最大上下文长度
+        2. 安全缓冲（默认保留 25% 给当前请求和未来响应）
+        3. 当前请求的预估 tokens（如果提供）
+        """
+        # 获取模型的最大上下文
+        max_context = self._get_max_context_tokens()
+
+        # 安全缓冲比例：保留一定比例给当前请求和未来响应，限制在 0.1 到 0.5 之间
+        safety_factor = self._config.get('history_safety_factor', 0.25)
+        safety_factor = max(0.1, min(0.5, safety_factor))  # 限制在 10% 到 50% 之间
+
+        # 计算可用 tokens
+        available_tokens = int(max_context * (1 - safety_factor))
+
+        # 如果提供了当前请求，估算其 tokens
+        if current_request:
+            request_tokens = self._estimate_message_tokens(current_request)
+            available_tokens = max(1024, available_tokens - request_tokens)  # 至少保留 1K
+
+        # 确保最小值
+        return max(1024, available_tokens)
+
+    def _estimate_message_tokens(self, message: Dict[str, Any]) -> int:
+        """估算单个消息的 tokens"""
+        if not message:
+            return 0
+
+        # 合并所有文本内容
+        text_parts = []
+        if 'content' in message and message['content']:
+            text_parts.append(str(message['content']))
+        if 'reasoning_content' in message and message['reasoning_content']:
+            text_parts.append(str(message['reasoning_content']))
+
+        # 工具调用内容
+        if 'tool_calls' in message and message['tool_calls']:
+            # 粗略估算工具调用的 tokens
+            try:
+                tool_calls_json = json.dumps(message['tool_calls'], ensure_ascii=False)
+                text_parts.append(tool_calls_json)
+            except:
+                pass
+
+        combined_text = '\n'.join(text_parts)
+        return self._count_tokens(combined_text)
 
     def _make_tool_calls(self, response) -> List[Dict[str, Any]]:
         tool_returns = []
