@@ -139,12 +139,42 @@ class AIChat:
                     total += self._count_tokens(resp["reasoning_content"])
         return total
 
+    def _archive_history_rounds(self, rounds: List[Dict[str, Any]]) -> str:
+        """
+        归档历史轮次列表，返回归档引用字符串
+
+        参数:
+            rounds: 要归档的历史轮次列表
+
+        返回:
+            归档引用字符串，格式与 _archive_content 一致
+        """
+        if not rounds:
+            return ""
+
+        # 序列化历史轮次为 JSON
+        try:
+            history_json = json.dumps(rounds, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"Error serializing history for archiving: {e}", file=sys.stderr)
+            # 创建简单的文本表示作为后备
+            simple_text = []
+            for i, round_obj in enumerate(rounds):
+                req = round_obj.get("request", {})
+                req_content = req.get("content", "") if isinstance(req, dict) else ""
+                snippet = req_content[:100] if req_content else f"Round {i}"
+                simple_text.append(f"{i}: {snippet}")
+            history_json = "\n".join(simple_text)
+
+        # 归档序列化的历史
+        return self._archive_content(history_json)
+
     def _prune_and_compact_history(self, max_history_tokens: int = 8192, keep_last_n: Optional[int] = None):
         """
         根据 token 预算修剪并压缩历史：
           - 保留最近 keep_last_n 轮完整内容（如果 token 预算允许）
-          - 将更早轮合并为一个 summary 条目，summary 长度会被截短到 max_history_tokens - window_tokens
-        结果会把 self._history 转换为： [ {summary:True, content: "..."}, round1, round2, ... ]
+          - 将更早轮归档并创建一个归档引用条目
+        结果会把 self._history 转换为： [ {archived:True, content: "归档引用..."}, round1, round2, ... ]
         """
         # 获取 keep_last_n 配置，默认值为 6，确保为正整数
         if keep_last_n is None:
@@ -163,52 +193,55 @@ class AIChat:
         # 计算保留 window 的 tokens
         window = rounds[-keep_last_n:] if keep_last_n > 0 else []
         window_tokens = sum(self._round_token_estimate(r) for r in window)
-        # 预算给 summary 的 tokens
-        summary_budget = max(0, max_history_tokens - window_tokens)
-        # 如果 summary_budget 为 0，则完全丢弃更早历史，只保留 window
-        if summary_budget <= 0:
+        # 预算给归档引用的 tokens
+        archive_budget = max(0, max_history_tokens - window_tokens)
+
+        # 获取较早的历史轮次
+        earlier = rounds[: max(0, len(rounds) - len(window))]
+
+        # 如果没有较早历史，直接返回 window
+        if not earlier:
             self._history = window
             return
 
-        # 构建简易 summary（本地剪裁）。可选项：若可用 LLM，可用 LLM 生成更好摘要（见注释）
-        earlier = rounds[: max(0, len(rounds) - len(window))]
-        # 简单摘要策略：提取每轮 request/first response 的前若干字符拼接，直到预算耗尽
-        # TODO 可以抽取提纲作为摘要，并把原始内容存档
-        parts = []
-        used = 0
-        # 估算每字符对应的 token（保守）：1 token ~ 4 chars
-        chars_budget = summary_budget * 4
-        for r in earlier:
-            req = r.get("request", {}) or {}
-            reqc = req.get("content", "")
-            # take short snippet from request and first response
-            snippet = (reqc.strip().splitlines()[0] if reqc else "")
-            if not snippet and r.get("response"):
-                # 尝试从第一个 response 取
-                resp0 = r["response"][0].get("content", "")
-                snippet = (resp0.strip().splitlines()[0] if resp0 else "")
-            if snippet:
-                # 限制每轮 snippet 长度，避免某一轮占满预算
-                snip = snippet[: min(200, chars_budget - used)]
-                if snip:
-                    parts.append(f"- {snip}")
-                    used += len(snip)
-            if used >= chars_budget:
-                break
+        # 归档较早的历史轮次
+        archive_ref = self._archive_history_rounds(earlier)
 
-        summary_text = "Earlier conversation summary (short):\n" + "\n".join(parts)
-        # 若 parts 为空则直接丢弃 earlier 历史
-        if parts:
-            # 插入 summary 作为一个伪 round（便于后续统一处理）
-            summary_round = {
-                    "summary": True,
-                    "request": {"role": "assistant", "content": summary_text},
-                    "response": [],
-                    "tokens": summary_budget
-                    }
-            self._history = [summary_round] + window
-        else:
-            self._history = window
+        # 估算归档引用的 tokens
+        archive_ref_tokens = self._count_tokens(archive_ref)
+
+        # 如果归档引用超出预算，尝试创建更短的引用
+        if archive_ref_tokens > archive_budget > 0:
+            # 尝试截短归档引用
+            max_chars = max(50, archive_budget * 4)  # 至少保留50字符
+            if len(archive_ref) > max_chars:
+                # 保留开头和关键信息
+                lines = archive_ref.split('\n')
+                short_ref = []
+                key_lines = ["[归档引用]", "- 归档文件:", "- 内容长度:", "============"]
+                for line in lines:
+                    if any(key in line for key in key_lines):
+                        short_ref.append(line)
+                    if len('\n'.join(short_ref)) > max_chars:
+                        break
+                archive_ref = '\n'.join(short_ref[:4]) + "\n...\n"
+                archive_ref_tokens = self._count_tokens(archive_ref)
+
+        # 创建归档引用轮次
+        archive_round = {
+            "archived": True,
+            "summary": True,  # 保持向后兼容
+            "request": {
+                "role": "system",
+                "content": f"较早的历史对话已归档。如需查看完整内容，请使用 fetch_archive 工具。\n{archive_ref}"
+            },
+            "response": [],
+            "archive_ref": archive_ref,
+            "tokens": archive_ref_tokens
+        }
+
+        # 更新历史：归档引用 + 最近的 window
+        self._history = [archive_round] + window
 
     def _open_llm(self, api_key_name=None, base_url=None):
         """Open llm client with given or default parameters"""
