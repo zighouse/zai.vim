@@ -317,6 +317,8 @@ Session commands configure AI assistant settings and are processed by Zai's back
 - `:suffix<<EOF` - Set multi-line suffix (end with EOF)
 - `:talk_mode <mode>` - Set conversation mode (instant, chain)
 - `:logprobs <int>` - Show top token probabilities (0-20)
+- `:history_safety_factor <float>` - Set safety factor for history pruning (0.1-0.5, default 0.25)
+- `:history_keep_last_n <int>` - Keep last N rounds in history (>=1, default 6)
 - `:no-log` - Disable logging
 - `:-no-log` - Enable logging
 - `:load <log-file>` - Load context from Zai log file
@@ -429,6 +431,8 @@ Displayable configuration items:
 - `top-p` - Top-P sampling (0-1)
 - `presence-penalty` - Repetition penalty (-2 to 2)
 - `frequency-penalty` - Frequency penalty (-2 to 2)
+- `history-safety-factor` - Safety factor for history pruning (0.1-0.5)
+- `history-keep-last-n` - Number of recent rounds to keep (>=1)
 - `log-file` - Log file path
 - `prefix` - Command prefix
 

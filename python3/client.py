@@ -254,6 +254,8 @@ COMMANDS:
   Conversation:
     {cmd_prefix}talk_mode <mode>     - Set conversation mode (instant, chain)
     {cmd_prefix}logprobs <int>       - Show top token probabilities (0-20)
+    {cmd_prefix}history_safety_factor <float> - Set safety factor for history pruning (0.1-0.5, default 0.25)
+    {cmd_prefix}history_keep_last_n <int> - Keep last N rounds in history (>=1, default 6)
 
   AI Assistant:
     {cmd_prefix}list AI              - List valid AI assistants

@@ -491,6 +491,8 @@ via |zai-chat-command-prefix|.
     `top-p`             Top-P Tokens, float, range [0,1]
     `presence-penalty`  Repetition Penalty, float, range [-2,2]
     `frequence-panelty` Frequency Penalty, float, range [-2,2]
+    `history-safety-factor` History pruning safety factor, float, range [0.1,0.5]
+    `history-keep-last-n`   Keep last N conversation rounds, integer, >=1
     `log-file`          Full path of the log file for    |zai-log|
                       the current chat
     `prefix`            Chat Command Prefix              |zai-chatcmd-prefix|
@@ -624,6 +626,8 @@ supported for setting or unsetting:
     * `presence_penalty`   Repetition Penalty, float, range [-2,2]
     * `frequency_penalty`  Frequency Penalty, float, range [-2,2]
     * `logprobs`           Top Token Probability, float, range [0,20]
+    * `history_safety_factor`  History pruning safety factor, float, range [0.1,0.5], default 0.25
+    * `history_keep_last_n`    Keep last N conversation rounds, integer, >=1, default 6
 
                                                         *zai-chatcmd-nolog*
 :no-log                 Close chat logging. Chat command |zai-chat-commands|.

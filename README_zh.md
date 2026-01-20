@@ -343,6 +343,8 @@ Zai 会在展示窗口中同时展示用户发送的请求，以及远程助手�
 - `:suffix<<EOF` - 设置多行后缀（以 EOF 结束）
 - `:talk_mode <mode>` - 设置对话模式 (instant, chain)
 - `:logprobs <int>` - 显示顶部词元概率 (0-20)
+- `:history_safety_factor <float>` - 设置历史修剪安全系数 (0.1-0.5, 默认 0.25)
+- `:history_keep_last_n <int>` - 保留最近 N 轮对话历史 (>=1, 默认 6)
 - `:no-log` - 关闭聊天日志
 - `:-no-log` - 取消关闭，即打开聊天日志
 - `:load <log-file>` - 从 Zai 日志文件加载上下文
@@ -455,6 +457,8 @@ Zai 提供了多个工具集供 AI 调用以与系统交互：
 - `top-p` - Top-P词元，浮点，范围[0,1]
 - `presence-penalty` - 重复惩罚，浮点，范围[-2,2]
 - `frequence-panelty` - 高频惩罚，浮点，范围[-2,2]
+- `history-safety-factor` - 历史修剪安全系数 (0.1-0.5)
+- `history-keep-last-n` - 保留的最近对话轮数 (>=1)
 - `log-file` - 记录当前聊天的日志文件全路径
 - `prefix` - 会话命令前缀
 

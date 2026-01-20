@@ -447,6 +447,8 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
     `top-p`             Top-P词元，浮点，范围[0,1]
     `presence-penalty`  重复惩罚，浮点，范围[-2,2]
     `frequence-panelty` 高频惩罚，浮点，范围[-2,2]
+    `history-safety-factor` 历史修剪安全系数，浮点，范围[0.1,0.5]
+    `history-keep-last-n`   保留最近对话轮数，整数，>=1
     `log-file`          记录当前聊天的日志文件全路径     |zai-log|
     `prefix`            会话命令前缀                     |zai-chatcmd-prefix|
 
@@ -554,6 +556,8 @@ Zai 除显示交互界面而占据一定的屏幕面积之外，完全独立于 
     * `presence_penalty`   重复惩罚，浮点，范围[-2,2]
     * `frequency_penalty`  高频惩罚，浮点，范围[-2,2]
     * `logprobs`           顶部词元概率，浮点，范围[0,20]
+    * `history_safety_factor`  历史修剪安全系数，浮点，范围[0.1,0.5]，默认 0.25
+    * `history_keep_last_n`    保留最近对话轮数，整数，>=1，默认 6
 
                                                         *zai-chatcmd-nolog*
 :no-log                  关闭聊天日志。会话命令 |zai-chat-commands|.
