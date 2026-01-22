@@ -333,7 +333,7 @@ class AIChat:
             # 阻止对读档操作再次进行归档
             call = calls.get('tool_calls')[0]
             func = call.get('function')
-            args = json.loads(func.get('arguments')) if function['arguments'] else {}
+            args = json.loads(func.get('arguments')) if func['arguments'] else {}
             arcf = args.get('archive_file','')
             return f"读取归档文件: {arcf}\n"
         else:
@@ -751,7 +751,7 @@ class AIChat:
 
                 if hasattr(chunk_message, 'tool_calls') and chunk_message.tool_calls:
                     for tool_call in chunk_message.tool_calls:
-                        if len(full_response['tool_calls']) <= tool_call.index:
+                        if 'tool_calls' in full_response and len(full_response['tool_calls']) <= tool_call.index:
                             full_response['tool_calls'].append({
                                 'id': tool_call.id,
                                 'type': 'function',

@@ -15,7 +15,7 @@ def get_prompt(with_tool_call: bool) -> str:
                "1. “归档引用”内的文本仅仅是摘要或预览，并不完整。\n" + \
                "2. **绝不要**直接引用“归档引用”内不完整的片段作为事实依据。\n" + \
                "3. 必须调用 fetch_archive 工具获得完整归档内容后，才能将其作为真实数据使用。\n" + \
-               "4. 若用户询问历史细节，**必须**先调用 fetch_archive，禁止基于预览进行猜测。"
+               "4. 若用户询问历史细节，**必须**先识别出所有相关的归档引用，然后调用 fetch_archive，禁止基于预览进行猜测。"
     else:
         #self._prompt_for_archive = "Archives are represented as ‹archive id=ID›...‹/archive›. " + \
         #        "If you need to read an archive's full content to answer, reply with exactly " + \
