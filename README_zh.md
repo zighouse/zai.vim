@@ -10,6 +10,7 @@ Zai.Vim 是一款将 AI 助手直接集成到 Vim 编辑器的插件，管理着
 - **附件支持**：允许附加文本文件作为聊天会话交互的上下文
 - **多会话支持**：允许同时进行多个聊天会话
 - **会话日志**：保存对话历史记录、可以加载日志并继续历史的会话，可以在浏览器中预览
+- **语音输入支持**：使用 zasr-server 实现实时语音识别，解放双手进行文本输入
 
 ## 安装指南
 
@@ -33,6 +34,7 @@ Zai.Vim 是一款将 AI 助手直接集成到 Vim 编辑器的插件，管理着
   - 文件操作: `python-magic` (文件类型检测)
   - 系统工具: `distro` (Linux发行版检测), `docker` (Docker Python SDK)
   - AI工具: `transformers` (Hugging Face库)
+  - 语音输入（ASR）: `websockets`, `pyaudio`
   - 实用工具: `lunarcalendar` (农历日历)
 
 - 系统依赖（Linux推荐）：
@@ -116,6 +118,81 @@ python python3\install.py
 进入安装目录下执行 `git pull` 即可手动更新。
 
 也可以下载 zip 包 [Zai.Vim](https://github.com/zighouse/zai.vim/archive/refs/heads/main.zip)，解压后把 zai.vim-main 文件夹放到对应的目录下。
+
+### 语音输入（ASR）设置
+
+要启用语音输入功能，需要设置 zasr-server（一个实时语音识别服务器）：
+
+1. **安装 zasr-server**：
+
+```bash
+# 克隆 zasr 仓库
+git clone https://github.com/zighouse/zasr.git
+cd zasr
+
+# 下载依赖
+cd third_party
+bash download_deps.sh
+
+# 编译 zasr-server
+cd ..
+mkdir -p build && cd build
+cmake ..
+make -j$(nproc)
+```
+
+2. **下载 ASR 模型**（SenseVoice 支持多语言）：
+
+```bash
+# 模型将下载到 ~/.cache/sherpa-onnx/
+# 访问: https://github.com/k2-fsa/sherpa-onnx/releases
+# 下载：
+#   - silero_vad.int8.onnx
+#   - sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17
+```
+
+3. **启动 zasr-server**：
+
+```bash
+# 使用启动脚本（推荐）
+RECOGNIZER_TYPE=sense-voice ./start-server.sh
+
+# 或手动启动
+./build/zasr-server \
+  --recognizer-type sense-voice \
+  --silero-vad-model ~/.cache/sherpa-onnx/silero_vad.int8.onnx \
+  --sense-voice-model ~/.cache/sherpa-onnx/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx \
+  --tokens ~/.cache/sherpa-onnx/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt \
+  --port 2026
+```
+
+4. **安装 ASR 所需的 Python 依赖**：
+
+```bash
+pip install websockets pyaudio
+```
+
+**注意**：在 Linux 上，您可能还需要安装 PortAudio 开发头文件：
+
+```bash
+sudo apt install portaudio19-dev python3-pyaudio
+```
+
+5. **在 Vim 中启用 ASR**：
+
+添加到您的 `.vimrc` 或 `init.vim`：
+
+```vim
+" 启用 ASR 功能
+call zai#asr#setup()
+```
+
+或在 Vim 中运行：`:call zai#asr#setup()`
+
+**环境变量**：
+- `ZASR_SERVER_URL`：WebSocket 服务器地址（默认：`ws://localhost:2026``）
+
+更多关于 zasr-server 的信息，请访问：https://github.com/zighouse/zasr
 
 ## Zai 配置
 
@@ -292,6 +369,35 @@ DEEPSEEK_API_KEY=sk-********************************
 | `:ZaiLoad`          | 加载 Zai 日志作为新的上下文   | -          |
 | `<leader>zl`        | 加载 Zai 日志作为新的上下文   | -          |
 | `:ZaiConfig`        | 编辑 AI 配置                  | -          |
+
+### 语音输入（ASR）
+
+语音输入允许您在插入模式下使用实时语音识别直接口述文本。
+
+| 命令/按键           | 描述                          | 模式          |
+|---------------------|-------------------------------|---------------|
+| `<C-G>`             | 开关 ASR                      | 插入模式      |
+| `:ASRToggle`        | 开关 ASR                      | -             |
+| `:ASRStart`         | 开始语音输入                  | -             |
+| `:ASRStop`          | 停止语音输入                  | -             |
+
+**工作原理**：
+1. 在插入模式下按 `<C-G>` 启动 ASR
+2. 对着麦克风说话
+3. 文本会实时显示（部分识别结果）
+4. 静音 3 秒后自动停止识别
+5. 再次按 `<C-G>` 可手动停止
+
+**使用要求**：
+- zasr-server 必须在 `ws://localhost:2026` 上运行
+- Python 包：`websockets`、`pyaudio`
+- 可用的麦克风
+
+**使用提示**：
+- 启动 ASR 前确保 zasr-server 正在运行
+- 查看状态消息以了解连接和识别反馈
+- 系统会自动检测静音（3 秒）
+- 部分识别结果会实时更新，直到确认最终结果
 
 ### Zai 界面说明
 

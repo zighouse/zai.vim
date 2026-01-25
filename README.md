@@ -12,6 +12,7 @@ Zai.Vim is a Vim plugin that integrates AI assistants directly into your Vim edi
 - **File attachment support**: Attach text files as conversation context
 - **Multiple session support**: Handle multiple chat sessions concurrently
 - **Session logging**: Save, load, and preview conversation history
+- **Voice input support**: Real-time speech recognition using zasr-server for hands-free text input
 
 ## Installation
 
@@ -33,6 +34,7 @@ Zai.Vim is a Vim plugin that integrates AI assistants directly into your Vim edi
   - File Operations: `python-magic` (File type detection)
   - System Tools: `distro` (Linux distribution detection), `docker` (Docker Python SDK)
   - AI Tools: `transformers` (Hugging Face library)
+  - Voice Input (ASR): `websockets`, `pyaudio`
   - Utility Tools: `lunarcalendar` (Lunar calendar)
 - System Dependencies (Recommended for Linux):
   - Docker Engine (for secure shell execution):
@@ -113,6 +115,81 @@ python python3\install.py
 Run `git pull` in the installation directory to update manually.
 
 Alternatively, [download the zip](https://github.com/zighouse/zai.vim/archive/refs/heads/main.zip) and extract the zai.vim-main folder to the appropriate directory.
+
+### Voice Input (ASR) Setup
+
+To enable voice input functionality, you need to set up zasr-server (a real-time speech recognition server):
+
+1. **Install zasr-server**:
+
+```bash
+# Clone zasr repository
+git clone https://github.com/zighouse/zasr.git
+cd zasr
+
+# Download dependencies
+cd third_party
+bash download_deps.sh
+
+# Build zasr-server
+cd ..
+mkdir -p build && cd build
+cmake ..
+make -j$(nproc)
+```
+
+2. **Download ASR models** (SenseVoice for multi-lingual support):
+
+```bash
+# Models will be downloaded to ~/.cache/sherpa-onnx/
+# Visit: https://github.com/k2-fsa/sherpa-onnx/releases
+# Download:
+#   - silero_vad.int8.onnx
+#   - sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17
+```
+
+3. **Start zasr-server**:
+
+```bash
+# Using the startup script (recommended)
+RECOGNIZER_TYPE=sense-voice ./start-server.sh
+
+# Or manually
+./build/zasr-server \
+  --recognizer-type sense-voice \
+  --silero-vad-model ~/.cache/sherpa-onnx/silero_vad.int8.onnx \
+  --sense-voice-model ~/.cache/sherpa-onnx/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx \
+  --tokens ~/.cache/sherpa-onnx/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt \
+  --port 2026
+```
+
+4. **Install Python dependencies for ASR**:
+
+```bash
+pip install websockets pyaudio
+```
+
+**Note**: On Linux, you may also need to install PortAudio development headers:
+
+```bash
+sudo apt install portaudio19-dev python3-pyaudio
+```
+
+5. **Enable ASR in Vim**:
+
+Add to your `.vimrc` or `init.vim`:
+
+```vim
+" Enable ASR functionality
+call zai#asr#setup()
+```
+
+Or run in Vim: `:call zai#asr#setup()`
+
+**Environment Variables**:
+- `ZASR_SERVER_URL`: WebSocket server URL (default: `ws://localhost:2026`)
+
+For more information about zasr-server, visit: https://github.com/zighouse/zasr
 
 ## Configuration
 
@@ -276,6 +353,35 @@ Also, a 0-based index in the list of assistants config can be used as same as th
 | `:ZaiLoad`             | Load Zai log as context              | -             |
 | `<leader>zl`           | Load Zai log as context              | -             |
 | `:ZaiConfig`           | Edit AI assistants configuration     | -             |
+
+### Voice Input (ASR)
+
+Voice input allows you to dictate text directly in insert mode using real-time speech recognition.
+
+| Command/Key            | Description                          | Mode          |
+|------------------------|--------------------------------------|---------------|
+| `<C-G>`                | Toggle ASR on/off                    | Insert mode   |
+| `:ASRToggle`           | Toggle ASR on/off                    | -             |
+| `:ASRStart`            | Start voice input                    | -             |
+| `:ASRStop`             | Stop voice input                     | -             |
+
+**How it works**:
+1. Press `<C-G>` in insert mode to start ASR
+2. Speak into your microphone
+3. Text appears in real-time as you speak (partial results)
+4. ASR automatically stops after 3 seconds of silence
+5. Press `<C-G>` again to manually stop
+
+**Requirements**:
+- zasr-server must be running on `ws://localhost:2026`
+- Python packages: `websockets`, `pyaudio`
+- Working microphone
+
+**Tips**:
+- Ensure zasr-server is running before starting ASR
+- Check status messages for connection and recognition feedback
+- The system detects silence automatically (3 seconds)
+- Partial results are updated in-place until final results are confirmed
 
 ### Interface Overview
 
