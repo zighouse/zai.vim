@@ -177,6 +177,17 @@ sudo apt install portaudio19-dev python3-pyaudio
 
 5. **Enable ASR in Vim**:
 
+**Option 1: Auto-enable on plugin load** (Recommended)
+
+Add to your `.vimrc` or `init.vim`:
+
+```vim
+" Auto-enable ASR when plugin loads
+let g:zai_auto_enable_asr = 1
+```
+
+**Option 2: Manual enable**
+
 Add to your `.vimrc` or `init.vim`:
 
 ```vim

@@ -180,6 +180,17 @@ sudo apt install portaudio19-dev python3-pyaudio
 
 5. **在 Vim 中启用 ASR**：
 
+**方案 1：插件加载时自动启用**（推荐）
+
+添加到您的 `.vimrc` 或 `init.vim`：
+
+```vim
+" 插件加载时自动启用 ASR
+let g:zai_auto_enable_asr = 1
+```
+
+**方案 2：手动启用**
+
 添加到您的 `.vimrc` 或 `init.vim`：
 
 ```vim

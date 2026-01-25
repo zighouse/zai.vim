@@ -64,3 +64,13 @@ inoremap <silent> <C-F> <C-O>:call zai#Complete(1)<CR>
 nmap <silent> <leader>zl <Plug>ZaiLoad
 nmap <silent> <leader>zd <Plug>ZaiDownloadURL
 nmap <silent> <leader>zv <Plug>ZaiOpenPath
+
+" ASR (Automatic Speech Recognition) setup
+if !exists('g:zai_auto_enable_asr')
+    let g:zai_auto_enable_asr = 0
+endif
+
+if g:zai_auto_enable_asr
+    " Auto-enable ASR functionality
+    silent! call zai#asr#setup()
+endif
