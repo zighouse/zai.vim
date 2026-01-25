@@ -302,14 +302,14 @@ class AIChat:
         #"""
         #归档工具调用序列。
         #1. 提取工具名称生成摘要文本 (如: ls,ls)
-        #2. 将完整数据序列化为 JSON 并存入文件
+        #2. 将完整数据序列化为 JSON 并存入文件（仅当内容长度超过512时）
         #3. 返回特定格式的归档字符串
         #   ‹archive id=a1b2c3d4›ls,ls‹/archive›
         #"""
         """
         归档工具调用序列。
         1. 提取工具名称生成摘要文本 (如: ls,ls)
-        2. 将完整数据序列化为 JSON 并存入文件
+        2. 将完整数据序列化为 JSON 并存入文件（仅当内容长度超过512时）
         3. 返回特定格式的归档字符串
             ===========
             [归档引用]
@@ -341,9 +341,15 @@ class AIChat:
 
         # ensure_ascii=False 保证中文字符能正常存储
         json_content = json.dumps(calls, ensure_ascii=False, indent=2)
+
+        # 只有当内容长度超过512时才进行归档
+        if len(json_content) <= 512:
+            # 内容较短，不需要归档，直接返回简化信息
+            return ""
+
         archive_dir = self._config.get('archive_dir', '/tmp/zai.archive')
         os.makedirs(archive_dir, exist_ok=True)
-        
+
         # 生成唯一文件名 (引入随机数和时间戳防冲突)
         rnd_int = random.randint(0, 10000)
         archive_id = hashlib.md5(f"{time.time()}_{rnd_int}_{summary_content}".encode()).hexdigest()[:12]
@@ -416,14 +422,18 @@ class AIChat:
                                 "returns": [it.copy() for it in group[1:]]
                                 }
                         tool_call_arc = self._archive_tool_calls(calls)
-                        content_name = "content"
-                        if filted.get("content", "").strip() == "" and \
-                                filted.get("reasoning_content", "").strip() != "":
-                              content_name = "reasoning_content"
-                        filted[content_name] = f"{filted.get(content_name,'')}\n{tool_call_arc}"
-                        if "tool_calls" in filted:
-                            del filted["tool_calls"]
-                        result.append(filted)
+                        if tool_call_arc != "":
+                            content_name = "content"
+                            if filted.get("content", "").strip() == "" and \
+                                    filted.get("reasoning_content", "").strip() != "":
+                                  content_name = "reasoning_content"
+                            filted[content_name] = f"{filted.get(content_name,'')}\n{tool_call_arc}"
+                            if "tool_calls" in filted:
+                                del filted["tool_calls"]
+                            result.append(filted)
+                        else:
+                            result.append(filted)
+                            result.extend(group[1:].copy())
                     else:
                         result.append(filted)
                         result.extend(group[1:].copy())
