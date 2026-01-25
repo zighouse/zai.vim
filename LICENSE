@@ -19,3 +19,47 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+-----------------------------------------------------------------------------
+Third-Party Licenses
+
+This project uses the following third-party Python packages and services:
+
+Core Dependencies:
+- openai (MIT License)
+- requests (Apache 2.0)
+- appdirs (MIT License)
+- chardet (LGPLv3)
+- PyYAML (MIT License)
+- tiktoken (MIT License)
+
+Web Functionality (Optional):
+- beautifulsoup4 (MIT License)
+- selenium (Apache 2.0)
+- undetected-chromedriver (MIT License)
+- html-to-markdown (MIT License)
+
+System Tools (Optional):
+- docker (Apache 2.0)
+- python-magic (MIT License)
+- distro (GPLv3)
+
+AI Tools (Optional):
+- transformers (Apache 2.0)
+
+Voice Input (ASR Feature):
+- websockets (MIT License)
+- pyaudio (MIT License)
+
+External Service:
+- zasr-server (MIT License, Apache 2.0 for sherpa-onnx component)
+
+For detailed license information of each package, please refer to:
+- PyPI package pages: https://pypi.org/
+- Project documentation
+- zasr-server: https://github.com/zighouse/zasr
+
+Note: This plugin integrates with various AI services (OpenAI, DeepSeek, etc.).
+Each service has its own terms of service and usage policies that users must
+comply with when using those services.

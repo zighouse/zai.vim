@@ -695,4 +695,16 @@ The sandbox directory is used by file-related tools (`tool_file`, `tool_shell`) 
 
 ## License
 
-Released under MIT License. See: [https://github.com/zighouse/zai/blob/main/LICENSE](https://github.com/zighouse/zai/blob/main/LICENSE)
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+### Third-Party Dependencies
+
+This plugin uses several third-party Python packages with different licenses:
+
+- **Core Dependencies**: openai (MIT), requests (Apache 2.0), appdirs (MIT), chardet (LGPLv3), PyYAML (MIT), tiktoken (MIT)
+- **Web Features** (Optional): beautifulsoup4 (MIT), selenium (Apache 2.0), undetected-chromedriver (MIT)
+- **System Tools** (Optional): docker (Apache 2.0), python-magic (MIT), distro (GPLv3)
+- **AI Tools** (Optional): transformers (Apache 2.0)
+- **Voice Input** (ASR): websockets (MIT), pyaudio (MIT)
+
+For complete third-party license information, please see the [LICENSE](LICENSE) file.

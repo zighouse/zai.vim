@@ -756,4 +756,16 @@ Zai 现在支持在 Docker 容器启动时自动安装软件包。您可以在 `
 
 ## 许可协议
 
-MIT 许可证发布，详情见：[https://github.com/zighouse/zai/blob/main/LICENSE](https://github.com/zighouse/zai/blob/main/LICENSE)
+本项目采用 MIT 许可证发布 - 详见 [LICENSE](LICENSE) 文件。
+
+### 第三方依赖
+
+本插件使用多个第三方 Python 包，它们各自有不同的许可证：
+
+- **核心依赖**：openai (MIT)、requests (Apache 2.0)、appdirs (MIT)、chardet (LGPLv3)、PyYAML (MIT)、tiktoken (MIT)
+- **Web 功能**（可选）：beautifulsoup4 (MIT)、selenium (Apache 2.0)、undetected-chromedriver (MIT)
+- **系统工具**（可选）：docker (Apache 2.0)、python-magic (MIT)、distro (GPLv3)
+- **AI 工具**（可选）：transformers (Apache 2.0)
+- **语音输入**（ASR）：websockets (MIT)、pyaudio (MIT)
+
+完整的第三方许可证信息请参见 [LICENSE](LICENSE) 文件。
