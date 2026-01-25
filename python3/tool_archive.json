@@ -3,13 +3,26 @@
     "type": "function",
     "function": {
       "name": "fetch_archive",
-      "description": "读取历史消息中[归档引用]指向的归档文件。严格要求提取归档引用中归档文件的内容以确保正确性。",
+      "description": "读取历史消息中[归档引用]指向的归档文件。严格要求提取归档引用中归档文件的内容以确保正确性。支持分页读取大文件。",
       "parameters": {
         "type": "object",
         "properties": {
           "archive_file": {
             "type": "string",
-            "description": "归档文件"
+            "description": "归档文件名"
+          },
+          "page_type": {
+            "type": "string",
+            "description": "分页类型：'line' 按行数分页，'length' 按字符长度分页。默认为 'line'。",
+            "enum": ["line", "length"]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "每页大小。当 page_type='line' 时表示行数，当 page_type='length' 时表示字符数。默认为 100。"
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "页码（从1开始）。默认为 1。"
           }
         },
         "required": ["archive_file"]

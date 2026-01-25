@@ -358,6 +358,10 @@ class AIChat:
         filepath = os.path.join(archive_dir, filename)
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(json_content)
+
+        # 计算内容行数
+        line_count = len(json_content.split('\n'))
+
         self._has_archives = True
         self._tool.use_tool('archive')
         #return f"‹archive id={archive_id}›{summary_content}‹/archive›"
@@ -365,6 +369,7 @@ class AIChat:
                f"[归档引用]\n" + \
                f"- 归档文件:{filename}\n" + \
                f"- 内容长度:{len(json_content)}\n" + \
+               f"- 内容行数:{line_count}\n" + \
                f"- 调用工具:{summary_content}\n" + \
                f"============\n"
 
