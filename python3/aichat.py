@@ -373,6 +373,90 @@ class AIChat:
                f"- 调用工具:{summary_content}\n" + \
                f"============\n"
 
+    def _archive_large_current_tool_calls(self, response_list: list, keep_last_n: int = 2, size_threshold: int = 8192) -> list:
+        """
+        归档当前轮次中较早的大型 tool_calls。
+
+        参数:
+            response_list: 当前轮次的 response 列表
+            keep_last_n: 保留最近几次调用不归档（默认2次）
+            size_threshold: 归档阈值（字节数，默认8K）
+
+        返回:
+            处理后的 response 列表
+        """
+        if not response_list or len(response_list) <= keep_last_n * 2:
+            return response_list
+
+        # 遍历 response 列表，找到需要归档的 tool_calls 组
+        # 结构模式: [{assistant with tool_calls}, [{tool_returns}], {assistant}, [{tool_returns}], ...]
+        result = []
+        groups = []
+        group = []
+
+        for item in response_list:
+            if isinstance(item, dict) and item.get("role") == "assistant":
+                if "tool_calls" in item:
+                    # 这是一个带 tool_calls 的 assistant，开始新的分组
+                    if group:
+                        groups.append(group)
+                    group = [item]
+                else:
+                    # 普通 assistant 响应，不分组
+                    if group:
+                        groups.append(group)
+                        group = []
+                    result.append(item)
+            else:
+                # tool 返回或其他内容
+                if group:
+                    group.append(item)
+                else:
+                    result.append(item)
+
+        if group:
+            groups.append(group)
+
+        # 对分组进行归档处理（保留最后 keep_last_n 个分组）
+        for i, group in enumerate(groups):
+            is_in_keep_window = i >= len(groups) - keep_last_n
+
+            if len(group) > 0 and isinstance(group[0], dict) and "tool_calls" in group[0]:
+                # 这是一个 tool_calls 分组
+                calls = {
+                    "tool_calls": [it.copy() for it in group[0].get("tool_calls", [])],
+                    "returns": [it.copy() for it in group[1:]]
+                }
+
+                # 计算大小
+                json_content = json.dumps(calls, ensure_ascii=False, indent=2)
+                content_size = len(json_content.encode('utf-8'))
+
+                # 如果超过阈值且不在保留窗口内，进行归档
+                if content_size > size_threshold and not is_in_keep_window:
+                    # 归档
+                    tool_call_arc = self._archive_tool_calls(calls)
+                    if tool_call_arc:
+                        # 创建归档版本的 assistant 消息
+                        archived_assistant = {k: v for k, v in group[0].items() if k != "tool_calls"}
+                        content_name = "content"
+                        if archived_assistant.get("content", "").strip() == "" and \
+                                archived_assistant.get("reasoning_content", "").strip() != "":
+                            content_name = "reasoning_content"
+                        archived_assistant[content_name] = f"{archived_assistant.get(content_name, '')}\n{tool_call_arc}"
+                        result.append(archived_assistant)
+                    else:
+                        # 归档失败或太小，保持原样
+                        result.extend(group)
+                else:
+                    # 不需要归档，保持原样
+                    result.extend(group)
+            else:
+                # 不是 tool_calls 分组，保持原样
+                result.extend(group)
+
+        return result
+
     def _filter_response(self, response, archive_reasoning=False, archive_toolcalls=False):
         result = []
 
@@ -878,6 +962,10 @@ class AIChat:
                     response = self._generate_response(self._cur_round)
                 if response:
                     self._cur_round["response"].append(response)
+            # 归档当前轮次中较早的大型 tool_calls
+            self._cur_round["response"] = self._archive_large_current_tool_calls(
+                self._cur_round["response"], keep_last_n=2, size_threshold=8192
+            )
             self._history.append(self._cur_round)
             #print(f"rounds: {self._history}")
             self._cur_round = {"request":[], "response":[]}
