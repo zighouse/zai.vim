@@ -1,0 +1,58 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "web_search",
+      "description": "使用 SearXNG 元搜索引擎执行网络搜索，支持多个搜索引擎和结果格式",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "string",
+            "description": "搜索关键词或查询内容"
+          },
+          "engine": {
+            "type": "string",
+            "description": "指定搜索引擎（留空则自动选择）。可选值包括: 'bing', 'duckduckgo', 'google', 'brave', 'startpage', 'yandex', 'baidu', 'qwant' 等（取决于SearXNG配置）",
+            "default": ""
+          },
+          "category": {
+            "type": "string",
+            "description": "搜索类别。可选值: 'general' (常规), 'images' (图片), 'videos' (视频), 'news' (新闻), 'map' (地图), 'music' (音乐), 'it' (IT), 'science' (科学) 等（取决于SearXNG配置）",
+            "default": "general",
+            "enum": ["general", "images", "videos", "news", "map", "music", "it", "science", ""]
+          },
+          "time_range": {
+            "type": "string",
+            "description": "时间范围过滤",
+            "default": "",
+            "enum": ["day", "week", "month", "year", ""]
+          },
+          "language": {
+            "type": "string",
+            "description": "语言代码，如 'en' (英语), 'zh' (中文), 'auto' (自动)",
+            "default": "auto"
+          },
+          "safesearch": {
+            "type": "integer",
+            "description": "安全搜索级别: 0=关闭, 1=中等, 2=严格",
+            "default": 0,
+            "enum": [0, 1, 2]
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "最大返回结果数量",
+            "default": 10
+          },
+          "return_format": {
+            "type": "string",
+            "description": "返回格式: 'markdown' (默认), 'links' (仅链接), 'json' (原始JSON), 'html' (HTML格式)",
+            "default": "markdown",
+            "enum": ["markdown", "links", "json", "html"]
+          }
+        },
+        "required": ["request"]
+      }
+    }
+  }
+]
