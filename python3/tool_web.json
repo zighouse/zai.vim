@@ -26,7 +26,7 @@
     "type": "function",
     "function": {
       "name": "web_search",
-      "description": "执行网络搜索",
+      "description": "执行网络搜索（当同时提供了 SearXNG 元搜索工具时，优先使用 SearXNG）",
       "parameters": {
         "type": "object",
         "properties": {
