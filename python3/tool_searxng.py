@@ -44,11 +44,207 @@ class SearXNGClient:
             print(f"Failed to check container status: {e}", file=sys.stderr)
             return False
 
+    def _create_default_templates(self) -> bool:
+        """Create default startup script and settings template"""
+        try:
+            # Ensure config directory exists
+            self._config_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create default settings.yaml if not exists
+            if not self._settings_path.exists():
+                default_settings = """# SearXNG 配置文件
+# 这是自动生成的默认配置，您可以根据需要修改
+
+general:
+  instance_name: "SearXNG"
+  debug: false
+  enable_metrics: true
+  privacypolicy_url: false
+  donation_url: false
+  contact_url: false
+
+brand:
+  new_issue_url: https://github.com/searxng/searxng/issues/new
+  docs_url: https://docs.searxng.org/
+  public_instances: https://searx.space
+  wiki_url: https://github.com/searxng/searxng/wiki
+  issue_url: https://github.com/searxng/searxng/issues
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  autocomplete_min: 4
+  favicon_resolver: ""
+  default_lang: "auto"
+  ban_time_on_fail: 300
+  max_ban_time_on_fail: 120
+  formats:
+    - json
+  timeout: 10.0
+
+server:
+  port: 8080
+  bind_address: "127.0.0.1"
+  base_url: false
+  limiter: false
+  public_instance: false
+  secret_key: "CHANGE_THIS_SECRET_KEY_IN_PRODUCTION"
+  image_proxy: false
+  http_protocol_version: "1.0"
+  method: "GET"
+  default_http_headers:
+    X-Content-Type-Options: nosniff
+    X-Download-Options: noopen
+    X-Robots-Tag: noindex, nofollow
+    Referrer-Policy: no-referrer
+
+ui:
+  static_path: ""
+  templates_path: ""
+  query_in_title: false
+  default_theme: simple
+  center_alignment: false
+  default_locale: ""
+  theme_args:
+    simple_style: auto
+  search_on_category_select: true
+  hotkeys: default
+  url_formatting: pretty
+  enabled: false
+
+outgoing:
+  request_timeout: 10.0
+  useragent_suffix: ""
+  pool_connections: 100
+  pool_maxsize: 20
+  enable_http2: true
+  # proxies:
+  #   all://:
+  #     - http://127.0.0.1:7890
+
+plugins:
+  searx.plugins.calculator.SXNGPlugin:
+    active: true
+  searx.plugins.hash_plugin.SXNGPlugin:
+    active: true
+  searx.plugins.self_info.SXNGPlugin:
+    active: true
+  searx.plugins.unit_converter.SXNGPlugin:
+    active: true
+  searx.plugins.ahmia_filter.SXNGPlugin:
+    active: true
+  searx.plugins.hostnames.SXNGPlugin:
+    active: true
+  searx.plugins.time_zone.SXNGPlugin:
+    active: true
+  searx.plugins.tracker_url_remover.SXNGPlugin:
+    active: true
+
+checker:
+  off_when_debug: true
+
+categories_as_tabs: {}
+
+engines:
+  - name: bing
+    engine: bing
+    shortcut: b
+
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: d
+
+  - name: brave
+    engine: brave
+    shortcut: br
+
+  - name: startpage
+    engine: startpage
+    shortcut: sp
+
+  - name: yandex
+    engine: yandex
+    shortcut: y
+
+  - name: baidu
+    engine: baidu
+    shortcut: bd
+
+  - name: qwant
+    engine: qwant
+    shortcut: qw
+    qwant_categ: web
+    categories: [general, web]
+
+  - name: google
+    engine: google
+    shortcut: g
+
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    display_type: ["infobox"]
+
+doi_resolvers:
+  oadoi.org: 'https://oadoi.org/'
+  doi.org: 'https://doi.org/'
+
+default_doi_resolver: 'oadoi.org'
+"""
+                self._settings_path.write_text(default_settings, encoding='utf-8')
+                print(f"[SearXNG] 已创建默认配置文件: {self._settings_path}", file=sys.stderr)
+
+            # Create default startup script if not exists
+            if not self._startup_script.exists():
+                default_script = """#!/bin/bash
+# SearXNG 启动脚本
+# 该脚本会启动 SearXNG docker 容器
+
+# 获取脚本所在目录
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 移除已存在的容器（如果存在）
+docker rm -f searxng-agent 2>/dev/null
+
+# 启动新的 SearXNG 容器
+docker run -d \\
+  --name searxng-agent \\
+  --network host \\
+  -e "SEARXNG_BASE_URL=http://localhost:8080/" \\
+  -e "SEARXNG_SECRET_KEY=$(openssl rand -hex 32)" \\
+  -e "SEARXNG_DISABLE_UI=true" \\
+  -e "SEARXNG_SEARCH_FORMATS=json" \\
+  -v "${SCRIPT_DIR}/searxng-settings.yaml:/etc/searxng/settings.yml:ro" \\
+  searxng/searxng:latest
+
+# 如果需要容器自动重启，可以取消下面这行的注释：
+# --restart unless-stopped \\
+
+# 等待容器启动
+sleep 3
+
+# 显示容器日志
+docker logs searxng-agent --tail 20
+"""
+                self._startup_script.write_text(default_script, encoding='utf-8')
+                # Make the script executable
+                os.chmod(self._startup_script, 0o755)
+                print(f"[SearXNG] 已创建启动脚本: {self._startup_script}", file=sys.stderr)
+
+            return True
+
+        except Exception as e:
+            print(f"[SearXNG] 创建模板文件失败: {e}", file=sys.stderr)
+            return False
+
     def _start_container(self) -> bool:
         """Start SearXNG docker container"""
-        if not self._startup_script.exists():
-            print(f"SearXNG startup script not found at {self._startup_script}", file=sys.stderr)
-            return False
+        # Create default templates if not exist
+        if not self._startup_script.exists() or not self._settings_path.exists():
+            print("[SearXNG] 未找到启动脚本或配置文件，正在创建默认模板...", file=sys.stderr)
+            if not self._create_default_templates():
+                return False
+            print("[SearXNG] 模板创建完成，正在启动容器...", file=sys.stderr)
 
         try:
             # Make the script executable
