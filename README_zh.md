@@ -672,6 +672,85 @@ PROMPT
 :-temperature
 ```
 
+### MCP 服务配置（用于 Claude Code）
+
+Zai 提供了一个模型上下文协议（MCP）服务器，使 Claude Code (claude.ai/code) 能够访问网络搜索、内容获取和文件下载功能。
+
+#### 前置条件
+
+1. **安装 MCP Python 包**：
+   ```bash
+   pip install mcp
+   ```
+
+2. **确保 Docker 已安装并运行**（SearXNG 网络搜索需要）：
+   ```bash
+   # 验证 Docker 是否可用
+   docker --version
+   ```
+
+#### 可用的 MCP 工具
+
+MCP 服务器提供以下工具：
+
+1. **web_search** - 基于 SearXNG 元搜索引擎的网络搜索
+   - 支持多个搜索引擎：DuckDuckGo、Google、Bing、Brave、百度、Yandex、Qwant、Startpage
+   - 参数：
+     - `request`（必需）：搜索查询
+     - `engine`：指定搜索引擎（留空为自动选择）
+     - `category`：搜索分类（如 'general'、'images'、'videos'、'news'）
+     - `time_range`：时间范围过滤（'day'、'week'、'month'、'year'）
+     - `language`：语言代码（如 'en'、'zh'、'auto'）
+     - `safesearch`：安全搜索级别（0=关闭，1=适中，2=严格）
+     - `max_results`：最大返回结果数（默认：10）
+     - `return_format`：输出格式（'markdown'、'html'、'links'、'json'）
+
+2. **web_get_content** - 获取网页内容
+   - 返回纯文本、Markdown、HTML 或提取的链接
+   - 参数：
+     - `url`（必需）：要获取的 URL
+     - `return_format`：输出格式（'clean_text'、'markdown'、'html'、'links'）
+
+3. **web_download_file** - 从 URL 下载文件
+   - 适用于下载图片、压缩包等
+   - 参数：
+     - `url`（必需）：要下载的 URL
+     - `output_path`：完整输出路径（可选）
+     - `output_dir`：输出目录（可选）
+     - `filename`：自定义文件名（可选）
+     - `timeout`：下载超时时间，单位秒（默认：60）
+
+#### 配置方法
+
+将 MCP 服务器添加到 Claude Code 配置文件中（通常位于 `~/.config/claude-code/config.json` 或 `~/.claude/config.json`）：
+
+```json
+{
+  "mcpServers": {
+    "zai-web": {
+      "command": "python3",
+      "args": [
+        "/path/to/zai.vim/python3/mcp_web_server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "/path/to/zai.vim/python3"
+      }
+    }
+  }
+}
+```
+
+将 `/path/to/zai.vim` 替换为您实际的 zai.vim 安装目录路径。
+
+#### 使用方法
+
+配置完成后，Claude Code 将自动拥有网络搜索和内容获取功能。SearXNG 容器将在首次使用时自动启动。
+
+您可以在 Claude Code 中使用的示例提示词：
+- "搜索 Python async/await 最佳实践的相关信息"
+- "获取 https://example.com 的内容并总结"
+- "查找 Vim 插件的最新新闻"
+
 ### 命令前缀
 
 默认会话命令前缀字符是 `:`，可以充当前缀的字符有:

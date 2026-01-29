@@ -609,7 +609,86 @@ Supported parameter commands:
 Clear settings with minus prefix:
 ```
 :-temperature
-```  
+```
+
+### MCP Service Configuration (for Claude Code)
+
+Zai provides a Model Context Protocol (MCP) server that enables Claude Code (claude.ai/code) to access web search, content fetching, and file download capabilities.
+
+#### Prerequisites
+
+1. **Install MCP Python package**:
+   ```bash
+   pip install mcp
+   ```
+
+2. **Ensure Docker is installed and running** (required for SearXNG web search):
+   ```bash
+   # Verify Docker is available
+   docker --version
+   ```
+
+#### MCP Tools Available
+
+The MCP server provides the following tools:
+
+1. **web_search** - Web search powered by SearXNG metasearch engine
+   - Supports multiple search engines: DuckDuckGo, Google, Bing, Brave, Baidu, Yandex, Qwant, Startpage
+   - Parameters:
+     - `request` (required): Search query
+     - `engine`: Specific search engine (empty for auto-selection)
+     - `category`: Search category (e.g., 'general', 'images', 'videos', 'news')
+     - `time_range`: Time filter ('day', 'week', 'month', 'year')
+     - `language`: Language code (e.g., 'en', 'zh', 'auto')
+     - `safesearch`: Safe search level (0=off, 1=moderate, 2=strict)
+     - `max_results`: Maximum number of results (default: 10)
+     - `return_format`: Output format ('markdown', 'html', 'links', 'json')
+
+2. **web_get_content** - Fetch web page content
+   - Returns clean text, markdown, HTML, or extracted links
+   - Parameters:
+     - `url` (required): URL to fetch
+     - `return_format`: Output format ('clean_text', 'markdown', 'html', 'links')
+
+3. **web_download_file** - Download files from URLs
+   - Useful for downloading images, archives, etc.
+   - Parameters:
+     - `url` (required): URL to download
+     - `output_path`: Full output path (optional)
+     - `output_dir`: Output directory (optional)
+     - `filename`: Custom filename (optional)
+     - `timeout`: Download timeout in seconds (default: 60)
+
+#### Configuration
+
+Add the MCP server to your Claude Code configuration file (typically `~/.config/claude-code/config.json` or `~/.claude/config.json`):
+
+```json
+{
+  "mcpServers": {
+    "zai-web": {
+      "command": "python3",
+      "args": [
+        "/path/to/zai.vim/python3/mcp_web_server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "/path/to/zai.vim/python3"
+      }
+    }
+  }
+}
+```
+
+Replace `/path/to/zai.vim` with the actual path to your zai.vim installation directory.
+
+#### Usage
+
+Once configured, Claude Code will automatically have access to web search and content fetching capabilities. The SearXNG container will be auto-started on first use.
+
+Example prompts you can use in Claude Code:
+- "Search for information about Python async/await best practices"
+- "Fetch the content from https://example.com and summarize it"
+- "Find the latest news about Vim plugins"
 
 ### Command Prefix
 
