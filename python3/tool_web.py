@@ -699,9 +699,9 @@ def preprocess_html_with_absolute_links(html_content: str, base_url: str) -> str
 #     }
 #   }
 # },
-def invoke_web_search(request: str, engine: str = "duckduckgo", base_url: str = _DEFAULT_SEARCH_ENGINE, max_results: int = 10, return_format: str = "markdown") -> str:
+def _invoke_web_search_fallback(request: str, engine: str = "duckduckgo", base_url: str = _DEFAULT_SEARCH_ENGINE, max_results: int = 10, return_format: str = "markdown") -> str:
     """
-    执行网络搜索
+    旧的 web_search 实现（作为 fallback）
 
     Args:
         request: 搜索关键词或查询内容
@@ -1136,4 +1136,50 @@ def _get_download_output_path(
             timestamp = int(time.time())
             file_name = f"downloaded_file_{timestamp}"
     return output_dir_path / file_name
+
+def invoke_web_search(
+    request: str,
+    engine: str = "",
+    category: str = "",
+    time_range: str = "",
+    max_results: int = 10,
+    return_format: str = "markdown"
+) -> str:
+    """
+    执行网络搜索（使用 SearXNG，失败时回退到旧实现）
+
+    Args:
+        request: 搜索关键词或查询内容
+        engine: 指定搜索引擎（留空则自动选择）。可选值包括: 'bing', 'duckduckgo', 'google', 'brave', 'startpage', 'yandex', 'baidu', 'qwant' 等（取决于SearXNG配置）
+        category: 搜索类别。可选值: 'general' (常规), 'images' (图片), 'videos' (视频), 'news' (新闻), 'map' (地图), 'music' (音乐), 'it' (IT), 'science' (科学) 等（取决于SearXNG配置）
+        time_range: 时间范围过滤 ('day', 'week', 'month', 'year')
+        max_results: 最大返回结果数量
+        return_format: 返回格式: 'markdown' (默认), 'links' (仅链接), 'json' (原始JSON), 'html' (HTML格式)
+
+    Returns:
+        str: 搜索结果
+    """
+    try:
+        # 尝试使用 SearXNG
+        import tool_searxng
+        return tool_searxng.invoke_web_search(
+            request=request,
+            engine=engine,
+            category=category,
+            time_range=time_range,
+            max_results=max_results,
+            return_format=return_format
+        )
+    except Exception as e:
+        # SearXNG 不可用，回退到旧实现
+        print(f"[web_search] SearXNG 不可用 ({e})，使用旧实现", file=sys.stderr)
+        # 映射参数到旧实现
+        old_engine = engine if engine in ("duckduckgo", "baidu") else "duckduckgo"
+        old_format = return_format if return_format in ("markdown", "html", "links") else "markdown"
+        return _invoke_web_search_fallback(
+            request=request,
+            engine=old_engine,
+            max_results=max_results,
+            return_format=old_format
+        )
 
