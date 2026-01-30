@@ -9,6 +9,7 @@ appdirs>=1.4.0          # 应用目录管理
 chardet>=5.0.0          # 字符编码检测
 PyYAML>=6.0.0           # YAML配置文件解析
 tiktoken>=0.5.0         # OpenAI token计数
+mcp>=0.9.0              # Model Context Protocol (MCP) server support
 
 # 可选依赖：Web相关功能
 # ---------------------
@@ -53,7 +54,7 @@ lunarcalendar>=0.0.9    # 农历日历
 # ========
 
 # 1. 仅安装核心依赖：
-#    pip install openai requests appdirs chardet PyYAML tiktoken
+#    pip install openai requests appdirs chardet PyYAML tiktoken mcp
 
 # 2. 安装所有Python依赖：
 #    pip install -r requirements.txt
@@ -77,10 +78,16 @@ lunarcalendar>=0.0.9    # 农历日历
 # 5. 测试安装：
 #    # 测试核心功能
 #    python3 -c "import openai, requests, yaml; print('核心依赖OK')"
-#    
+#
 #    # 测试Web功能
 #    python3 -c "import selenium, bs4, html_to_markdown; print('Web依赖OK')"
-#    
+#
 #    # 测试Docker功能
 #    python3 -c "import docker; print('Docker SDK OK')"
 #    docker --version
+#
+#    # 测试MCP服务器
+#    python3 -c "import mcp; print('MCP依赖OK')"
+#    # 直接测试MCP服务器
+#    python3 python3/mcp_web_tools_server.py &
+#    # 或通过Claude配置自动加载（.claude/mcp.json）

@@ -25,45 +25,6 @@
   {
     "type": "function",
     "function": {
-      "name": "web_search",
-      "description": "执行网络搜索（当同时提供了 SearXNG 元搜索工具时，优先使用 SearXNG）",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "request": {
-            "type": "string",
-            "description": "搜索关键词或查询内容"
-          },
-          "engine": {
-            "type": "string",
-            "description": "搜索引擎名称，可选值：'duckduckgo', 'google', 'bing', 'auto'。如果未指定（即指定为空字符串''），则使用base_url或默认配置",
-            "enum": ["duckduckgo", "google", "bing", "auto"],
-            "default": "duckduckgo"
-          },
-          "base_url": {
-            "type": "string",
-            "description": "搜索引擎的基础URL（可选，如果指定engine则忽略此参数）",
-            "default": "https://html.duckduckgo.com/html/"
-          },
-          "max_results": {
-            "type": "integer",
-            "description": "最大返回结果数量（可选，默认为10）",
-            "default": 10
-          },
-          "return_format": {
-            "type": "string",
-            "description": "返回内容的格式，'html' 返回原始搜索结果页面, 'markdown' 返回markdown格式的搜索结果，'links' 返回解析后的搜索结果链接",
-            "enum": ["html", "markdown", "links"],
-            "default": "markdown"
-          }
-        },
-        "required": ["request"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "web_download_file",
       "description": "从URL下载文件（用于llm不便直接消化但于用户有益的内容，如图片、压缩包等）",
       "parameters": {

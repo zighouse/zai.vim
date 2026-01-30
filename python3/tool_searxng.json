@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "web_search",
-      "description": "使用 SearXNG 元搜索引擎执行网络搜索，支持多个搜索引擎和结果格式",
+      "description": "执行网络搜索",
       "parameters": {
         "type": "object",
         "properties": {
@@ -27,17 +27,6 @@
             "description": "时间范围过滤",
             "default": "",
             "enum": ["day", "week", "month", "year", ""]
-          },
-          "language": {
-            "type": "string",
-            "description": "语言代码，如 'en' (英语), 'zh' (中文), 'auto' (自动)",
-            "default": "auto"
-          },
-          "safesearch": {
-            "type": "integer",
-            "description": "安全搜索级别: 0=关闭, 1=中等, 2=严格",
-            "default": 0,
-            "enum": [0, 1, 2]
           },
           "max_results": {
             "type": "integer",

@@ -30,6 +30,13 @@ try:
 except ImportError:
     HAVE_YAML = False
 
+# 尝试导入 trafilatura
+try:
+    import trafilatura
+    HAVE_TRAFILATURA = True
+except ImportError:
+    HAVE_TRAFILATURA = False
+
 _DEFAULT_SEARCH_ENGINE = "https://html.duckduckgo.com/html/"
 
 try:
@@ -683,6 +690,65 @@ def _compress_blank_lines_line_by_line(markdown_text):
         result_lines.pop()
     return '\n'.join(result_lines)
 
+def _extract_main_content_intelligent(html_content: str, url: str = None, format: str = 'txt') -> Optional[Dict[str, Any]]:
+    """
+    使用 trafilatura 智能提取网页正文内容，提取失败时返回 None
+
+    Args:
+        html_content: HTML 内容
+        url: 页面 URL（用于更准确的内容提取）
+        format: 输出格式，'txt' 或 'markdown'
+
+    Returns:
+        Dict: 包含 title, description, content, url 的字典，失败返回 None
+    """
+    if not HAVE_TRAFILATURA:
+        return None
+
+    try:
+        # 确定输出格式
+        output_format = 'markdown' if format == 'markdown' else 'txt'
+
+        # 使用 trafilatura 提取主要内容，保留链接
+        extracted_content = trafilatura.extract(
+            html_content,
+            include_comments=False,
+            include_tables=True,
+            include_links=True,  # 保留链接
+            include_formatting=True,  # 保留格式
+            no_fallback=False,
+            url=url,
+            output_format=output_format
+        )
+
+        # 如果提取失败或内容为空
+        if not extracted_content or len(extracted_content.strip()) < 50:
+            return None
+
+        # 提取元数据（使用 metadata extraction function）
+        metadata = trafilatura.metadata.extract_metadata(html_content)
+
+        # metadata 返回的是 Document 对象，需要访问其属性
+        title = metadata.title if metadata else ''
+        description = metadata.description if metadata else ''
+        author = metadata.author if metadata else ''
+        date = metadata.date if metadata else ''
+
+        return {
+            "title": title or '',
+            "description": description or '',
+            "author": author or '',
+            "date": date or '',
+            "content": extracted_content,
+            "url": url
+        }
+    except Exception as e:
+        # trafilatura 提取失败，返回 None 以便回退
+        import traceback
+        print(f"[trafilatura] extraction failed: {e}", file=sys.stderr)
+        print(f"[trafilatura] traceback: {traceback.format_exc()}", file=sys.stderr)
+        return None
+
 def _html_to_markdown(content):
     """
     使用 html2text 将 HTML 转换为 Markdown，相比 html_to_markdown 更稳定。
@@ -723,7 +789,7 @@ def _html_to_markdown(content):
 
 def invoke_web_get_content(url: str, return_format: str = "clean_text") -> str:
     """
-    获取指定URL的网页内容，优先使用elinks导出干净的文本内容
+    获取指定URL的网页内容，优先使用智能提取（trafilatura），失败时回退到 elinks 或 html2text
 
     Args:
         url: 要获取内容的URL地址
@@ -790,17 +856,38 @@ def invoke_web_get_content(url: str, return_format: str = "clean_text") -> str:
             else:
                 return "No links found in the content"
         elif return_format == "clean_text":
-            # 返回清理后的纯文本内容
-            return extract_clean_text(content)
+            # 尝试使用 trafilatura 智能提取
+            extracted = _extract_main_content_intelligent(content, url, format='txt')
+            if extracted:
+                return extracted['content']
+            else:
+                # 回退到原来的方案
+                print(f"[web_get_content] trafilatura failed, falling back to extract_clean_text", file=sys.stderr)
+                return extract_clean_text(content)
         elif return_format == "markdown":
-            content = make_links_absolute(content, url)
-            text = _html_to_markdown(content)
-            text = _clean_url_labels(text)
-            text = _remove_empty_links(text)
-            text = _process_url_fragment(text)
-            paras = _deduplicate_by_url(text)
-            text = '\n\n'.join(paras)
-            return text
+            # 尝试使用 trafilatura 智能提取（使用 markdown 格式保留链接）
+            extracted = _extract_main_content_intelligent(content, url, format='markdown')
+            if extracted:
+                # 构建结构化 Markdown 输出
+                parts = []
+                if extracted['title']:
+                    parts.append(f"# {extracted['title']}")
+                if extracted['description']:
+                    parts.append(f"\n> {extracted['description']}\n")
+                if extracted['content']:
+                    parts.append(extracted['content'])
+                return '\n'.join(parts)
+            else:
+                # 回退到原来的方案
+                print(f"[web_get_content] trafilatura failed, falling back to html2text", file=sys.stderr)
+                content = make_links_absolute(content, url)
+                text = _html_to_markdown(content)
+                text = _clean_url_labels(text)
+                text = _remove_empty_links(text)
+                text = _process_url_fragment(text)
+                paras = _deduplicate_by_url(text)
+                text = '\n\n'.join(paras)
+                return text
         else:
             # 返回清理后的HTML内容
             content = make_links_absolute(content, url)
@@ -1162,6 +1249,45 @@ def process_bing_markdown(markdown_text):
     text = '\n\n'.join(paras_new)
     return text
 
+# {
+#   "type": "function",
+#   "function": {
+#     "name": "web_search",
+#     "description": "执行网络搜索（当同时提供了 SearXNG 元搜索工具时，优先使用 SearXNG）",
+#     "parameters": {
+#       "type": "object",
+#       "properties": {
+#         "request": {
+#           "type": "string",
+#           "description": "搜索关键词或查询内容"
+#         },
+#         "engine": {
+#           "type": "string",
+#           "description": "搜索引擎名称，可选值：'duckduckgo', 'google', 'bing', 'auto'。如果未指定（即指定为空字符串''），则使用base_url或默认配置",
+#           "enum": ["duckduckgo", "google", "bing", "auto"],
+#           "default": "duckduckgo"
+#         },
+#         "base_url": {
+#           "type": "string",
+#           "description": "搜索引擎的基础URL（可选，如果指定engine则忽略此参数）",
+#           "default": "https://html.duckduckgo.com/html/"
+#         },
+#         "max_results": {
+#           "type": "integer",
+#           "description": "最大返回结果数量（可选，默认为10）",
+#           "default": 10
+#         },
+#         "return_format": {
+#           "type": "string",
+#           "description": "返回内容的格式，'html' 返回原始搜索结果页面, 'markdown' 返回markdown格式的搜索结果，'links' 返回解析后的搜索结果链接",
+#           "enum": ["html", "markdown", "links"],
+#           "default": "markdown"
+#         }
+#       },
+#       "required": ["request"]
+#     }
+#   }
+# },
 def invoke_web_search(request: str, engine: str = "duckduckgo", base_url: str = _DEFAULT_SEARCH_ENGINE, max_results: int = 10, return_format: str = "markdown") -> str:
     """
     执行网络搜索
