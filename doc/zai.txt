@@ -7,7 +7,7 @@ Tip: For detailed documentation, visit: >
 
 Or in Vim: |help zai-topics|
 
-                                                            *zai-topics*  *zai-topics*
+                                                            *zai-topics*
 
 ==============================================================================
 QUICK START                                              *zai-quickstart*
