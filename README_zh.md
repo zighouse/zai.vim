@@ -512,7 +512,7 @@ Zai 提供了多个工具集供 AI 调用以与系统交互：
 
 2. **web** - 网页操作
    - `web_get_content` - 获取网页内容
-   - `web_search` - 网络搜索。**当使用 bing、google 搜索时会打开 chrome 窗口**，为了不对当前工作造成干扰，建议把它移到别的工作空间上。
+   - `web_search` - 网络搜索（使用 SearXNG 元搜索引擎，支持 DuckDuckGo、Google、Bing、Brave、百度等多个搜索引擎）
    - `web_download_file` - 从 URL 下载文件
 
 3. **shell** - 安全 shell 执行
