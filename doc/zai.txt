@@ -1,821 +1,195 @@
-*zai.txt*      Zai.Vim AI Assistant 1.0      Last Updated: 2025-09-14
+==============================================================================
+ZAI.VIM REFERENCE MANUAL                                      *zai-ref*  *zai-intro*
+==============================================================================
 
+Tip: For detailed documentation, visit: >
+    https://github.com/zighouse/zai.vim/blob/main/docs/
 
-                    Zai.Vim AI Assistant   User Manual
+Or in Vim: |help zai-topics|
 
-
-ZAI.Vim PLUGIN                                          *zai* *zai-plugin*
-
-
-1. Introduction .......................................  |zai-intro|
-2. Installation Guide .................................  |zai-installation|
-3. Zai Configuration ..................................  |zai-config|
-4. VIM Commands .......................................  |zai-commands|
-5. Chat Commands ......................................  |zai-chat-commands|
-6. Project Configuration ..............................  |zai-project-config|
-7. License ............................................  |zai-license|
+                                                            *zai-topics*  *zai-topics*
 
 ==============================================================================
-1. INTRODUCTION                                         *zai-intro*
+QUICK START                                              *zai-quickstart*
+==============================================================================
 
-Zai.Vim is a plugin that integrates an AI assistant directly into the Vim
-editor, managing multiple simultaneously open AI chat sessions, logging
-conversations, and allowing loading of logs to resume previous chats. Switch
-freely, control at will.
+Install: >
+    :Plug 'zighouse/zai'
 
-- Flexible model and prompt switching
-- Attachment support
-- Multi-session support
-- Session log saving, loading, and previewing
+Start AI chat: >
+    :AI chat
+
+Attach file: >
+    :AI attach file.txt
 
 ==============================================================================
-2. INSTALLATION GUIDE                                   *zai-installation*
+SESSION COMMANDS                                         *zai-commands*
+==============================================================================
 
-2.1 Requirements                                        *zai-requirements*
->
-  - Vim 8.0+ or Neovim
-  - Python 3.6+
-  - AI API KEY
-    - Example: DeepSeek API Key (set to the `DEEPSEEK_API_KEY` environment variable)
-  - Required Python Packages (Core Dependencies):
-    - `openai` - OpenAI API client
-    - `requests` - HTTP request library
-    - `appdirs` - Application directory management
-    - `chardet` - Character encoding detection
-    - `PyYAML` - YAML configuration file parsing
-    - `tiktoken` - OpenAI token counting
-  - Optional Python Packages (Install as needed):
-    - Web Features: `beautifulsoup4`, `selenium`, `undetected-chromedriver`, `html2text`
-    - File Operations: `python-magic` (File type detection)
-    - System Tools: `distro` (Linux distribution detection), `docker` (Docker Python SDK)
-    - AI Tools: `transformers` (Hugging Face library)
-    - Utility Tools: `lunarcalendar` (Lunar calendar)
-  - System Dependencies (Recommended for Linux):
-    - Docker Engine (for secure shell execution):
-      ```bash
-      # Ubuntu/Debian
-      sudo apt install docker.io docker-compose
-      sudo usermod -aG docker $USER
-      sudo systemctl restart docker
-      # Log out and log back in for the docker group to take effect
-      ```
-    - Chrome/Chromium Browser (for web search):
-      ```bash
-      # Ubuntu/Debian
-      sudo apt install chromium-browser
-      # Or install Google Chrome from the official website
-      ```
-    - Other Development Tools:
-      ```bash
-      sudo apt install build-essential python3-dev
-      ```
-    Note: Docker and Chrome are also available on Windows, but configuration is more complex. Using Linux is recommended.
-  - Optional Vim Plugins:
-    - iamcco/markdown-preview.nvim (Chat preview)
-    - junegunn/fzf.vim (Log search)
-  - Installation Methods:
-    - Using requirements.txt: `pip install -r requirements.txt`
-    - Using the installation script: `python3 python3/install.py`
-    - Install core dependencies only: `python3 python3/install.py --skip-core` (if already installed)
-    - Install full functionality: `python3 python3/install.py --all-optional`
-    - Install system dependencies (Linux): See the System Dependencies section above
-<
+:AI[chat] {subcommand}                             *zai-AI-chat*
 
-2.2 Installation via Plugin Manager                     *zai-plugin-managers*
+Manage AI chat sessions.
 
-Using vim-plug: >
-   Plug 'zighouse/zai'
-<
-Using Vundle: >
-   Plugin 'zighouse/zai'
-<
-Using lazy.nvim (Neovim configuration example): >
-   return {
-       {
-           "zighouse/zai.vim",
-           config = function()
-              vim.g.zai_default_model = "deepseek-chat"
-           end
-       }
-   }
-<
-Manual Installation:
+Subcommands: >
+    chat                     Start new chat session
+    message                  Send message in current session
+    attach {file}             Attach file to context
+    list                     List all sessions
+    switch {id}               Switch to session
 
-Commands to execute in the embedded terminal on Linux/Mac:
->
-    pip install appdirs chardet openai
-    mkdir -p ~/.vim/pack/plugins/start
-    cd ~/.vim/pack/plugins/start
-    git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
-    git checkout
-<
-
-Commands to execute in the embedded terminal on Windows:
->
-    pip install appdirs chardet openai
-    md %USERPROFILE%\vimfiles\pack\plugins\start
-    cd %USERPROFILE%\vimfiles\pack\plugins\start
-    git clone -n --depth=1 https://github.com/zighouse/zai.vim.git
-    git checkout
-<
-
-Navigate to the installation directory and execute `git pull` to manually update.
-
-Alternatively, download the zip package
-[Zai.Vim](https://github.com/zighouse/zai.vim/archive/refs/heads/main.zip),
-extract it, and place the zai.vim-main folder into the corresponding directory.
+For detailed command reference: >
+    :help zai-command-details|
 
 ==============================================================================
-3. ZAI CONFIGURATION                                    *zai-config*
-                                                        *g:zai_log_dir*
-g:zai_log_dir           Configures the save path for log files.
+TOOL SYSTEM OVERVIEW                                     *zai-tools*
+==============================================================================
 
-                        Default configuration:
-                        * Linux/Mac: `~/.local/share/zai/log`
-                        * Windows: `%USERPROFILE%\AppData\Local\zai\log`
+Zai.Vim provides AI tools through toolsets.
 
-                                                        *g:zai_lang*
-g:zai_lang              Configures the UI language for Zai.
-                        Defaults to English, or auto-selects based on the user environment.
-                        To specify Chinese, configure as follows:
->
- let g:zai_lang = 'zh_CN.UTF-8'
-<
-Recommendation: Configure a new log storage path on Windows. The default log
-path on Windows is hidden by the system and is inconvenient to use.
+Available toolsets: >
+    file      - File operations
+    web       - Web operations
+    shell     - Shell execution
+    grep      - File search
+    ai        - AI capabilities
+    archive   - Session archiving
+    browser   - Browser automation
+    searxng   - Web search engine
 
-                                                        *g:zai_base_url*
-g:zai_base_url          Configures the `base-url` for the AI service.
-                        See |zai-chatcmd-model|.
+Load tools: >
+    :use tool web
 
-                                                        *g:zai_api_key_name*
-g:zai_api_key_name      Configures the `api-key-name` for the AI service.
-                        See |zai-chatcmd-model|.
-                        An API access key is required to connect to the AI
-                        service. Users must pre-set an environment variable in
-                        the operating system that contains this key.
-
-                        The `api-key-name` here is the name of that environment
-                        variable.
-
-                  e.g.: On Linux, set the environment variable in `~/.bashrc`:
->
- DEEPSEEK_API_KEY=sk-********************************
-<
-                        Then you can use `DEEPSEEK_API_KEY` to complete this
-                        configuration.
-
-                                                        *g:zai_default_model*
-g:zai_default_model     Configures the default model for the AI service.
-                        See |zai-chatcmd-model|.
-
-                                                        *g:zai_use_ai*
-g:zai_use_ai            Configures the default AI service.
-                        When an AI assistant configuration YAML file exists,
-                        this parameter can be used to specify the default AI
-                        assistant from the configuration file.
-
-                                                        *zai-assistants.yaml*
-Full path of the AI assistant configuration file:
-
-* Linux/Mac: ~/.local/share/zai/assistants.yaml
-* Windows: %USERPROFILE%\AppData\Local\Zai\assistants.yaml
-
-A typical AI assistant configuration file content is as follows:
->
-- name: deepseek                        # AI Assistant Name/ LLM Provider (customizable)
-  base-url: https://api.deepseek.com    # api for llm base url
-  api-key-name: DEEPSEEK_API_KEY        # environment name of the api key
-  tokenizer: deepseek-ai/DeepSeek-V3.2  # for tokens calculation, optional
-  model:                                # selected models from the provider's model list
-  - name: deepseek-chat                       # model identifier from provider
-    size: 685.40B                             # model size, optional.
-    context: 128K                             # context length, not a must but recommended.
-    out-length: { default: 4K, max: 8K }      # output sequence length, optional
-    cost: { hit: 0.2, in: 2, out: 3, unit: RMB/MTk } # optional
-    features: json, tool-call, complete, fim         # optional
-  - name: deepseek-reasoner
-    size: 685.40B
-    context: 128K
-    out-length: { default: 32K, max: 64K }
-    cost: { hit: 0.2, in: 2, out: 3, unit: RMB/MTk }
-    features: json, tool-call, complete
-
-- name: Gemini
-  api-key-name: GEMINI_API_KEY
-  base-url: https://generativelanguage.googleapis.com/v1beta/openai/
-  model:
-    - gemini-2.5-flash-lite   # in:$0.1/mtk out:$0.4/mtk free-level no-call
-    - gemini-2.5-flash        # in:$0.30/mtk out:$2.5/mtk free-level no-call
-    - gemini-2.5-pro          # in:$1.25/mtk out:$10/mtk free-level no-call
-    - gemini-3-flash-preview  # in:$0.5/mtk out:$3/mtk free-level no-call
-    - gemini-3-pro-preview    # in:$2/mtk out:$12/mtk non-free
-
-- name: Moonshot
-  api-key-name: MOONSHOT_API_KEY
-  base-url: https://api.moonshot.cn/v1
-  model:
-  - name: kimi-k2-0905-preview # tokens:256k, coder
-  - name: kimi-k2-turbo-preview # tokens:256k
-  - name: moonshot-v1-128k # tokens:128k
-  - name: moonshot-v1-128k-vision-preview
-  - name: kimi-latest # 128k
-  - name: kimi-thinking-preview
-
-- name: "Volces Ark"
-  api-key-name: VOLCES_API_KEY
-  base-url: https://ark.cn-beijing.volces.com/api/v3
-  model:
-  - name: doubao-seed-1-6-251015
-
-- name: "Selicon Flow"
-  api-key-name: SILICONFLOW_API_KEY
-  base-url: https://api.siliconflow.cn
-  model:
-  - name: Pro/deepseek-ai/DeepSeek-V3.2
-    size: 671B
-    context: 160K
-    out-length: { default: 4K, max: 8K }
-    cost: { in: 2, out: 3, unit: RMB/MTk }
-    features: talk, prefix, tools, infer, moe
-  - name: Pro/zai-org/GLM-4.7
-    size: 355B
-    active: 32B
-    context: 198K
-    cost: { hit: 0.8, in: 4.0, out: 16.0, unit: RMB/MTk }
-    features: talk, prefix, tools, moe, infer
-  - name: Pro/moonshotai/Kimi-K2-Thinking
-    size: 1T
-    context: 256K
-    cost: { in: 4, out: 16, unit: RMB/MTk }
-    features: talk, prefix, tools, infer, moe
-
-- name: aliyun
-  api-key-name: ALIYUN_API_KEY
-  base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
-  model:
-  - qwen3-max
-  - qwen3-max-preview
-  - qwen3-coder-plus
-<
-
-After providing the AI assistant configuration file as above, the following
-example will default to applying Silicon Flow's k2 model.
-
->
- let g:zai_use_ai = "Silicon Flow"
- let g:model = "Pro/moonshotai/Kimi-K2-Thinking"
-<
-The above uses the AI assistant and model names; indexes starting from 0 can
-also be used.
+For tool-specific help: >
+    :help zai-tool-file|      *zai-tool-file*
+    :help zai-tool-web|       *zai-tool-web*
+    :help zai-tool-shell|     *zai-tool-shell*
+    :help zai-tool-grep|      *zai-tool-grep*
+    :help zai-tool-ai|        *zai-tool-ai*
+    :help zai-tool-archive|   *zai-tool-archive*
+    :help zai-tool-browser|   *zai-tool-browser*
+    :help zai-tool-searxng|   *zai-tool-searxng*
 
 ==============================================================================
-4. VIM COMMANDS                                         *zai-commands*
+TOOL: FILE                                                *zai-tool-file*
+==============================================================================
 
-                                                        *:Zai*
-:Zai                    Open the Zai chat interaction interface.
-<leader>zo              Available in normal mode.
+File operations: read, write, search, diff.
 
-                                                        *:ZaiClose*
-:ZaiClose               Close the Zai chat interaction interface.
-<leader>zX              Availabe in normal mode.
-:q                      Available within the Zai chat interface.
-                  Note. After Zai chat interface close, it still runs on
-                        background.
+Functions: >
+    invoke_read_file          Read file content
+    invoke_write_file         Write to files
+    invoke_search_files      Search files
+    invoke_diff_files        Compare files
 
-                                                        *:ZaiGo*
-:ZaiGo                  Send the content in the input window.
-<CR>                    Available in normal mode of the input window.
-
-                                                        *zai-ui*
-The Zai chat interaction interface consists of three parts:
- - Top: List window, managing the chat session list;
- - Middle: Display window, showing the chat interaction content;
- - Bottom: Input window, for questions and sending commands.
-On the Zai interface, Zai's editing commands can be used. The chat session
-list and chat content are prohibited from user modification.
-
-Opening the interface defaults to creating the first Zai chat session, with
-session IDs starting from 0.
-
-After the user edits the request content in the input window and exits insert
-mode, send it via <CR> (Enter key).  After sending, the input window is
-automatically cleared and waits for the user's next input.
-
-Zai displays both the user's sent requests and the remote assistant service's
-responses or error messages in the display window.
-By default, Zai enables logging and prompts the specific path of the current
-chat's log file at the bottom of the displayed content.
-
-Apart from occupying screen space for the interaction interface, Zai is
-completely independent of other content loaded in VIM.
-Users can close the Zai interface with :q to reclaim its screen space. At this
-time, Zai does not pause but continues working in the background, e.g.,
-continuing to receive unfinished responses. Users can reopen the background
-Zai interaction interface at any time via the :Zai command.
-
-                                                        *:ZaiHelp*
-:help                   Open help for Zai. Only available in the Zai chat UI.
-
-                                                        *:ZaiAdd*
-:ZaiAdd                 Add selected content to the input window.
-<leader>za              Available in visual mode: <leader>za; available from
-                        visual mode entering command mode: :ZaiAdd.
-
-                        Appends the content selected by the user in the
-                        current VIM editing window as a content block to the
-                        bottom of the input window and switches the editing
-                        focus to the insertion point of the content block in
-                        the input window. The user can perform any editing or
-                        supplementation in the input window and send it after
-                        the description is complete.
-
-                                                        *:ZaiNew*
-:ZaiNew                 Create a new chat. Only available in the Zai chat UI.
-:new                    Creates a new Zai chat session and selects this new
-                        chat. The content in the input window is not cleared
-                        and can be sent directly to the new chat.
-
-                                                        *:ZaiPrev*
-:[count]ZaiPrev         Select the previous chat. Only available in the Zai
-:[count]cp              chat interface.
-                        count is an optional parameter, indicating the number
-                        of items ahead of the currently selected item in the
-                        chat list to select.  Defaults to selecting the
-                        previous item.
-
-                        In the list items, you can also move the cursor to the
-                        desired item and select it via <CR> (Enter key).
-
-                        When a chat session is selected, the display window is
-                        replaced with the content of the selected chat. The
-                        content in the input window is not cleared and is sent
-                        directly to the selected chat.
-
-                                                        *:ZaiNext*
-:[count]ZaiNext         Select the next chat.
-:[count]cn              Only available in the Zai chat interface.
-                        count is an optional parameter,
-                        functioning similarly to |:ZaiPrev|.
-
-                                                        *:ZaiGoto*
-:ZaiGoto id             Select the chat specified by id.
-:cn id                  Only available in the Zai chat interface.
-                        id is a required parameter, the index of the chat
-                        listed in the list window.
-
-                                                        *:ZaiPreview*
-:ZaiPreview             Display chat content in a browser.
-                        Only available in the Zai chat interface.
-<leader>dp              Available in normal mode of the Zai chat interface.
-
-                        Depends on the |:MarkdownPreview| command, requires
-                        the plugin `iamcco/markdown-preview.nvim`.
-
-                        Depends on the chat's logging functionality; chats
-                        with logging disabled are not available.
-
-                                                        *:ZaiOpenLog*
-:ZaiOpenLog             Open Zai chat log.
-                        When `fzf.vim` is available, it is applied to locate a
-                        chat log gracefully. Otherwize, `:NERDTree` is used to
-                        open the directory of chat logs.
-
-                        When `fzf.vim` is used to locate a file, and user does
-                        not provide default key-actions maps, Zai use these maps:
->
-     file list:     ctrl-g:first            ctrl-d:last
-                    ctrl-b:page-up          ctrl-f:page-down
-                    ctrl-j:down             ctrl-k:up
-     file preview:  ctrl-h:preview-top      ctrl-l:preview-bottom
-                    ctrl-p:preview-page-up  ctrl-n:preview-page-down
-                    ctrl-e:preview-up       ctrl-y:preview-down
-<
-
-                                                        *:ZaiGrepLog*
-:ZaiGrepLog <pattern>   Grep Zai chat log.
-                        When `fzf.vim` is available, it is applied to grep a
-                        chat log gracefully. Otherwize, the combination of
-                        `:grep` + `quickfix` is used. On Windows find by `findstr`.
-
-                        When `fzf.vim` is used, the key-actions maps are the
-                        same with |ZaiOpenLog|.
-
-                                                        *:ZaiLoad*
-:ZaiLoad                Load the Zai chat log opened in the current window as
-<leader>zl              chat context.
-
-                        Zai can load previously recorded chat session logs
-                        into a new chat as context, which will enable the AI
-                        assistant in this chat to utilize this information in
-                        subsequent responses. Users can use this method to
-                        continue chats that did not meet expectations before.
-                        For the chat log path, see |zai-ui| |zai-log|.
-
-                                                        *:ZaiConfig*
-:ZaiConfig              Open AI assistants configuration YAML file for edit.
-                        See |zai-assistants.yaml|.
+Docs: https://github.com/zighouse/zai.vim/blob/main/docs/tools/file.md
 
 ==============================================================================
-5. CHAT COMMANDS                                        *zai-chat-commands*
-
-In addition to the VIM commands |zai-commands| used in the Zai interaction
-interface window, chat commands |zai-chat-commands| can also be used in the
-to-be-sent content of the input window.
-
-Chat commands primarily involve the working configuration of the AI assistant.
-
-Unlike VIM commands, chat commands are not handled by VIM's windows or buffers
-but are sent to the Zai AI assistant for processing in the background. Chat
-commands can be sent to the Zai AI assistant alone or merged with the user's
-request.
-
-A chat command consists of three parts: the command prefix, the command name,
-and the command parameters, for example:
->
- :file my-sort.cpp
- |-+-- -+---------
- | |    |
- | |    Command parameters
- | |
- | Command name
- |
- Chat command prefix character
-<
-By default, similar to VIM's command mode type, a half-width colon is used as
-the chat command prefix. Users can change the current session's command prefix
-via |zai-chat-command-prefix|.
-
-                                                        *zai-chatcmd-preifx*
-:->?                    Set the chat command prefix for the current session.
-                        Chat command |zai-chat-commands|.
-                        Only affects the current session. Changes the chat
-                        command prefix character to a new character.
-
-                        The default chat command prefix character is `:`.
-                        Characters that can serve as prefixes include:
->
-      : / ~ \ ; ! # $ % & ? @ ^ _ * + = , . < > ` ' " ( ) [ ] { }
-<
-
-                                                        *zai-chatcmd-help*
-:help                   Display chat command help.
-                        Chat command |zai-chat-commands|.
-                        Prints help information for chat commands in the
-                        display window.
-
-                                                        *zai-chatcmd-exit*
-:exit                   Force exit the remote AI service.
-:quit                   Chat command |zai-chat-commands|.
-                        When you want to cancel the connection to the remote
-                        AI service, you can use the exit or quit chat command.
-
-                                                        *zai-chatcmd-show*
-:show `config`            Display the configuration items of the AI assistant.
-                        Chat command |zai-chat-commands|.
-                        The display content is printed in the display window.
-                        If the user has not set a certain configuration item,
-                        the system may print that the configuration item does
-                        not exist.
-
-                        Configurable items (config) that can be displayed are:
-
-    `api-key-name`      AI API Key Name                  |zai-apikey|
-    `base-url`          AI API Base URL                  |zai-baseurl|
-    `model`             AI System Model                  |zai-chatcmd-model|
-    `prompt`            AI System Prompt                 |zai-chatcmd-prompt|
-    `temperature`       Creativity parameter, float,     |zai-chatcmd-params|
-                      range [0,2].
-    `max-tokens`        AI Max Tokens, integer
-    `logprobs`          Top Token Probability, float, range [0,20]
-    `top-p`             Top-P Tokens, float, range [0,1]
-    `presence-penalty`  Repetition Penalty, float, range [-2,2]
-    `frequence-panelty` Frequency Penalty, float, range [-2,2]
-    `history-safety-factor` History pruning safety factor, float, range [0.1,0.5]
-    `history-keep-last-n`   Keep last N conversation rounds, integer, >=1
-    `log-file`          Full path of the log file for    |zai-log|
-                      the current chat
-    `prefix`            Chat Command Prefix              |zai-chatcmd-prefix|
-
-
-                                                        *zai-chatcmd-taskbox*
-:show taskbox           Display taskbox container information.
-                        Chat command |zai-chat-commands|.
-                        Prints details about the Docker sandbox environment,
-                        including container status, image details, and security
-                        settings.
-:start taskbox          Run taskbox Docker container.
-                        Chat command |zai-chat-commands|.
-                        Starts the persistent Docker container for executing
-                        shell commands in a secure sandbox.
-:stop taskbox           Stop taskbox Docker container.
-                        Chat command |zai-chat-commands|.
-                        Stops and removes the persistent Docker container,
-                        freeing system resources.
-
-                                                        *zai-chatcmd-file*
-:file `file-path`         Attach the text file specified by `file-path` to the
-                        current chat's input request for reference.
-                        Chat command |zai-chat-commands|.
-:-file                  Clear all attachments.
-
-                  Note: Attached text files will be part of the AI request
-                        input and will be counted towards input token billing
-                        by the AI service. When a file has been attached in a
-                        chat, if you want to reference it in a new question,
-                        you do not need to re-attach it; just mention the file
-                        name.
-
-                                                        *zai-chatcmd-baseurl*
-:base-url `url`           Change the base-url used for the current chat's AI service.
-                        Chat command |zai-chat-commands|.
-
-                                                        *zai-chatcmd-keyname*
-:api-key-name `key-name`  Change the API key used for the current chat.
-                        Chat command |zai-chat-commands|.
-                  Note: This uses the name of the environment variable pointing
-                        to the key, not the key content itself.
-
-                                                        *zai-chatcmd-model*
-:model `model-name`       Specify the AI model for the current chat.
-                        Chat command |zai-chat-commands|.
-                        Change the AI system model used in the current chat.
-
-                  Note: The allowed model names depend on the AI service
-                        provided by the current `base-url`, which is not
-                        provided by Zai.
-
-                        Taking the service provided by deepseek as an example,
-                        the corresponding `base-url` is https://api.deepseek.com,
-                        which provides two optional models: `deepseek-chat`
-                        and `deepseek-reasoner`.
-
-                        Also can be configured globally.
-                  e.g.: (See |zai-config|)
->
- let g:zai_base_url = "https://api.deepseek.com"
- let g:zai_api_key_name = "DEEPSEEK_API_KEY"
- let g:zai_default_model = "deepseek-chat"
-<
-                        The above configures the `base-url`, `api-key-name`,
-                        and default AI model used when creating a new chat.
-                        Afterwards, you can use the `:model` chat command to
-                        change the content of the current chat. Even if you
-                        have already used the `deepseek-chat` model for one
-                        round of interaction, you can continue to change to
-                        using `deepseek-reasoner` as the model for a new round
-                        of interaction.
->
- :model deepseek-reasoner
-<
-                        When using other `base-url`s, there will generally be
-                        different model names. For details, refer to the
-                        service provider's API documentation. For another
-                        example, here is the configuration for Silicon Flow:
->
- let g:zai_base_url = "https://api.siliconflow.cn"
- let g:zai_api_key_name = "SILICONFLOW_API_KEY"
- let g:zai_default_model = "Pro/moonshotai/Kimi-K2-Thinking"
-<
-                  Note: After successfully applying an AI assistant using
-                        `:use ai` or `g:zai_use_ai`, the `:model` session
-                        command only allows selecting values within the
-                        configured range.
-                        See |zai-chatcmd-useai|, |g:zai_use_ai|
-
-                                                        *zai-chatcmd-prompt*
-:prompt `text`            Set a new prompt for the current chat.
-                        Chat command |zai-chat-commands|.
-:-prompt                Unset the previously set prompt
-                        (use Zai's default prompt).
-
-                        The prompt is a very important AI model configuration
-                        that directly affects the quality of the answers
-                        provided by the AI assistant.
-
-                        When the prompt to be set is only one line, you can
-                        use the single-line prompt setting method, for example:
->
- :prompt Act as a professional translator familiar with computer science.
-<
-                        When the prompt to be set exceeds one line, you need
-                        to use block syntax to set it, for example:
->
- :prompt<<EOF
- As a code expert assistant, please analyze the problem step by step.
- When providing solutions, please use the format:
-   ### [Title]
-   [Step-by-step instructions]
-   ### Summary: [One-sentence summary of the core]
- EOF
-<
-
-                                                        *zai-chatcmd-params*
-:temperature `float`      Set the creativity parameter for the current chat.
-                        Chat command |zai-chat-commands|.
-                        Float, range [0,2]. The lower this parameter, the more
-                        precise the AI response obtained.
-
-:-temperature           Unset the previously set creativity parameter.
-                        Chat command |zai-chat-commands|.
-
-In addition to `temperature`, the following model parameters are also
-supported for setting or unsetting:
-    * `top_p`              Top-P Tokens, float, range [0,1]
-    * `max_tokens`         AI Max Tokens, integer
-    * `presence_penalty`   Repetition Penalty, float, range [-2,2]
-    * `frequency_penalty`  Frequency Penalty, float, range [-2,2]
-    * `logprobs`           Top Token Probability, float, range [0,20]
-    * `history_safety_factor`  History pruning safety factor, float, range [0.1,0.5], default 0.25
-    * `history_keep_last_n`    Keep last N conversation rounds, integer, >=1, default 6
-
-                                                        *zai-chatcmd-nolog*
-:no-log                 Close chat logging. Chat command |zai-chat-commands|.
-:-no-log                After chat logging is disabled, new content will no
-                        longer be saved to the log.
-
-                  Note: In the current version, preview is not available
-                        after chat logging is disabled.  See |:ZaiPreview|.
-
-                                                        *zai-chatcmd-useai*
-:use ai `<name|idx>`                   Apply an item of AI assistant config.
-:use ai `<name|idx>` model `<name|idx>`  Session command |zai-chat-commands|.
-                                     You can use either the name or index.
-                                     See |g:zai_use_ai|, |zai-assistants.yaml|
-
-                        After successfully applying an AI assistant using the
-                        `:use ai` session command, the `:model` session command
-                        is affected and only allows selecting values from the
-                        pre-configured model list of the AI assistant. See
-                        |zai-chatcmd-model|.
-
-:show ai `[<name|idx>]`   Display the content of an AI assistant. Session
-                        command |zai-chat-commands|.
-                        When `<name|idx>` is not provided, displays the
-                        currently applied AI assistant.  See
-                        |zai-chatcmd-useai|.
-
-:list ai                List available AI assistants.
-                        Session command |zai-chat-commands|.
-                        See |zai-assistants.yaml|.
-
-                                                        *zai-chatcmd-listtool*
-:list tool              List available AI tool sets. Session command |zai-chat-commands|.
-
-                                                        *zai-chatcmd-showtool*
-:show tool `[name]`     Show AI tool set details. Session command |zai-chat-commands|.
-                        When `name` is not provided, show all loaded tool sets.
-
-                                                        *zai-chatcmd-usetool*
-:use tool `XXX`         Load AI tool set XXX for AI calling. Session command |zai-chat-commands|.
-:use tool `XXX.xxx`     Load single method xxx from tool set XXX.
-:use tool `XXX: xxx yyy`   Load multiple methods from tool set XXX.
-:use tool `file web`    Load multiple tool sets.
-
-                        Supported tool set names see |zai-toolsets|.
-
-                                                        *zai-chatcmd-sandbox*
-:sandbox path           Set sandbox directory path. Session command |zai-chat-commands|.
-                        Used to restrict file operations for system security.
-
-                                                        *zai-toolsets*
-Available tool sets:
-
-    *file*                File operations tool set
-        ls              List files and directories
-        mkdir           Create directories
-        copy_file       Copy files or directories
-        read_file       Read file content
-        write_file      Write to file
-        search_in_file  Search within files
-        substitute_file Replace text in files
-        diff_file       Compare files
-        patch_file      Apply patches
-
-    *web*               Web operations tool set
-        web_get_content   Fetch web page content
-        web_search        Search the web using SearXNG metasearch engine
-                          (supports DuckDuckGo, Google, Bing, Brave, Baidu,
-                          etc.)
-        web_download_file Download files from URLs
-
-    *shell*             Secure Shell execution tool set
-        execute_shell   Execute commands in Docker container
-
-    *grep*              File searching tool set
-        grep              Search file content (like Unix grep)
-
-    *ai*                AI operations tool set (experimental)
-        generate_image    Generate images with AI
-
-    *browser*           Browser automation tool set (experimental)
-        open_browser      Open URLs in browser
-        get_page_content  Get dynamic page content
-        screenshot        Take webpage screenshots
-
-    *os*                System information tool set
-        get_os_info       Get system information (date, locale, version)
+TOOL: WEB                                                 *zai-tool-web*
 ==============================================================================
-6. PROJECT CONFIGURATION                                *zai-project-config*
 
-Zai supports project-level configuration through a `zai.project/zai_project.yaml`
-file (or `zai_project.yaml` for backward compatibility) in your project
-directory. This allows you to define project-specific settings like sandbox
-directory and Docker container configuration for the `tool_shell` tool.
+Web operations: search, fetch, download.
 
-                                                        *zai-project-config-location*
-Configuration File Location~
-    The configuration file is searched upward from the current working directory:
-    - `zai.project/zai_project.yaml` (new format)
-    - `zai_project.yaml` (legacy format, prints warning)
+Functions: >
+    invoke_web_search        SearXNG web search
+    invoke_web_get_content   Fetch web pages
+    invoke_web_download_file Download files
 
-                                                        *zai-project-config-structure*
-Configuration Structure~
-    The configuration file should contain a list of configuration objects.
-    The first one is used for the current project.
-
-    Example `zai.project/zai_project.yaml`:
->
-    - sandbox_home: /path/to/project/sandbox
-      shell_container:
-        # Other Docker SDK parameters can be included
-        # It is used mostly for tool_shell running a docker container
-        image: taskbox:latest
-        name: my-project-taskbox
-        working_dir: /sandbox
-        user: "1000:1000"
-        volumes:
-          - "/host/path:/container/path:rw"
-        network_mode: "bridge"
-        command: ["tail", "-f", "/dev/null"]
-<
-
-                                                        *zai-container-installations*
-Container Startup Installations~
-    Zai now supports automatic software installation when a Docker container
-    starts. You can define packages to be installed in the `zai_project.yaml`
-    file, and they will be automatically installed when the container is
-    created or started.
-
-    Installation Configuration Fields:
-    - `pip_install`: Python packages to install via pip
-      Supports multiple formats: simple lists, structured format with options,
-      or mixed format.
-
-    - `apt_install`: System packages to install via package manager
-      Supports multiple package managers: `apt`, `dnf`, `yum`, `rpm`, `pacman`
-      Automatically handles `sudo` permissions when needed.
-      Supports multiple formats:
-        * Simple list (defaults to `apt`): `["vim", "curl", "git"]`
-        * Structured format: `{"packages": ["vim"], "options": ["-y"]}`
-        * Specify package manager: 
-          `{"package_manager": "dnf", "packages": ["vim"], "options": ["-y"]}`
-        * Multiple installation specs in a list.
-
-    - `post_start_commands`: Generic commands to execute
-      List of shell commands to run after package installations.
-      Useful for installing tools with other package managers (cargo, go, npm, etc.)
-
-    Smart Permission Handling~
-        Zai automatically handles permissions for package installation:
-        - If container user is root (UID=0), commands run directly
-        - If `sudo` is available in container, commands are prefixed with `sudo`
-        - If neither root nor sudo is available, commands run directly
-          (may fail with permission errors)
-
-    Complete Example:
->
-    - sandbox_home: /path/to/project/sandbox
-      shell_container:
-        image: python:3.11-slim
-        name: my-project-container
-      
-      pip_install:
-        - packages: [PyYAML, appdirs]
-        - packages: [torch, torchvision, torchaudio]
-          options: [--index-url, https://download.pytorch.org/whl/cpu]
-      
-      apt_install:
-        - packages: [vim, curl, git]  # Uses apt by default
-        - package_manager: dnf
-          packages: [htop, ncdu]
-          options: [-y]
-      
-      post_start_commands:
-        - "cargo install bat"
-        - "echo 'Development environment ready'"
-<
-
-                                                        *zai-sandbox-directory*
-Sandbox Directory~
-    The sandbox directory is used by file-related tools (`tool_file`,
-    `tool_shell`) as a safe workspace. Files outside the sandbox cannot be
-    accessed for security.
+Docs: https://github.com/zighouse/zai.vim/blob/main/docs/tools/web.md
 
 ==============================================================================
-7. LICENSE                                              *zai-license*
+TOOL: SHELL                                               *zai-tool-shell*
+==============================================================================
 
-Released under the MIT License. For details, see:
-https://github.com/zighouse/zai/blob/main/LICENSE
+Shell execution in Docker.
 
- vim:tw=78:ts=8:ft=help:norl:
+Functions: >
+    invoke_execute_shell    Execute commands securely
+
+Docs: https://github.com/zighouse/zai.vim/blob/main/docs/tools/shell.md
+
+==============================================================================
+TOOL: GREP                                                *zai-tool-grep*
+==============================================================================
+
+File content search.
+
+Functions: >
+    invoke_grep              Search file content
+
+Docs: https://github.com/zighouse/zai.vim/blob/main/docs/tools/grep.md
+
+==============================================================================
+TOOL: AI                                                  *zai-tool-ai*
+==============================================================================
+
+AI capabilities: image generation.
+
+Functions: >
+    invoke_generate_image    Generate images with AI
+
+Docs: https://github.com/zighouse/zai.vim/blob/main/docs/tools/ai.md
+
+==============================================================================
+TOOL: ARCHIVE                                             *zai-tool-archive*
+==============================================================================
+
+Session archiving.
+
+Functions: >
+    invoke_archive_session   Archive session to file
+
+Docs: https://github.com/zighouse/zai.vim/blob/main/docs/tools/archive.md
+
+==============================================================================
+TOOL: BROWSER                                             *zai-tool-browser*
+==============================================================================
+
+Browser automation (experimental).
+
+Docs: https://github.com/zighouse/zai.vim/blob/main/docs/tools/browser.md
+
+==============================================================================
+TOOL: SEARXNG                                             *zai-tool-searxng*
+==============================================================================
+
+SearXNG metasearch engine integration.
+
+Functions: >
+    invoke_web_search        Multi-engine web search
+
+Docs: https://github.com/zighouse/zai.vim/blob/main/docs/tools/searxng.md
+
+==============================================================================
+CONFIGURATION                                            *zai-config*
+==============================================================================
+
+User config: ~/.local/share/zai/assistants.yaml
+
+Project config: zai.project/zai_project.yaml
+
+For details: https://github.com/zighouse/zai.vim/blob/main/docs/configuration/
+
+==============================================================================
+TROUBLESHOOTING                                         *zai-trouble*
+==============================================================================
+
+Common issues: >
+    API errors          → Check API key
+    Docker errors        → Ensure Docker running
+    Tool not found       → Run :AI tool status
+
+For troubleshooting guide: >
+    https://github.com/zighouse/zai.vim/blob/main/docs/installation/
+
+==============================================================================
+ABOUT                                                   *zai-about*
+==============================================================================
+
+Zai.Vim by zighouse
+
+Home: https://github.com/zighouse/zai.vim
+
+Docs: https://github.com/zighouse/zai.vim/blob/main/docs/
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl
