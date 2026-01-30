@@ -107,6 +107,12 @@ class AIChat:
         self._cli.register("open", self._on_open)
         self._cli.register("start", self._on_start)
         self._cli.register("stop", self._on_stop)
+        self._cli.register("web_next_page", self._on_web_next_page)
+        self._cli.register("web_prev_page", self._on_web_prev_page)
+        self._cli.register("web_goto_page", self._on_web_goto_page)
+        self._cli.register("web_show_all", self._on_web_show_all)
+        self._cli.register("web_page_info", self._on_web_page_info)
+        self._cli.register("web_cleanup_cache", self._on_web_cleanup_cache)
 
     def _get_tokenizer_name(self):
         tokenizer_name = "cl100k_base"
@@ -1261,6 +1267,83 @@ class AIChat:
                 print(f'Error stopping taskbox: {e}')
         else:
             print('Usage: stop taskbox')
+
+    def _on_web_next_page(self, *argv):
+        """Show next page of cached web content"""
+        if len(argv) < 1:
+            print('Usage: web_next_page <cache_id>')
+            return
+        try:
+            from tool_web import invoke_web_next_page
+            result = invoke_web_next_page(argv[0])
+            print(result)
+        except Exception as e:
+            print(f'Error: {e}')
+
+    def _on_web_prev_page(self, *argv):
+        """Show previous page of cached web content"""
+        if len(argv) < 1:
+            print('Usage: web_prev_page <cache_id>')
+            return
+        try:
+            from tool_web import invoke_web_prev_page
+            result = invoke_web_prev_page(argv[0])
+            print(result)
+        except Exception as e:
+            print(f'Error: {e}')
+
+    def _on_web_goto_page(self, *argv):
+        """Jump to specific page of cached web content"""
+        if len(argv) < 2:
+            print('Usage: web_goto_page <cache_id> <page_num>')
+            return
+        try:
+            from tool_web import invoke_web_goto_page
+            args = f"{argv[0]} {argv[1]}"
+            result = invoke_web_goto_page(args)
+            print(result)
+        except Exception as e:
+            print(f'Error: {e}')
+
+    def _on_web_show_all(self, *argv):
+        """Show all cached web content"""
+        if len(argv) < 1:
+            print('Usage: web_show_all <cache_id>')
+            return
+        try:
+            from tool_web import invoke_web_show_all
+            result = invoke_web_show_all(argv[0])
+            print(result)
+        except Exception as e:
+            print(f'Error: {e}')
+
+    def _on_web_page_info(self, *argv):
+        """Show information about cached web content"""
+        if len(argv) < 1:
+            print('Usage: web_page_info <cache_id>')
+            return
+        try:
+            from tool_web import invoke_web_page_info
+            result = invoke_web_page_info(argv[0])
+            print(result)
+        except Exception as e:
+            print(f'Error: {e}')
+
+    def _on_web_cleanup_cache(self, *argv):
+        """Clean up old web cache files"""
+        max_age_hours = 24
+        if len(argv) >= 1:
+            try:
+                max_age_hours = int(argv[0])
+            except ValueError:
+                print('Error: max_age_hours must be an integer')
+                return
+        try:
+            from tool_web import invoke_web_cleanup_cache
+            result = invoke_web_cleanup_cache(max_age_hours)
+            print(result)
+        except Exception as e:
+            print(f'Error: {e}')
 
     def start(self):
         self._cli.start()

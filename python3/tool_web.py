@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import json
 import os
 import re
@@ -6,6 +7,7 @@ import requests
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib
 
@@ -15,6 +17,15 @@ from urllib.parse import urlparse, quote_plus, urljoin
 
 from toolcommon import sanitize_path
 
+# Import token counting utilities
+try:
+    from tokens import AITokenizer
+    _tokenizer = AITokenizer()
+    HAVE_TOKENIZER = True
+except ImportError:
+    HAVE_TOKENIZER = False
+    _tokenizer = None
+
 # 尝试导入 trafilatura
 try:
     import trafilatura
@@ -23,6 +34,475 @@ except ImportError:
     HAVE_TRAFILATURA = False
 
 _DEFAULT_SEARCH_ENGINE = "https://html.duckduckgo.com/html/"
+
+# ============================================================================
+# Token Counting Utilities
+# ============================================================================
+
+def count_tokens(text: str, model_name: Optional[str] = None) -> int:
+    """
+    Count tokens in text using AITokenizer
+
+    Args:
+        text: Text to count
+        model_name: Model name for accurate tokenization (optional).
+                 Uses cl100k_base (GPT-4) as default if not specified.
+
+    Returns:
+        int: Number of tokens, or rough estimate if tokenizer unavailable
+    """
+    if not text:
+        return 0
+
+    if HAVE_TOKENIZER and _tokenizer:
+        try:
+            return _tokenizer.count_tokens(text, model_name)
+        except Exception:
+            pass
+
+    # Fallback: rough estimate (1 token ≈ 4 characters for English text)
+    return len(text) // 4
+
+def truncate_by_tokens(text: str, max_tokens: int, model_name: Optional[str] = None) -> str:
+    """
+    Truncate text to fit within max_tokens
+
+    Args:
+        text: Text to truncate
+        max_tokens: Maximum tokens to keep
+        model_name: Model name for accurate tokenization
+
+    Returns:
+        str: Truncated text
+    """
+    if not text:
+        return text
+
+    if HAVE_TOKENIZER and _tokenizer:
+        try:
+            return _tokenizer.truncate_by_tokens(text, model_name or "cl100k_base", max_tokens)
+        except Exception:
+            pass
+
+# ============================================================================
+# Pagination Navigation Commands (called from session commands)
+# ============================================================================
+
+def invoke_web_next_page(cache_id: str) -> str:
+    """
+    Show next page of cached web content
+
+    Args:
+        cache_id: Cache identifier
+
+    Returns:
+        str: Formatted page content or error message
+    """
+    # Get current page from session state (if available)
+    # For now, default to page 1
+    return invoke_web_goto_page(f"{cache_id} 2")
+
+def invoke_web_prev_page(cache_id: str) -> str:
+    """
+    Show previous page of cached web content
+
+    Args:
+        cache_id: Cache identifier
+
+    Returns:
+        str: Formatted page content or error message
+    """
+    # For simplicity, default to page 1
+    # In a real implementation, would track current page in session state
+    return invoke_web_goto_page(f"{cache_id} 1")
+
+def invoke_web_goto_page(args: str) -> str:
+    """
+    Jump to specific page of cached web content
+
+    Args:
+        args: "<cache_id> <page_num>" format string
+
+    Returns:
+        str: Formatted page content or error message
+    """
+    parts = args.strip().split()
+    if len(parts) < 2:
+        return "Error: Usage: `:web_goto_page <cache_id> <page_num>`"
+
+    cache_id = parts[0]
+    try:
+        page_num = int(parts[1])
+    except ValueError:
+        return "Error: page_num must be an integer"
+
+    if page_num < 1:
+        return "Error: page_num must be >= 1"
+
+    cache = get_content_cache()
+    page_data = cache.get_page(cache_id, page_num)
+
+    if "error" in page_data:
+        return page_data["error"]
+
+    # Format page response
+    return _format_paginated_response(page_data, page_data["url"])
+
+def invoke_web_show_all(cache_id: str) -> str:
+    """
+    Show all cached content (warning: may be large)
+
+    Args:
+        cache_id: Cache identifier
+
+    Returns:
+        str: Full content or error message
+    """
+    cache = get_content_cache()
+    cache_data = cache.load_content(cache_id)
+
+    if not cache_data:
+        return f"Error: Content not found in cache (cache_id: {cache_id})"
+
+    total_tokens = cache_data['total_tokens']
+    url = cache_data['url']
+
+    result = [
+        f"# Full Content from {url}",
+        f"Total tokens: {total_tokens:,}",
+        f"",
+        f"{cache_data['content']}",
+        f"",
+        f"---",
+        f"",
+        f"**Navigation:**",
+        f"- Back to pagination: `:web_goto_page {cache_id} 1`",
+        f"- Page info: `:web_page_info {cache_id}`",
+        f"",
+        f"**Cache ID:** {cache_id}"
+    ]
+
+    return '\n'.join(result)
+
+def invoke_web_page_info(cache_id: str) -> str:
+    """
+    Show information about cached content
+
+    Args:
+        cache_id: Cache identifier
+
+    Returns:
+        str: Content information or error message
+    """
+    cache = get_content_cache()
+    cache_data = cache.load_content(cache_id)
+
+    if not cache_data:
+        return f"Error: Content not found in cache (cache_id: {cache_id})"
+
+    total_tokens = cache_data['total_tokens']
+    page_size = 2000  # Default page size
+    total_pages = (total_tokens + page_size - 1) // page_size
+
+    lines = [
+        f"Content Information",
+        f"",
+        f"URL: {cache_data['url']}",
+        f"Total tokens: {total_tokens:,}",
+        f"Page size: {page_size:,} tokens",
+        f"Total pages: {total_pages}",
+        f"Cache ID: {cache_id}",
+        f"Timestamp: {cache_data['timestamp']}"
+    ]
+
+    # Add metadata if available
+    metadata = cache_data.get('metadata', {})
+    if metadata.get('title'):
+        lines.extend([
+            f"Title: {metadata['title']}"
+        ])
+    if metadata.get('description'):
+        lines.extend([
+            f"Description: {metadata['description']}"
+        ])
+
+    return '\n'.join(lines)
+
+def invoke_web_cleanup_cache(max_age_hours: int = 24) -> str:
+    """
+    Clean up old cache files
+
+    Args:
+        max_age_hours: Maximum cache age in hours (default: 24)
+
+    Returns:
+        str: Cleanup result message
+    """
+    cache = get_content_cache()
+    max_age_seconds = max_age_hours * 3600
+    removed = cache.cleanup_old_cache(max_age_seconds)
+
+    return f"Cache cleanup: Removed {removed} old cache file(s)"
+
+# ============================================================================
+# Content Cache for Pagination
+# ============================================================================
+
+class ContentCache:
+    """Manage cached web content with pagination support"""
+
+    def __init__(self, cache_dir: Optional[Path] = None, default_page_size: int = 2000):
+        """
+        Initialize content cache
+
+        Args:
+            cache_dir: Directory for cache files (default: system temp dir)
+            default_page_size: Default tokens per page
+        """
+        if cache_dir:
+            self.cache_dir = Path(cache_dir)
+        else:
+            # Use ~/.cache/zai_web_cache/ or system temp
+            if os.path.exists('/tmp'):
+                self.cache_dir = Path('/tmp') / 'zai_web_cache'
+            else:
+                self.cache_dir = Path(tempfile.gettempdir()) / 'zai_web_cache'
+
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.default_page_size = default_page_size
+
+    def _generate_cache_id(self, url: str) -> str:
+        """Generate unique cache ID from URL"""
+        return hashlib.md5(url.encode('utf-8')).hexdigest()[:12]
+
+    def save_content(self, url: str, content: str, metadata: Dict[str, Any]) -> str:
+        """
+        Save content to cache file
+
+        Args:
+            url: Source URL
+            content: Content to cache
+            metadata: Additional metadata (title, description, etc.)
+
+        Returns:
+            str: cache_id for later retrieval
+        """
+        cache_id = self._generate_cache_id(url)
+        timestamp = int(time.time())
+
+        cache_file = self.cache_dir / f"{cache_id}_{timestamp}.json"
+
+        cache_data = {
+            "url": url,
+            "content": content,
+            "metadata": metadata,
+            "total_tokens": count_tokens(content),
+            "timestamp": timestamp,
+            "cache_id": cache_id
+        }
+
+        with open(cache_file, 'w', encoding='utf-8') as f:
+            json.dump(cache_data, f, ensure_ascii=False, indent=2)
+
+        return cache_id
+
+    def load_content(self, cache_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Load cached content by cache_id
+
+        Args:
+            cache_id: Cache identifier
+
+        Returns:
+            Dict with cached data, or None if not found
+        """
+        # Find the most recent cache file for this cache_id
+        cache_files = sorted(
+            self.cache_dir.glob(f"{cache_id}_*.json"),
+            key=lambda f: f.stat().st_mtime,
+            reverse=True
+        )
+
+        if not cache_files:
+            return None
+
+        try:
+            with open(cache_files[0], 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return None
+
+    def get_page(self, cache_id: str, page_num: int, page_size: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Get a specific page from cached content
+
+        Args:
+            cache_id: Cache identifier
+            page_num: Page number (1-based)
+            page_size: Tokens per page (uses default if not specified)
+
+        Returns:
+            Dict with page data
+        """
+        cache_data = self.load_content(cache_id)
+        if not cache_data:
+            return {
+                "error": "Content not found in cache",
+                "cache_id": cache_id
+            }
+
+        page_size = page_size or self.default_page_size
+        content = cache_data["content"]
+        total_tokens = cache_data["total_tokens"]
+
+        # Calculate pagination
+        total_pages = (total_tokens + page_size - 1) // page_size
+
+        if page_num < 1 or page_num > total_pages:
+            return {
+                "error": f"Page {page_num} out of range (1-{total_pages})",
+                "total_pages": total_pages,
+                "cache_id": cache_id
+            }
+
+        # Extract page content (rough character-based split)
+        # This is a simple approximation; for precise token-based pagination,
+        # we would need to tokenize the entire content first
+        chars_per_token = 4  # rough estimate
+        chars_per_page = page_size * chars_per_token
+
+        start_idx = (page_num - 1) * chars_per_page
+        end_idx = min(start_idx + chars_per_page, len(content))
+
+        page_content = content[start_idx:end_idx]
+
+        return {
+            "content": page_content,
+            "page": page_num,
+            "total_pages": total_pages,
+            "total_tokens": total_tokens,
+            "page_tokens": count_tokens(page_content),
+            "cache_id": cache_id,
+            "url": cache_data["url"],
+            "metadata": cache_data.get("metadata", {})
+        }
+
+    def cleanup_old_cache(self, max_age_seconds: int = 86400) -> int:
+        """
+        Remove cache files older than max_age_seconds
+
+        Args:
+            max_age_seconds: Maximum age in seconds (default: 24 hours)
+
+        Returns:
+            int: Number of files removed
+        """
+        current_time = time.time()
+        removed = 0
+
+        for cache_file in self.cache_dir.glob("*.json"):
+            try:
+                file_age = current_time - cache_file.stat().st_mtime
+                if file_age > max_age_seconds:
+                    cache_file.unlink()
+                    removed += 1
+            except Exception:
+                pass
+
+        return removed
+
+# Global cache instance
+_content_cache = None
+
+def get_content_cache() -> ContentCache:
+    """Get or create global content cache instance"""
+    global _content_cache
+    if _content_cache is None:
+        _content_cache = ContentCache()
+    return _content_cache
+
+def _format_paginated_response(page_data: Dict[str, Any], url: str) -> str:
+    """
+    Format paginated content response with navigation instructions
+
+    Args:
+        page_data: Page data from ContentCache.get_page
+        url: Original URL
+
+    Returns:
+        str: Formatted response with content and navigation info
+    """
+    if "error" in page_data:
+        return f"Error: {page_data['error']}"
+
+    lines = [
+        f"# Large Content Detected",
+        f"",
+        f"**Source:** {url}",
+        f"**Size:** {page_data['total_tokens']:,} tokens",
+        f"",
+        f"**Page {page_data['page']} of {page_data['total_pages']}** ({page_data['page_tokens']:,} tokens)",
+        f"",
+        page_data['content'],
+        f"",
+        f"---",
+        f"",
+        f"**Navigation:**",
+        f"- Next page: `:web_next_page {page_data['cache_id']}`",
+        f"- Previous page: `:web_prev_page {page_data['cache_id']}`",
+        f"- Jump to page: `:web_goto_page {page_data['cache_id']} <page_num>`",
+        f"- Show all: `:web_show_all {page_data['cache_id']}`",
+        f"- Page info: `:web_page_info {page_data['cache_id']}`",
+        f"",
+        f"**Cache ID:** {page_data['cache_id']}"
+    ]
+
+    return '\n'.join(lines)
+
+def _process_content_with_pagination(
+    content: str,
+    url: str,
+    max_tokens: Optional[int],
+    paginate: bool,
+    page_size: int,
+    metadata: Dict[str, Any]
+) -> str:
+    """
+    Process content with pagination/truncation logic
+
+    Args:
+        content: The content to process
+        url: Source URL
+        max_tokens: Maximum tokens to return
+        paginate: Enable pagination
+        page_size: Page size for pagination
+        metadata: Content metadata
+
+    Returns:
+        str: Processed content (paginated, truncated, or original)
+    """
+    content_tokens = count_tokens(content)
+
+    # Determine what to do based on size and options
+    if max_tokens and content_tokens > max_tokens:
+        if paginate:
+            # Use pagination
+            cache = get_content_cache()
+            cache_id = cache.save_content(url, content, metadata)
+            page_data = cache.get_page(cache_id, 1, page_size)
+            return _format_paginated_response(page_data, url)
+        else:
+            # Truncate to max_tokens
+            return truncate_by_tokens(content, max_tokens)
+    elif paginate and content_tokens > page_size * 2:
+        # Auto-paginate for large content (> 2 pages)
+        cache = get_content_cache()
+        cache_id = cache.save_content(url, content, metadata)
+        page_data = cache.get_page(cache_id, 1, page_size)
+        return _format_paginated_response(page_data, url)
+    else:
+        # Return full content
+        return content
 
 def _remove_data_images(markdown_text):
     pattern = r'!\[[^\]]*\]\(data:image[^)]+\)'
@@ -319,111 +799,148 @@ def _html_to_markdown(content):
             print(f"[html2text error] convert content failed: {e}", file=sys.stderr)
         return "convert content failed"
 
-def invoke_web_get_content(url: str, return_format: str = "clean_text") -> str:
+def invoke_web_get_content(
+    url: str,
+    return_format: str = "clean_text",
+    max_tokens: Optional[int] = None,
+    paginate: bool = False,
+    page_size: int = 2000
+) -> str:
     """
-    获取指定URL的网页内容，优先使用智能提取（trafilatura），失败时回退到 elinks 或 html2text
+    获取指定URL的网页内容，支持分页功能
 
     Args:
         url: 要获取内容的URL地址
         return_format: 返回内容的格式，'clean_text' 或 'markdown' 或 'html' 或 'links'
+        max_tokens: 最大返回token数（None=不限制）
+        paginate: 启用分页功能（大内容自动缓存）
+        page_size: 分页时每页的token数（默认2000）
 
     Returns:
-        str: 清理后的文本、网页内容或者链接列表的字符串表示
+        str: 清理后的文本、网页内容、分页信息或者链接列表的字符串表示
     """
+    # Variable to store final content and metadata
+    final_content = None
+    metadata = {}
+    should_apply_pagination = False
+
     try:
         # 如果请求clean_text且elinks可用，优先使用elinks
         if return_format == "clean_text" and is_elinks_available():
-            return get_content_with_elinks(url)
-
-        # 添加基本的请求头，模拟浏览器访问
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-
-        parsed = urlparse(url)
-        encoding_from_header = None
-        if parsed.scheme in ('http', 'https'):
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()  # 如果状态码不是200，抛出异常
-
-            raw_content = response.content
-            # 优先使用HTTP响应头中的编码
-            if 'content-type' in response.headers:
-                content_type = response.headers['content-type'].lower()
-                charset_match = re.search(r'charset\s*=\s*([^\s;]+)', content_type)
-                if charset_match:
-                    encoding_from_header = charset_match.group(1).lower()
-                    if encoding_from_header == 'gb2312':
-                        encoding_from_header = 'gb18030'
-        elif parsed.scheme == 'file' or parsed.scheme == '':
-            response = urllib.request.urlopen(url)
-            #content = response.read().decode('utf-8')
-            raw_content = response.read()
+            final_content = get_content_with_elinks(url)
+            should_apply_pagination = True
         else:
-            return f"Unsupported get content from `{url}`"
+            # 添加基本的请求头，模拟浏览器访问
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
 
-        # 解码为Unicode字符串
-        try:
-            if encoding_from_header:
-                content = raw_content.decode(encoding_from_header, errors='ignore')
+            parsed = urlparse(url)
+            encoding_from_header = None
+            if parsed.scheme in ('http', 'https'):
+                response = requests.get(url, headers=headers, timeout=10)
+                response.raise_for_status()  # 如果状态码不是200，抛出异常
+
+                raw_content = response.content
+                # 优先使用HTTP响应头中的编码
+                if 'content-type' in response.headers:
+                    content_type = response.headers['content-type'].lower()
+                    charset_match = re.search(r'charset\s*=\s*([^\s;]+)', content_type)
+                    if charset_match:
+                        encoding_from_header = charset_match.group(1).lower()
+                        if encoding_from_header == 'gb2312':
+                            encoding_from_header = 'gb18030'
+            elif parsed.scheme == 'file' or parsed.scheme == '':
+                response = urllib.request.urlopen(url)
+                raw_content = response.read()
             else:
-                # 尝试使用 chardet 来检测
-                import chardet
-                detected_encoding = chardet.detect(raw_content)['encoding']
-                content = raw_content.decode(detected_encoding, errors='ignore')
-        except (UnicodeDecodeError, LookupError):
+                return f"Unsupported get content from `{url}`"
+
+            # 解码为Unicode字符串
             try:
-                content = raw_content.decode('utf-8', errors='ignore')
-            except UnicodeDecodeError:
-                content = raw_content.decode('latin-1', errors='ignore')
+                if encoding_from_header:
+                    content = raw_content.decode(encoding_from_header, errors='ignore')
+                else:
+                    # 尝试使用 chardet 来检测
+                    import chardet
+                    detected_encoding = chardet.detect(raw_content)['encoding']
+                    content = raw_content.decode(detected_encoding, errors='ignore')
+            except (UnicodeDecodeError, LookupError):
+                try:
+                    content = raw_content.decode('utf-8', errors='ignore')
+                except UnicodeDecodeError:
+                    content = raw_content.decode('latin-1', errors='ignore')
 
-        if return_format == "links":
-            links = invoke_web_parse_links(content, base_url=url)
-            if links:
-                result = []
-                for link in links:
-                    caption = link.get('caption', 'No caption')
-                    result.append(f"{caption}: {link['url']}")
-                return "\n".join(result)
+            # Process based on return_format
+            if return_format == "links":
+                links = invoke_web_parse_links(content, base_url=url)
+                if links:
+                    result = []
+                    for link in links:
+                        caption = link.get('caption', 'No caption')
+                        result.append(f"{caption}: {link['url']}")
+                    return "\n".join(result)  # Don't paginate links
+                else:
+                    return "No links found in the content"
+
+            elif return_format == "clean_text":
+                # 尝试使用 trafilatura 智能提取
+                extracted = _extract_main_content_intelligent(content, url, format='txt')
+                if extracted:
+                    final_content = extracted['content']
+                    metadata = {
+                        'title': extracted.get('title', ''),
+                        'description': extracted.get('description', '')
+                    }
+                else:
+                    # 回退到原来的方案
+                    print(f"[web_get_content] trafilatura failed, falling back to extract_clean_text", file=sys.stderr)
+                    final_content = extract_clean_text(content)
+                should_apply_pagination = True
+
+            elif return_format == "markdown":
+                # 尝试使用 trafilatura 智能提取（使用 markdown 格式保留链接）
+                extracted = _extract_main_content_intelligent(content, url, format='markdown')
+                if extracted:
+                    # 构建结构化 Markdown 输出
+                    parts = []
+                    if extracted['title']:
+                        parts.append(f"# {extracted['title']}")
+                        metadata['title'] = extracted['title']
+                    if extracted['description']:
+                        parts.append(f"\n> {extracted['description']}\n")
+                        metadata['description'] = extracted['description']
+                    if extracted['content']:
+                        parts.append(extracted['content'])
+                    final_content = '\n'.join(parts)
+                else:
+                    # 回退到原来的方案
+                    print(f"[web_get_content] trafilatura failed, falling back to html2text", file=sys.stderr)
+                    content = make_links_absolute(content, url)
+                    text = _html_to_markdown(content)
+                    text = _clean_url_labels(text)
+                    text = _remove_empty_links(text)
+                    text = _process_url_fragment(text)
+                    paras = _deduplicate_by_url(text)
+                    final_content = '\n\n'.join(paras)
+                should_apply_pagination = True
+
             else:
-                return "No links found in the content"
-        elif return_format == "clean_text":
-            # 尝试使用 trafilatura 智能提取
-            extracted = _extract_main_content_intelligent(content, url, format='txt')
-            if extracted:
-                return extracted['content']
-            else:
-                # 回退到原来的方案
-                print(f"[web_get_content] trafilatura failed, falling back to extract_clean_text", file=sys.stderr)
-                return extract_clean_text(content)
-        elif return_format == "markdown":
-            # 尝试使用 trafilatura 智能提取（使用 markdown 格式保留链接）
-            extracted = _extract_main_content_intelligent(content, url, format='markdown')
-            if extracted:
-                # 构建结构化 Markdown 输出
-                parts = []
-                if extracted['title']:
-                    parts.append(f"# {extracted['title']}")
-                if extracted['description']:
-                    parts.append(f"\n> {extracted['description']}\n")
-                if extracted['content']:
-                    parts.append(extracted['content'])
-                return '\n'.join(parts)
-            else:
-                # 回退到原来的方案
-                print(f"[web_get_content] trafilatura failed, falling back to html2text", file=sys.stderr)
+                # 返回清理后的HTML内容
                 content = make_links_absolute(content, url)
-                text = _html_to_markdown(content)
-                text = _clean_url_labels(text)
-                text = _remove_empty_links(text)
-                text = _process_url_fragment(text)
-                paras = _deduplicate_by_url(text)
-                text = '\n\n'.join(paras)
-                return text
+                final_content = clean_html_content(content)
+                should_apply_pagination = True
+
+        # Apply pagination/truncation logic if needed
+        if should_apply_pagination and final_content is not None:
+            return _process_content_with_pagination(
+                final_content, url, max_tokens, paginate, page_size, metadata
+            )
+        elif final_content is not None:
+            return final_content
         else:
-            # 返回清理后的HTML内容
-            content = make_links_absolute(content, url)
-            return clean_html_content(content)
+            # Should not reach here
+            return "Error: Unable to process content"
 
     except requests.exceptions.RequestException as e:
         return f"Error fetching content from {url}: {str(e)}"

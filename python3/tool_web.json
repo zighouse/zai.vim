@@ -48,7 +48,7 @@
     "type": "function",
     "function": {
       "name": "web_get_content",
-      "description": "获取指定URL的网页内容",
+      "description": "获取指定URL的网页内容，支持分页功能以处理超大网页",
       "parameters": {
         "type": "object",
         "properties": {
@@ -61,6 +61,20 @@
             "description": "返回内容的格式, 'clean_text' 返回纯文本, 'markdown' 返回markdown，'html' 返回原始HTML，'links' 返回解析后的链接列表",
             "enum": ["clean_text", "markdown", "html", "links"],
             "default": "clean_text"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "description": "最大返回token数（None=不限制）。当内容超过此数量时，会根据paginate参数决定分页或截断"
+          },
+          "paginate": {
+            "type": "boolean",
+            "description": "启用分页功能。当内容超过2页大小时自动缓存并分页显示",
+            "default": false
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "分页时每页的token数（默认2000）",
+            "default": 2000
           }
         },
         "required": ["url"]
@@ -98,6 +112,113 @@
           }
         },
         "required": ["url"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "web_next_page",
+      "description": "显示缓存网页内容的下一页",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cache_id": {
+            "type": "string",
+            "description": "缓存标识符（从分页响应中获取）"
+          }
+        },
+        "required": ["cache_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "web_prev_page",
+      "description": "显示缓存网页内容的上一页",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cache_id": {
+            "type": "string",
+            "description": "缓存标识符（从分页响应中获取）"
+          }
+        },
+        "required": ["cache_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "web_goto_page",
+      "description": "跳转到缓存网页内容的指定页",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cache_id": {
+            "type": "string",
+            "description": "缓存标识符（从分页响应中获取）"
+          },
+          "page_num": {
+            "type": "integer",
+            "description": "页码（从1开始）"
+          }
+        },
+        "required": ["cache_id", "page_num"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "web_show_all",
+      "description": "显示缓存网页的全部内容（可能很大）",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cache_id": {
+            "type": "string",
+            "description": "缓存标识符（从分页响应中获取）"
+          }
+        },
+        "required": ["cache_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "web_page_info",
+      "description": "显示缓存网页内容的信息",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cache_id": {
+            "type": "string",
+            "description": "缓存标识符（从分页响应中获取）"
+          }
+        },
+        "required": ["cache_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "web_cleanup_cache",
+      "description": "清理过期的网页缓存文件",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_age_hours": {
+            "type": "integer",
+            "description": "缓存保留时间（小时），默认24小时",
+            "default": 24
+          }
+        },
+        "required": []
       }
     }
   }
