@@ -14,14 +14,13 @@ mcp>=0.9.0              # Model Context Protocol (MCP) server support
 # 可选依赖：Web相关功能
 # ---------------------
 beautifulsoup4>=4.12.0  # HTML解析 (bs4)
-selenium>=4.10.0        # 浏览器自动化
-undetected-chromedriver>=3.5.0  # 防检测的Chrome驱动
+selenium>=4.10.0        # 浏览器自动化 (tool_browser.py使用)
 html-to-markdown>=1.0.0 # HTML转Markdown转换
 
 # Web功能系统依赖（需要额外安装）：
 # 1. Chrome浏览器：sudo apt install chromium-browser 或从官网安装Google Chrome
 # 2. ChromeDriver：与Chrome版本匹配的驱动程序
-# 3. undetected-chromedriver会自动管理ChromeDriver，但需要系统上有Chrome浏览器
+# 3. selenium 需要系统上有Chrome浏览器和ChromeDriver
 
 # 可选依赖：Docker容器功能（shell工具）
 # -----------------------------------
@@ -63,15 +62,15 @@ lunarcalendar>=0.0.9    # 农历日历
 #    python3 python3/install.py --all-optional
 
 # 4. 系统依赖安装（Linux Ubuntu/Debian）：
-#    # Chrome浏览器（用于Web搜索）
+#    # Chrome浏览器（用于tool_browser.py）
 #    sudo apt install chromium-browser
-#    
+#
 #    # Docker（用于shell工具）
 #    sudo apt install docker.io docker-compose
 #    sudo usermod -aG docker $USER
 #    sudo systemctl restart docker
 #    # 注销并重新登录使docker组生效
-#    
+#
 #    # 其他可能的依赖
 #    sudo apt install build-essential python3-dev
 
