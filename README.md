@@ -120,6 +120,29 @@ Alternatively, [download the zip](https://github.com/zighouse/zai.vim/archive/re
 
 To enable voice input functionality, you need to set up zasr-server (a real-time speech recognition server):
 
+#### Quick Installation (Recommended)
+
+Use the automated installer:
+
+```bash
+# Install zasr-server and dependencies
+python3 python3/install.py --install-zasr
+
+# Install Python ASR dependencies
+python3 python3/install.py --optional asr
+```
+
+The installer will:
+- Check for zasr project (expects it at `~/mywork/github/zasr`)
+- Build zasr-server from source if needed
+- Install to `~/.local/share/zai/zasr`
+- Guide you through model selection
+- Show memory and disk requirements
+
+#### Manual Installation
+
+If you prefer manual setup or need customization:
+
 1. **Install zasr-server**:
 
 ```bash
@@ -138,44 +161,58 @@ cmake ..
 make -j$(nproc)
 ```
 
-2. **Download ASR models** (SenseVoice for multi-lingual support):
+2. **Install to deployment directory**:
 
 ```bash
-# Models will be downloaded to ~/.cache/sherpa-onnx/
-# Visit: https://github.com/k2-fsa/sherpa-onnx/releases
-# Download:
-#   - silero_vad.int8.onnx
-#   - sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17
+# Install zasr to ~/.local/share/zai/zasr
+./scripts/install.sh --dir ~/.local/share/zai/zasr --from-binary
 ```
 
-3. **Start zasr-server**:
+3. **Download ASR models**:
 
 ```bash
-# Using the startup script (recommended)
-RECOGNIZER_TYPE=sense-voice ./start-server.sh
+# Interactive model download
+~/.local/share/zai/zasr/scripts/download-models.sh
 
-# Or manually
-./build/zasr-server \
-  --recognizer-type sense-voice \
-  --silero-vad-model ~/.cache/sherpa-onnx/silero_vad.int8.onnx \
-  --sense-voice-model ~/.cache/sherpa-onnx/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx \
-  --tokens ~/.cache/sherpa-onnx/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt \
-  --port 2026
+# Or download all models
+~/.local/share/zai/zasr/scripts/download-models.sh --type all
 ```
 
-4. **Install Python dependencies for ASR**:
+**Model Options**:
+- **SenseVoice** (500MB RAM): Multi-lingual (Chinese, English, Japanese, Korean, Cantonese)
+- **Streaming Zipformer zh** (400MB RAM): Chinese only, low latency
+- **Streaming Zipformer bilingual** (450MB RAM): Chinese-English bilingual
+
+4. **Start zasr-server**:
 
 ```bash
+# Using the control script (recommended)
+~/.local/share/zai/zasr/scripts/zasrctl start
+
+# Check status
+~/.local/share/zai/zasr/scripts/zasrctl status
+
+# Stop server
+~/.local/share/zai/zasr/scripts/zasrctl stop
+```
+
+5. **Install Python dependencies for ASR**:
+
+```bash
+# Option 1: Using install.py
+python3 python3/install.py --optional asr
+
+# Option 2: Manual install
 pip install websockets pyaudio
 ```
 
 **Note**: On Linux, you may also need to install PortAudio development headers:
 
 ```bash
-sudo apt install portaudio19-dev python3-pyaudio
+sudo apt install portaudio19-dev python3-dev build-essential cmake
 ```
 
-5. **Enable ASR in Vim**:
+6. **Enable ASR in Vim**:
 
 **Option 1: Auto-enable on plugin load** (Recommended)
 
@@ -196,6 +233,15 @@ call zai#asr#setup()
 ```
 
 Or run in Vim: `:call zai#asr#setup()`
+
+#### Advanced Deployment
+
+For production deployment or customization, see the [zasr deployment guide](https://github.com/zighouse/zasr/blob/main/README-deploy.md) in the zasr repository.
+
+**Key zasr resources**:
+- [zasr README](https://github.com/zighouse/zasr/blob/main/README.md) - Basic usage and architecture
+- [zasr README-deploy.md](https://github.com/zighouse/zasr/blob/main/README-deploy.md) - Deployment and configuration
+- Model downloads: [sherpa-onnx releases](https://github.com/k2-fsa/sherpa-onnx/releases)
 
 **Environment Variables**:
 - `ZASR_SERVER_URL`: WebSocket server URL (default: `ws://localhost:2026`)

@@ -36,6 +36,10 @@ OPTIONAL_DEPS = {
     ],
     "utils": [
         "lunarcalendar>=0.0.9",  # 农历日历
+    ],
+    "asr": [
+        "websockets>=11.0.0",  # WebSocket for ASR
+        "pyaudio>=0.2.13",  # Audio recording
     ]
 }
 
@@ -74,13 +78,34 @@ SYSTEM_DEPS_NOTES = {
     
     "file": """
     ⚠ 文件类型检测可能需要系统库：
-    
+
     对于Linux (Ubuntu/Debian):
       sudo apt install libmagic1
-      
+
     对于Windows:
       - 可能需要安装magic DLL
       - 或使用python-magic-bin替代包
+    """,
+
+    "asr": """
+    ⚠ ASR (语音识别) 功能需要额外的系统依赖：
+
+    对于Linux (Ubuntu/Debian):
+      sudo apt install portaudio19-dev python3-dev
+      sudo apt install build-essential cmake
+
+    对于Windows:
+      - 安装 PyAudio 二进制包
+      - 访问 https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio
+
+    对于macOS:
+      brew install portaudio
+      pip install pyaudio
+
+    注意：
+    - ASR 功能需要 zasr-server (C++ 服务)
+    - 需要约 500MB-1GB 内存用于模型加载
+    - 模型下载约 200MB-700MB
     """
 }
 
@@ -211,23 +236,71 @@ def show_system_deps_summary():
     print("Linux环境推荐使用Ubuntu/Debian发行版。")
     print("=" * 60)
 
+def install_zasr_service():
+    """Install zasr-server service"""
+    import os
+    from pathlib import Path
+
+    # Check if zasr_installer.py exists
+    script_dir = Path(__file__).parent
+    installer_script = script_dir / "zasr_installer.py"
+
+    if not installer_script.exists():
+        print(f"❌ ZASR 安装脚本未找到: {installer_script}")
+        return 1
+
+    print("\n" + "=" * 60)
+    print("  ZASR 服务安装")
+    print("=" * 60)
+    print()
+    print("⚠️  注意: ZASR 是一个独立的 C++ 服务，需要编译安装")
+    print("⚠️  需要 CMake 和 C++ 编译器")
+    print("⚠️  模型文件约 200MB-700MB")
+    print("⚠️  运行时内存占用约 500MB-1GB")
+    print()
+
+    # Run installer
+    try:
+        subprocess.run([sys.executable, str(installer_script)], check=True)
+        return 0
+    except subprocess.CalledProcessError as e:
+        print(f"❌ ZASR 安装失败: {e}")
+        return 1
+    except KeyboardInterrupt:
+        print("\n\n安装已取消")
+        return 1
+
+
 def main():
     parser = argparse.ArgumentParser(description="Zai.Vim 依赖安装工具")
-    parser.add_argument("--optional", nargs="*", 
-                       help="安装指定的可选依赖类别: web, file, system, ai, utils")
+    parser.add_argument("--optional", nargs="*",
+                       help="安装指定的可选依赖类别: web, file, system, ai, utils, asr")
     parser.add_argument("--all-optional", action="store_true",
                        help="安装所有可选依赖")
     parser.add_argument("--skip-core", action="store_true",
                        help="跳过核心依赖安装")
     parser.add_argument("--show-system-deps", action="store_true",
                        help="显示系统依赖安装指南")
+    parser.add_argument("--install-zasr", action="store_true",
+                       help="安装 ZASR 语音识别服务")
     
     args = parser.parse_args()
-    
+
     # 显示系统依赖指南
     if args.show_system_deps:
         show_system_deps_summary()
         return
+
+    # 安装 ZASR 服务
+    if args.install_zasr:
+        result = install_zasr_service()
+        # Also install ASR Python dependencies after ZASR installation
+        print("\n" + "=" * 60)
+        print("安装 ASR Python 依赖...")
+        print("=" * 60)
+        installed, failed = install_dependencies(OPTIONAL_DEPS["asr"], optional=True)
+        print(f"\nASR 依赖安装完成: {installed} 个成功, {failed} 个失败")
+        return result
     
     print("=" * 60)
     print("Zai.Vim Python 依赖安装工具")
@@ -260,11 +333,15 @@ def main():
     print("2. Web相关功能需要: --optional web")
     print("3. 文件类型检测需要: --optional file")
     print("4. Docker容器功能需要: --optional system")
-    print("5. 完整安装: --all-optional")
-    print("6. 系统依赖指南: --show-system-deps")
+    print("5. ASR 语音识别需要: --optional asr")
+    print("6. 完整安装: --all-optional")
+    print("7. 系统依赖指南: --show-system-deps")
+    print("8. 安装 ZASR 服务: --install-zasr")
     print("\n重要提示:")
     print("- Web搜索需要Chrome浏览器（系统依赖）")
     print("- Shell工具需要Docker引擎（系统依赖）")
+    print("- ASR需要Portaudio音频库（系统依赖）")
+    print("- ZASR服务需要CMake和C++编译器")
     print("- html-to-markdown用于HTML转Markdown转换")
     print("- 详细系统依赖安装见: --show-system-deps")
     print("=" * 60)

@@ -123,6 +123,29 @@ python python3\install.py
 
 要启用语音输入功能，需要设置 zasr-server（一个实时语音识别服务器）：
 
+#### 快速安装（推荐）
+
+使用自动化安装程序：
+
+```bash
+# 安装 zasr-server 和依赖
+python3 python3/install.py --install-zasr
+
+# 安装 ASR Python 依赖
+python3 python3/install.py --optional asr
+```
+
+安装程序将：
+- 检查 zasr 项目（预期位于 `~/mywork/github/zasr`）
+- 如需要则从源码编译 zasr-server
+- 安装到 `~/.local/share/zai/zasr`
+- 引导您选择模型
+- 显示内存和磁盘需求
+
+#### 手动安装
+
+如果您更喜欢手动设置或需要自定义：
+
 1. **安装 zasr-server**：
 
 ```bash
@@ -141,44 +164,58 @@ cmake ..
 make -j$(nproc)
 ```
 
-2. **下载 ASR 模型**（SenseVoice 支持多语言）：
+2. **安装到部署目录**：
 
 ```bash
-# 模型将下载到 ~/.cache/sherpa-onnx/
-# 访问: https://github.com/k2-fsa/sherpa-onnx/releases
-# 下载：
-#   - silero_vad.int8.onnx
-#   - sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17
+# 安装 zasr 到 ~/.local/share/zai/zasr
+./scripts/install.sh --dir ~/.local/share/zai/zasr --from-binary
 ```
 
-3. **启动 zasr-server**：
+3. **下载 ASR 模型**：
 
 ```bash
-# 使用启动脚本（推荐）
-RECOGNIZER_TYPE=sense-voice ./start-server.sh
+# 交互式模型下载
+~/.local/share/zai/zasr/scripts/download-models.sh
 
-# 或手动启动
-./build/zasr-server \
-  --recognizer-type sense-voice \
-  --silero-vad-model ~/.cache/sherpa-onnx/silero_vad.int8.onnx \
-  --sense-voice-model ~/.cache/sherpa-onnx/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx \
-  --tokens ~/.cache/sherpa-onnx/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt \
-  --port 2026
+# 或下载所有模型
+~/.local/share/zai/zasr/scripts/download-models.sh --type all
 ```
 
-4. **安装 ASR 所需的 Python 依赖**：
+**模型选项**：
+- **SenseVoice**（500MB 内存）：多语言（中英日韩粤语）
+- **Streaming Zipformer zh**（400MB 内存）：仅中文，低延迟
+- **Streaming Zipformer bilingual**（450MB 内存）：中英双语
+
+4. **启动 zasr-server**：
 
 ```bash
+# 使用控制脚本（推荐）
+~/.local/share/zai/zasr/scripts/zasrctl start
+
+# 查看状态
+~/.local/share/zai/zasr/scripts/zasrctl status
+
+# 停止服务
+~/.local/share/zai/zasr/scripts/zasrctl stop
+```
+
+5. **安装 ASR 所需的 Python 依赖**：
+
+```bash
+# 方案 1：使用 install.py
+python3 python3/install.py --optional asr
+
+# 方案 2：手动安装
 pip install websockets pyaudio
 ```
 
 **注意**：在 Linux 上，您可能还需要安装 PortAudio 开发头文件：
 
 ```bash
-sudo apt install portaudio19-dev python3-pyaudio
+sudo apt install portaudio19-dev python3-dev build-essential cmake
 ```
 
-5. **在 Vim 中启用 ASR**：
+6. **在 Vim 中启用 ASR**：
 
 **方案 1：插件加载时自动启用**（推荐）
 
@@ -200,8 +237,17 @@ call zai#asr#setup()
 
 或在 Vim 中运行：`:call zai#asr#setup()`
 
+#### 高级部署
+
+用于生产环境部署或自定义配置，请参阅 zasr 仓库中的 [zasr 部署指南](https://github.com/zighouse/zasr/blob/main/README-deploy.md)。
+
+**关键 zasr 资源**：
+- [zasr README](https://github.com/zighouse/zasr/blob/main/README.md) - 基本使用和架构
+- [zasr README-deploy.md](https://github.com/zighouse/zasr/blob/main/README-deploy.md) - 部署和配置
+- 模型下载：[sherpa-onnx releases](https://github.com/k2-fsa/sherpa-onnx/releases)
+
 **环境变量**：
-- `ZASR_SERVER_URL`：WebSocket 服务器地址（默认：`ws://localhost:2026``）
+- `ZASR_SERVER_URL`：WebSocket 服务器地址（默认：`ws://localhost:2026`）
 
 更多关于 zasr-server 的信息，请访问：https://github.com/zighouse/zasr
 

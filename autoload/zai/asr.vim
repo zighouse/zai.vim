@@ -17,6 +17,12 @@ let s:plugin_root = expand('<sfile>:h:h:h')
 " Path separator for cross-platform compatibility
 let s:path_sep = has('win32') ? '\' : '/'
 
+" ZASR deployment directory
+let s:zasr_deploy_dir = expand('~/.local/share/zai/zasr')
+
+" ZASR control script
+let s:zasrctl = s:zasr_deploy_dir . s:path_sep . 'scripts' . s:path_sep . 'zasrctl'
+
 " Job object for the Python ASR script
 let s:asr_job = v:null
 
@@ -46,6 +52,82 @@ let s:start_time = 0
 let s:is_stopping = 0
 
 " ============================================================================
+" ZASR Service Management
+" ============================================================================
+
+" Check if zasr-server is running
+function! s:is_zasr_running() abort
+    " Try to connect to the server
+    let l:port = 2026
+    if has('unix')
+        " Use ss without -p flag (doesn't require root)
+        " Fall back to lsof or netstat if ss not available
+        let l:result = system('ss -tln 2>/dev/null | grep -q :' . l:port . ' || lsof -i :' . l:port . ' >/dev/null 2>&1 || netstat -tln 2>/dev/null | grep -q :' . l:port)
+        return v:shell_error == 0
+    elseif has('win32')
+        " Windows not supported for ASR
+        return 0
+    endif
+    return 0
+endfunction
+
+" Start zasr-server
+function! s:start_zasr_service() abort
+    " Check platform - Windows not supported
+    if has('win32')
+        echohl ErrorMsg
+        echom 'ASR 功能不支持 Windows 平台'
+        echom 'ZASR 服务仅支持 Linux/macOS'
+        echohl None
+        return 0
+    endif
+
+    " Check if zasrctl exists
+    if !filereadable(s:zasrctl)
+        echohl WarningMsg
+        echom 'ZASR 控制脚本未找到: ' . s:zasrctl
+        echom '请先运行: python3 python3/install.py --install-zasr'
+        echohl None
+        return 0
+    endif
+
+    " Check if already running
+    if s:is_zasr_running()
+        return 1
+    endif
+
+    " Try to start zasr service
+    echohl MoreMsg
+    echom '正在启动 ZASR 服务...'
+    echohl None
+
+    let l:output = system('bash ' . shellescape(s:zasrctl) . ' start 2>&1')
+
+    if v:shell_error != 0
+        echohl ErrorMsg
+        echom 'ZASR 服务启动失败: ' . l:output
+        echohl None
+        return 0
+    endif
+
+    " Wait a bit for the service to start
+    sleep 500m
+
+    " Verify it's running
+    if s:is_zasr_running()
+        echohl MoreMsg
+        echom 'ZASR 服务已启动'
+        echohl None
+        return 1
+    else
+        echohl WarningMsg
+        echom 'ZASR 服务可能未成功启动，请手动检查'
+        echohl None
+        return 0
+    endif
+endfunction
+
+" ============================================================================
 " Core functions
 " ============================================================================
 
@@ -56,6 +138,17 @@ function! zai#asr#start() abort
         echom 'ASR is already running'
         echohl None
         return
+    endif
+
+    " Try to start zasr service if not running
+    if !s:is_zasr_running()
+        if !s:start_zasr_service()
+            echohl WarningMsg
+            echom '无法启动 ZASR 服务，ASR 功能可能无法使用'
+            echom '您可以继续尝试，或手动启动服务'
+            echohl None
+            " Don't return - let user try anyway
+        endif
     endif
 
     " Get the Python script path
@@ -364,6 +457,30 @@ endfunction
 
 " Setup key mappings and commands
 function! zai#asr#setup() abort
+    " Check platform support
+    if has('win32')
+        echohl WarningMsg
+        echom 'zai#asr: ASR 功能不支持 Windows 平台'
+        echohl None
+        return
+    endif
+
+    " Check if zasr service is available
+    let l:zasr_available = filereadable(s:zasrctl)
+    let l:zasr_running = s:is_zasr_running()
+
+    if !l:zasr_available
+        echohl WarningMsg
+        echom 'zai#asr: ZASR 服务未安装'
+        echom '运行: python3 python3/install.py --install-zasr'
+        echohl None
+    elseif !l:zasr_running
+        echohl WarningMsg
+        echom 'zai#asr: ZASR 服务未运行'
+        echom '提示: 启动 ASR 时将自动启动 ZASR 服务'
+        echohl None
+    endif
+
     " Map Ctrl+G in insert mode to toggle ASR
     inoremap <silent> <C-G> <Cmd>call zai#asr#toggle()<CR>
     "inoremap <silent> <C-G> <Cmd>call zai#asr#start()<CR>
