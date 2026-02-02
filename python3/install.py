@@ -6,7 +6,7 @@ import argparse
 import platform
 from typing import List, Tuple
 
-# 核心依赖 - 必须安装
+# Core dependencies - must be installed
 CORE_DEPS = [
     "openai>=1.0.0",
     "requests>=2.28.0", 
@@ -16,26 +16,26 @@ CORE_DEPS = [
     "tiktoken>=0.5.0",
 ]
 
-# 可选依赖 - 按需安装
+# Optional dependencies - install as needed
 OPTIONAL_DEPS = {
     "web": [
         "beautifulsoup4>=4.12.0",  # bs4
         "selenium>=4.10.0",
         "undetected-chromedriver>=3.5.0",
-        "html-to-markdown>=1.0.0",  # HTML转Markdown转换
+        "html-to-markdown>=1.0.0",  # HTML to Markdown conversion
     ],
     "file": [
-        "python-magic>=0.4.27",  # 文件类型检测
+        "python-magic>=0.4.27",  # File type detection
     ],
     "system": [
-        "distro>=1.8.0",  # Linux发行版检测
+        "distro>=1.8.0",  # Linux distribution detection
         "docker>=6.0.0",  # Docker Python SDK
     ],
     "ai": [
         "transformers>=4.30.0",  # Hugging Face Transformers
     ],
     "utils": [
-        "lunarcalendar>=0.0.9",  # 农历日历
+        "lunarcalendar>=0.0.9",  # Lunar calendar
     ],
     "asr": [
         "websockets>=11.0.0",  # WebSocket for ASR
@@ -43,76 +43,76 @@ OPTIONAL_DEPS = {
     ]
 }
 
-# 系统依赖提示
+# System dependency notes
 SYSTEM_DEPS_NOTES = {
     "web": """
-    ⚠ Web搜索功能需要额外的系统依赖：
-    
-    对于Linux (Ubuntu/Debian):
+    ⚠ Web search feature requires additional system dependencies:
+
+    For Linux (Ubuntu/Debian):
       sudo apt install chromium-browser
-      # 或从官网安装Google Chrome
-    
-    对于Windows:
-      - 安装Google Chrome浏览器
-      - ChromeDriver会自动管理，但需要Chrome浏览器
-      
-    注意：Web搜索功能在Linux上体验最佳，Windows可能需额外配置。
+      # Or install Google Chrome from official website
+
+    For Windows:
+      - Install Google Chrome browser
+      - ChromeDriver will be managed automatically, but requires Chrome browser
+
+    Note: Web search feature works best on Linux, Windows may require additional configuration.
     """,
-    
+
     "system": """
-    ⚠ Docker容器功能需要额外的系统依赖：
-    
-    对于Linux (Ubuntu/Debian):
+    ⚠ Docker container feature requires additional system dependencies:
+
+    For Linux (Ubuntu/Debian):
       sudo apt install docker.io docker-compose
       sudo usermod -aG docker $USER
       sudo systemctl restart docker
-      # 注销并重新登录使docker组生效
-      
-    对于Windows:
-      - 安装Docker Desktop
-      - 启用WSL2集成（推荐）
-      - 配置共享驱动器
-      
-    注意：Docker功能在Linux上最稳定，Windows需要Docker Desktop。
-    """,
-    
-    "file": """
-    ⚠ 文件类型检测可能需要系统库：
+      # Log out and log back in for docker group to take effect
 
-    对于Linux (Ubuntu/Debian):
+    For Windows:
+      - Install Docker Desktop
+      - Enable WSL2 integration (recommended)
+      - Configure shared drives
+
+    Note: Docker feature is most stable on Linux, Windows requires Docker Desktop.
+    """,
+
+    "file": """
+    ⚠ File type detection may require system libraries:
+
+    For Linux (Ubuntu/Debian):
       sudo apt install libmagic1
 
-    对于Windows:
-      - 可能需要安装magic DLL
-      - 或使用python-magic-bin替代包
+    For Windows:
+      - May need to install magic DLL
+      - Or use python-magic-bin alternative package
     """,
 
     "asr": """
-    ⚠ ASR (语音识别) 功能需要额外的系统依赖：
+    ⚠ ASR (Speech Recognition) feature requires additional system dependencies:
 
-    对于Linux (Ubuntu/Debian):
+    For Linux (Ubuntu/Debian):
       sudo apt install portaudio19-dev python3-dev
       sudo apt install build-essential cmake
 
-    对于Windows:
-      - 安装 PyAudio 二进制包
-      - 访问 https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio
+    For Windows:
+      - Install PyAudio binary package
+      - Visit https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio
 
-    对于macOS:
+    For macOS:
       brew install portaudio
       pip install pyaudio
 
-    注意：
-    - ASR 功能需要 zasr-server (C++ 服务)
-    - 需要约 500MB-1GB 内存用于模型加载
-    - 模型下载约 200MB-700MB
+    Notes:
+    - ASR feature requires zasr-server (C++ service)
+    - Requires approximately 500MB-1GB memory for model loading
+    - Model download is approximately 200MB-700MB
     """
 }
 
 def check_dependency(package_name: str) -> bool:
-    """检查依赖是否已安装"""
+    """Check if dependency is already installed"""
     try:
-        # 特殊处理带连字符的包名
+        # Special handling for packages with hyphens
         if package_name == "html2text":
             import html2text
             return True
@@ -125,14 +125,14 @@ def check_dependency(package_name: str) -> bool:
         elif package_name == "undetected-chromedriver":
             import undetected_chromedriver
         else:
-            # 尝试直接导入包名
+            # Try importing package name directly
             importlib.import_module(package_name.split('>=')[0].split('[')[0])
         return True
     except ImportError:
         return False
 
 def install_dependencies(deps: List[str], optional: bool = False) -> Tuple[int, int]:
-    """安装依赖列表"""
+    """Install dependency list"""
     installed = 0
     failed = 0
     
@@ -140,35 +140,35 @@ def install_dependencies(deps: List[str], optional: bool = False) -> Tuple[int, 
         package_name = dep.split('>=')[0].split('[')[0]
         
         if check_dependency(package_name):
-            print(f"✓ {package_name} 已安装")
+            print(f"✓ {package_name} already installed")
             installed += 1
             continue
             
-        print(f"正在安装 {dep}...")
+        print(f"Installing {dep}...")
         try:
-            # 使用pip安装
+            # Install using pip
             subprocess.check_call([sys.executable, "-m", "pip", "install", dep])
-            print(f"✓ 成功安装 {package_name}")
+            print(f"✓ Successfully installed {package_name}")
             installed += 1
         except subprocess.CalledProcessError as e:
             if optional:
-                print(f"⚠ 可选依赖 {package_name} 安装失败: {e}")
+                print(f"⚠ Optional dependency {package_name} installation failed: {e}")
             else:
-                print(f"✗ 核心依赖 {package_name} 安装失败: {e}")
+                print(f"✗ Core dependency {package_name} installation failed: {e}")
             failed += 1
             
     return installed, failed
 
 def install_all_optional():
-    """安装所有可选依赖"""
+    """Install all optional dependencies"""
     total_installed = 0
     total_failed = 0
     
-    print("安装所有可选依赖...")
+    print("Installing all optional dependencies...")
     for category, deps in OPTIONAL_DEPS.items():
-        print(f"\n安装 {category} 相关依赖:")
-        
-        # 显示系统依赖提示
+        print(f"\nInstalling {category} related dependencies:")
+
+        # Display system dependencies notes
         if category in SYSTEM_DEPS_NOTES:
             print(SYSTEM_DEPS_NOTES[category])
         
@@ -179,18 +179,18 @@ def install_all_optional():
     return total_installed, total_failed
 
 def install_specific_optional(categories: List[str]):
-    """安装指定的可选依赖类别"""
+    """Install specified optional dependency categories"""
     total_installed = 0
     total_failed = 0
     
     for category in categories:
         if category not in OPTIONAL_DEPS:
-            print(f"⚠ 未知的依赖类别: {category}")
+            print(f"⚠ Unknown dependency category: {category}")
             continue
-            
-        print(f"\n安装 {category} 相关依赖:")
-        
-        # 显示系统依赖提示
+
+        print(f"\nInstalling {category} related dependencies:")
+
+        # Display system dependencies notes
         if category in SYSTEM_DEPS_NOTES:
             print(SYSTEM_DEPS_NOTES[category])
         
@@ -201,43 +201,43 @@ def install_specific_optional(categories: List[str]):
     return total_installed, total_failed
 
 def show_platform_info():
-    """显示平台信息"""
-    print(f"操作系统: {platform.system()} {platform.release()}")
-    print(f"Python版本: {platform.python_version()}")
-    print(f"平台架构: {platform.machine()}")
+    """Display platform information"""
+    print(f"Operating System: {platform.system()} {platform.release()}")
+    print(f"Python Version: {platform.python_version()}")
+    print(f"Platform Architecture: {platform.machine()}")
     print()
 
 def show_system_deps_summary():
-    """显示系统依赖总结"""
+    """Display system dependencies summary"""
     print("\n" + "=" * 60)
-    print("系统依赖安装指南 (Linux Ubuntu/Debian)")
+    print("System Dependencies Installation Guide (Linux Ubuntu/Debian)")
     print("=" * 60)
     
     print("""
-1. 安装Docker（用于安全shell执行）:
+1. Install Docker (for secure shell execution):
    sudo apt install docker.io docker-compose
    sudo usermod -aG docker $USER
    sudo systemctl restart docker
-   # 注销并重新登录使docker组生效
+   # Log out and log back in for docker group to take effect
 
-2. 安装Chrome/Chromium（用于Web搜索）:
+2. Install Chrome/Chromium (for web search):
    sudo apt install chromium-browser
-   # 或从官网安装Google Chrome
+   # Or install Google Chrome from official website
 
-3. 安装开发工具:
+3. Install development tools:
    sudo apt install build-essential python3-dev
 
-4. 验证安装:
+4. Verify installation:
    docker --version
-   chromium-browser --version  # 或 google-chrome --version
+   chromium-browser --version  # or google-chrome --version
    """)
     
-    print("注意：Windows上也可安装Docker Desktop和Chrome，但配置较复杂。")
-    print("Linux环境推荐使用Ubuntu/Debian发行版。")
+    print("Note: Docker Desktop and Chrome can also be installed on Windows, but configuration is more complex.")
+    print("Linux environment recommends Ubuntu/Debian distributions.")
     print("=" * 60)
 
 def install_zasr_service():
-    """Install zasr-server service"""
+    """Install ZASR service"""
     import os
     from pathlib import Path
 
@@ -246,17 +246,17 @@ def install_zasr_service():
     installer_script = script_dir / "zasr_installer.py"
 
     if not installer_script.exists():
-        print(f"❌ ZASR 安装脚本未找到: {installer_script}")
+        print(f"❌ ZASR installation script not found: {installer_script}")
         return 1
 
     print("\n" + "=" * 60)
-    print("  ZASR 服务安装")
+    print("  ZASR Service Installation")
     print("=" * 60)
     print()
-    print("⚠️  注意: ZASR 是一个独立的 C++ 服务，需要编译安装")
-    print("⚠️  需要 CMake 和 C++ 编译器")
-    print("⚠️  模型文件约 200MB-700MB")
-    print("⚠️  运行时内存占用约 500MB-1GB")
+    print("⚠️  Note: ZASR is a standalone C++ service requiring compilation")
+    print("⚠️  Requires CMake and C++ compiler")
+    print("⚠️  Model files are approximately 200MB-700MB")
+    print("⚠️  Runtime memory usage is approximately 500MB-1GB")
     print()
 
     # Run installer
@@ -264,86 +264,86 @@ def install_zasr_service():
         subprocess.run([sys.executable, str(installer_script)], check=True)
         return 0
     except subprocess.CalledProcessError as e:
-        print(f"❌ ZASR 安装失败: {e}")
+        print(f"❌ ZASR installation failed: {e}")
         return 1
     except KeyboardInterrupt:
-        print("\n\n安装已取消")
+        print("\n\nInstallation cancelled")
         return 1
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Zai.Vim 依赖安装工具")
+    parser = argparse.ArgumentParser(description="Zai.Vim Dependency Installation Tool")
     parser.add_argument("--optional", nargs="*",
-                       help="安装指定的可选依赖类别: web, file, system, ai, utils, asr")
+                       help="Install specified optional dependency categories: web, file, system, ai, utils, asr")
     parser.add_argument("--all-optional", action="store_true",
-                       help="安装所有可选依赖")
+                       help="Install all optional dependencies")
     parser.add_argument("--skip-core", action="store_true",
-                       help="跳过核心依赖安装")
+                       help="Skip core dependencies installation")
     parser.add_argument("--show-system-deps", action="store_true",
-                       help="显示系统依赖安装指南")
+                       help="Show system dependencies installation guide")
     parser.add_argument("--install-zasr", action="store_true",
-                       help="安装 ZASR 语音识别服务")
+                       help="Install ZASR speech recognition service")
     
     args = parser.parse_args()
 
-    # 显示系统依赖指南
+    # Show system dependencies guide
     if args.show_system_deps:
         show_system_deps_summary()
         return
 
-    # 安装 ZASR 服务
+    # Install ZASR service
     if args.install_zasr:
         result = install_zasr_service()
         # Also install ASR Python dependencies after ZASR installation
         print("\n" + "=" * 60)
-        print("安装 ASR Python 依赖...")
+        print("Installing ASR Python Dependencies...")
         print("=" * 60)
         installed, failed = install_dependencies(OPTIONAL_DEPS["asr"], optional=True)
-        print(f"\nASR 依赖安装完成: {installed} 个成功, {failed} 个失败")
+        print(f"\nASR dependencies installation complete: {installed} successful, {failed} failed")
         return result
     
     print("=" * 60)
-    print("Zai.Vim Python 依赖安装工具")
+    print("Zai.Vim Python Dependency Installation Tool")
     print("=" * 60)
-    
-    # 显示平台信息
+
+    # Display platform information
     show_platform_info()
-    
-    # 安装核心依赖
+
+    # Install core dependencies
     if not args.skip_core:
-        print("\n检查并安装核心依赖...")
+        print("\nChecking and installing core dependencies...")
         installed, failed = install_dependencies(CORE_DEPS, optional=False)
-        print(f"\n核心依赖安装完成: {installed} 个成功, {failed} 个失败")
-        
+        print(f"\nCore dependencies installation complete: {installed} successful, {failed} failed")
+
         if failed > 0:
-            print("⚠ 部分核心依赖安装失败，可能影响基本功能")
-    
-    # 安装可选依赖
+            print("⚠ Some core dependencies failed to install, may affect basic functionality")
+
+    # Install optional dependencies
     if args.all_optional:
         installed, failed = install_all_optional()
-        print(f"\n可选依赖安装完成: {installed} 个成功, {failed} 个失败")
+        print(f"\nOptional dependencies installation complete: {installed} successful, {failed} failed")
     elif args.optional:
         installed, failed = install_specific_optional(args.optional)
-        print(f"\n指定可选依赖安装完成: {installed} 个成功, {failed} 个失败")
+        print(f"\nSpecified optional dependencies installation complete: {installed} successful, {failed} failed")
     
     print("\n" + "=" * 60)
-    print("安装完成!")
-    print("\n使用说明:")
-    print("1. 基本功能只需要核心依赖")
-    print("2. Web相关功能需要: --optional web")
-    print("3. 文件类型检测需要: --optional file")
-    print("4. Docker容器功能需要: --optional system")
-    print("5. ASR 语音识别需要: --optional asr")
-    print("6. 完整安装: --all-optional")
-    print("7. 系统依赖指南: --show-system-deps")
-    print("8. 安装 ZASR 服务: --install-zasr")
-    print("\n重要提示:")
-    print("- Web搜索需要Chrome浏览器（系统依赖）")
-    print("- Shell工具需要Docker引擎（系统依赖）")
-    print("- ASR需要Portaudio音频库（系统依赖）")
-    print("- ZASR服务需要CMake和C++编译器")
-    print("- html-to-markdown用于HTML转Markdown转换")
-    print("- 详细系统依赖安装见: --show-system-deps")
+    print("Installation Complete!")
+    print("\nUsage Instructions:")
+    print("1. Basic functionality only requires core dependencies")
+    print("2. Web-related features need: --optional web")
+    print("3. File type detection needs: --optional file")
+    print("4. Docker container features need: --optional system")
+    print("5. ASR speech recognition needs: --optional asr")
+    print("6. Complete installation: --all-optional")
+    print("7. System dependencies guide: --show-system-deps")
+    print("8. Install ZASR service: --install-zasr")
+    print("\nImportant Notes:")
+    print("- Web search requires Chrome browser (system dependency)")
+    print("- Shell tools require Docker engine (system dependency)")
+    print("- ASR requires Portaudio library (system dependency)")
+    print("- ZASR service requires CMake and C++ compiler")
+    print("- html-to-markdown is for HTML to Markdown conversion")
+    print("- See system dependencies installation: --show-system-deps")
     print("=" * 60)
 
 if __name__ == "__main__":

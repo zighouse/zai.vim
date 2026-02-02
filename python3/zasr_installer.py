@@ -36,27 +36,27 @@ def get_zasr_project_root() -> Path:
 # Maps to download-models.sh types: vad, sense-voice, streaming-zipformer, punctuation, all
 MODELS = {
     "sense-voice": {
-        "name": "SenseVoice (多语言)",
-        "description": "支持中英日韩粤语，适合多语言场景",
-        "languages": "中英日韩粤语",
+        "name": "SenseVoice (Multilingual)",
+        "description": "Supports Chinese, English, Japanese, Korean, Cantonese - ideal for multilingual scenarios",
+        "languages": "Chinese/English/Japanese/Korean/Cantonese",
         "memory_mb": 500,
         "disk_mb": 300,
         "download_type": "sense-voice",
         "needs_vad": True
     },
     "streaming-zipformer": {
-        "name": "Streaming Zipformer (英文)",
-        "description": "低延迟，高精度，仅支持英文",
-        "languages": "英文",
+        "name": "Streaming Zipformer (English)",
+        "description": "Low latency, high accuracy, English only",
+        "languages": "English",
         "memory_mb": 400,
         "disk_mb": 200,
         "download_type": "streaming-zipformer",
         "needs_vad": False
     },
     "streaming-zipformer-bilingual": {
-        "name": "Streaming Zipformer (中英) - 手动下载",
-        "description": "低延迟，中英双语（需要手动下载）",
-        "languages": "中英",
+        "name": "Streaming Zipformer (Chinese/English) - Manual Download",
+        "description": "Low latency, Chinese/English bilingual (requires manual download)",
+        "languages": "Chinese/English",
         "memory_mb": 450,
         "disk_mb": 250,
         "download_type": None,  # Not supported by download-models.sh
@@ -65,7 +65,7 @@ MODELS = {
             "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2",
             "target_dir": "streaming-zipformer",
             "instructions": [
-                "下载中英双语模型:",
+                "Download Chinese/English bilingual model:",
                 f"  cd {DEFAULT_INSTALL_DIR}/models",
                 "  wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2",
                 "  mkdir -p streaming-zipformer",
@@ -75,9 +75,9 @@ MODELS = {
         }
     },
     "all": {
-        "name": "所有模型",
-        "description": "安装所有可用模型（多语言 + 英文 + 标点）",
-        "languages": "全部",
+        "name": "All Models",
+        "description": "Install all available models (multilingual + English + punctuation)",
+        "languages": "All",
         "memory_mb": 1200,
         "disk_mb": 700,
         "download_type": "all",
@@ -122,9 +122,9 @@ def check_zasr_project() -> bool:
         return True
 
     # Clone from GitHub
-    print_info(f"从 GitHub 克隆 ZASR 项目...")
-    print_info(f"仓库: {ZASR_GITHUB_REPO}")
-    print_info(f"临时目录: {project_root}")
+    print_info(f"Cloning ZASR project from GitHub...")
+    print_info(f"Repository: {ZASR_GITHUB_REPO}")
+    print_info(f"Temporary directory: {project_root}")
 
     try:
         subprocess.run(
@@ -132,14 +132,14 @@ def check_zasr_project() -> bool:
             check=True,
             capture_output=True
         )
-        print_success("ZASR 项目克隆完成")
+        print_success("ZASR project cloned successfully")
         return True
     except subprocess.CalledProcessError as e:
-        print_error(f"克隆 ZASR 项目失败: {e}")
+        print_error(f"Failed to clone ZASR project: {e}")
         print_error(f"stderr: {e.stderr.decode() if e.stderr else 'N/A'}")
         return False
     except FileNotFoundError:
-        print_error("git 未安装，请先安装 git")
+        print_error("git is not installed. Please install git first")
         return False
 
 
@@ -149,9 +149,9 @@ def cleanup_zasr_project():
     if ZASR_TEMP_DIR and ZASR_TEMP_DIR.exists():
         try:
             shutil.rmtree(ZASR_TEMP_DIR)
-            print_info(f"已清理临时目录: {ZASR_TEMP_DIR}")
+            print_info(f"Cleaned up temporary directory: {ZASR_TEMP_DIR}")
         except Exception as e:
-            print_warning(f"清理临时目录失败: {e}")
+            print_warning(f"Failed to clean up temporary directory: {e}")
         finally:
             ZASR_TEMP_DIR = None
 
@@ -161,8 +161,8 @@ def check_build() -> bool:
     project_root = get_zasr_project_root()
     binary = project_root / "build" / "zasr-server"
     if not binary.exists():
-        print_warning(f"ZASR 服务未编译: {binary}")
-        print_info("需要从源码编译 zasr-server")
+        print_warning(f"ZASR service not built: {binary}")
+        print_info("Need to build zasr-server from source")
         return False
     return True
 
@@ -173,7 +173,7 @@ def fix_yaml_cpp_download(third_party: Path) -> bool:
     if yaml_cpp_dir.exists():
         return True  # Already exists
 
-    print_warning("尝试修复 yaml-cpp 下载...")
+    print_warning("Attempting to fix yaml-cpp download...")
     try:
         # Download using correct tag (0.8.0 instead of yaml-cpp-0.8.0)
         tarball = third_party / "yaml-cpp-0.8.0.tar.gz"
@@ -206,10 +206,10 @@ def fix_yaml_cpp_download(third_party: Path) -> bool:
             check=True
         )
 
-        print_success("yaml-cpp 下载修复成功")
+        print_success("yaml-cpp download fix successful")
         return True
     except subprocess.CalledProcessError as e:
-        print_error(f"yaml-cpp 下载修复失败: {e}")
+        print_error(f"yaml-cpp download fix failed: {e}")
         return False
 
 
@@ -219,13 +219,13 @@ def download_and_build_sherpa_onnx(third_party: Path) -> bool:
 
     # Check if already built
     if (sherpa_dir / "build" / "lib" / "libsherpa-onnx-core.a").exists():
-        print_info("sherpa-onnx 已编译，跳过")
+        print_info("sherpa-onnx already built, skipping")
         return True
 
     # Clone if needed
     if not sherpa_dir.exists():
-        print_warning("下载 sherpa-onnx...")
-        print_info("注意：sherpa-onnx 仓库较大（约 300MB+），下载可能需要一些时间...")
+        print_warning("Downloading sherpa-onnx...")
+        print_info("Note: sherpa-onnx repository is large (~300MB+), download may take some time...")
         try:
             subprocess.run(
                 ["git", "clone", "--depth", "1", "--branch", "master",
@@ -233,21 +233,21 @@ def download_and_build_sherpa_onnx(third_party: Path) -> bool:
                 cwd=third_party,
                 check=True
             )
-            print_success("sherpa-onnx 克隆完成")
+            print_success("sherpa-onnx cloned successfully")
         except subprocess.CalledProcessError as e:
-            print_error(f"sherpa-onnx 克隆失败: {e}")
+            print_error(f"sherpa-onnx clone failed: {e}")
             return False
 
     # Build sherpa-onnx
-    print_header("编译 sherpa-onnx")
-    print_warning("sherpa-onnx 编译可能需要 10-30 分钟，请耐心等待...")
+    print_header("Building sherpa-onnx")
+    print_warning("sherpa-onnx compilation may take 10-30 minutes, please wait...")
 
     sherpa_build_dir = sherpa_dir / "build"
     sherpa_build_dir.mkdir(exist_ok=True)
 
     try:
         # Configure sherpa-onnx
-        print_info("配置 sherpa-onnx...")
+        print_info("Configuring sherpa-onnx...")
         subprocess.run(
             ["cmake", "..", "-DCMAKE_BUILD_TYPE=Release",
              "-DSHERPA_ONNX_ENABLE_PYTHON=OFF",
@@ -258,35 +258,35 @@ def download_and_build_sherpa_onnx(third_party: Path) -> bool:
         )
 
         # Build sherpa-onnx
-        print_info("编译 sherpa-onnx（使用 {} 线程）...".format(os.cpu_count() or 2))
+        print_info("Building sherpa-onnx (using {} threads)...".format(os.cpu_count() or 2))
         subprocess.run(
             ["make", f"-j{os.cpu_count() or 2}"],
             cwd=sherpa_build_dir,
             check=True
         )
 
-        print_success("sherpa-onnx 编译完成")
+        print_success("sherpa-onnx build completed")
         return True
     except subprocess.CalledProcessError as e:
-        print_error(f"sherpa-onnx 编译失败: {e}")
+        print_error(f"sherpa-onnx build failed: {e}")
         return False
 
 
 def build_zasr() -> bool:
     """Build zasr from source"""
-    print_header("编译 ZASR 服务")
+    print_header("Building ZASR Service")
 
     project_root = get_zasr_project_root()
 
     # Check dependencies
     if not shutil.which("cmake"):
-        print_error("CMake 未安装")
-        print_info("请运行: sudo apt install cmake")
+        print_error("CMake is not installed")
+        print_info("Please run: sudo apt install cmake")
         return False
 
     if not shutil.which("g++") and not shutil.which("clang++"):
-        print_error("C++ 编译器未安装")
-        print_info("请运行: sudo apt install build-essential")
+        print_error("C++ compiler is not installed")
+        print_info("Please run: sudo apt install build-essential")
         return False
 
     # Download dependencies if needed
@@ -294,7 +294,7 @@ def build_zasr() -> bool:
 
     # Try using download_deps.sh first
     if not (third_party / "sherpa-onnx").exists():
-        print_info("下载第三方依赖...")
+        print_info("Downloading third-party dependencies...")
         download_script = third_party / "download_deps.sh"
         if download_script.exists():
             try:
@@ -304,16 +304,16 @@ def build_zasr() -> bool:
                     check=True,
                     timeout=600  # 10 minutes timeout
                 )
-                print_success("依赖下载完成")
+                print_success("Dependencies downloaded successfully")
             except subprocess.CalledProcessError as e:
-                print_warning(f"依赖下载脚本失败: {e}")
-                print_info("尝试自动修复 yaml-cpp 下载...")
+                print_warning(f"Dependency download script failed: {e}")
+                print_info("Attempting to fix yaml-cpp download...")
                 if not fix_yaml_cpp_download(third_party):
-                    print_error("依赖下载失败且自动修复失败")
+                    print_error("Dependency download failed and automatic fix failed")
                     return False
-                print_success("依赖下载完成（使用备用方案）")
+                print_success("Dependencies downloaded (using fallback method)")
             except subprocess.TimeoutExpired:
-                print_warning("依赖下载超时")
+                print_warning("Dependency download timed out")
 
     # Download other small dependencies (asio, websocketpp, json.hpp)
     for dep_name, dep_url, dep_extract_cmd in [
@@ -321,7 +321,7 @@ def build_zasr() -> bool:
         ("websocketpp", "https://github.com/zaphoyd/websocketpp/archive/refs/tags/0.8.2.tar.gz", "websocketpp-0.8.2"),
     ]:
         if not (third_party / dep_name).exists():
-            print_info(f"下载 {dep_name}...")
+            print_info(f"Downloading {dep_name}...")
             try:
                 tarball = third_party / f"{dep_name}.tar.gz"
                 subprocess.run(
@@ -343,7 +343,7 @@ def build_zasr() -> bool:
 
     # Download json.hpp
     if not (third_party / "json.hpp").exists():
-        print_info("下载 nlohmann/json...")
+        print_info("Downloading nlohmann/json...")
         try:
             subprocess.run(
                 ["wget", "-q", "-O", "json.hpp",
@@ -362,7 +362,7 @@ def build_zasr() -> bool:
     build_dir = project_root / "build"
     build_dir.mkdir(exist_ok=True)
 
-    print_info("开始编译 zasr-server...")
+    print_info("Starting zasr-server compilation...")
     try:
         subprocess.run(
             ["cmake", "..", "-DCMAKE_BUILD_TYPE=Release"],
@@ -374,41 +374,41 @@ def build_zasr() -> bool:
             cwd=build_dir,
             check=True
         )
-        print_success("zasr-server 编译完成")
+        print_success("zasr-server compiled successfully")
         return True
     except subprocess.CalledProcessError as e:
-        print_error(f"编译失败: {e}")
+        print_error(f"Compilation failed: {e}")
         return False
 
 
 def select_models() -> List[str]:
     """Interactive model selection"""
-    print_header("选择 ASR 模型")
+    print_header("Select ASR Model")
 
-    print_info("请选择要安装的 ASR 模型:")
+    print_info("Please select the ASR model to install:")
     print()
 
     options = list(MODELS.keys())
     for i, (key, info) in enumerate(MODELS.items(), 1):
         print(f"  {i}. {info['name']}")
         print(f"     {info['description']}")
-        print(f"     语言: {info['languages']}")
-        print(f"     内存: {info['memory_mb']}MB")
-        print(f"     磁盘: {info['disk_mb']}MB")
+        print(f"     Languages: {info['languages']}")
+        print(f"     Memory: {info['memory_mb']}MB")
+        print(f"     Disk: {info['disk_mb']}MB")
         print()
 
     while True:
         try:
-            choice = input("请输入选项 (1-4) [默认: 1]: ").strip() or "1"
+            choice = input("Enter option (1-4) [default: 1]: ").strip() or "1"
             idx = int(choice) - 1
             if 0 <= idx < len(options):
                 selected = options[idx]
-                print_success(f"已选择: {MODELS[selected]['name']}")
+                print_success(f"Selected: {MODELS[selected]['name']}")
                 return [selected]  # Return model key instead of model names
             else:
-                print_error("无效选项，请重新输入")
+                print_error("Invalid option, please try again")
         except (ValueError, KeyboardInterrupt):
-            print_error("输入无效")
+            print_error("Invalid input")
             return []
 
 
@@ -420,18 +420,18 @@ def install_zasr(install_dir: Path, models: List[str], from_source: bool = False
         if not build_zasr():
             return False
 
-    print_header("安装 ZASR 服务")
+    print_header("Installing ZASR Service")
 
     project_root = get_zasr_project_root()
 
     # Check if install directory exists and is not empty
     if install_dir.exists() and list(install_dir.iterdir()):
-        print_warning(f"安装目录已存在且不为空: {install_dir}")
-        print_info("将清空并重新安装...")
+        print_warning(f"Installation directory already exists and is not empty: {install_dir}")
+        print_info("Will clean and reinstall...")
         try:
             shutil.rmtree(install_dir)
         except Exception as e:
-            print_error(f"清理目录失败: {e}")
+            print_error(f"Failed to clean directory: {e}")
             return False
 
     # Prepare install script arguments
@@ -443,18 +443,18 @@ def install_zasr(install_dir: Path, models: List[str], from_source: bool = False
         "--from-binary"
     ]
 
-    print_info(f"安装目录: {install_dir}")
-    print_info(f"运行: {' '.join(cmd)}")
+    print_info(f"Installation directory: {install_dir}")
+    print_info(f"Running: {' '.join(cmd)}")
 
     try:
         # Set environment to skip interactive prompts
         env = os.environ.copy()
         env['DEBIAN_FRONTEND'] = 'noninteractive'
         subprocess.run(cmd, check=True, env=env)
-        print_success("ZASR 服务安装完成")
+        print_success("ZASR service installed successfully")
         return True
     except subprocess.CalledProcessError as e:
-        print_error(f"安装失败: {e}")
+        print_error(f"Installation failed: {e}")
         return False
 
 
@@ -465,7 +465,7 @@ def download_vad_model(install_dir: Path) -> bool:
 
     # Check if VAD model already exists
     if vad_model.exists() and vad_model.stat().st_size > 0:
-        print_info("VAD 模型已存在")
+        print_info("VAD model already exists")
         return True
 
     # Create directory
@@ -474,7 +474,7 @@ def download_vad_model(install_dir: Path) -> bool:
     # Download VAD model
     vad_url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
 
-    print_info("下载 Silero VAD 模型...")
+    print_info("Downloading Silero VAD model...")
     print_info(f"  URL: {vad_url}")
 
     try:
@@ -482,10 +482,10 @@ def download_vad_model(install_dir: Path) -> bool:
             ["wget", "-O", str(vad_model), vad_url],
             check=True
         )
-        print_success("VAD 模型下载完成")
+        print_success("VAD model downloaded successfully")
         return True
     except subprocess.CalledProcessError as e:
-        print_error(f"VAD 模型下载失败: {e}")
+        print_error(f"VAD model download failed: {e}")
         # Clean up partial download
         if vad_model.exists():
             try:
@@ -498,14 +498,14 @@ def download_vad_model(install_dir: Path) -> bool:
 def download_models(install_dir: Path, model_keys: List[str]) -> bool:
     """Download ASR models based on user selection"""
     if not model_keys:
-        print_warning("未选择模型，跳过模型下载")
+        print_warning("No model selected, skipping model download")
         return True
 
-    print_header("下载 ASR 模型")
+    print_header("Downloading ASR Models")
 
     download_script = install_dir / "scripts" / "download-models.sh"
     if not download_script.exists():
-        print_error(f"模型下载脚本未找到: {download_script}")
+        print_error(f"Model download script not found: {download_script}")
         return False
 
     # Process each model selection
@@ -515,13 +515,13 @@ def download_models(install_dir: Path, model_keys: List[str]) -> bool:
     for model_key in model_keys:
         model_info = MODELS.get(model_key)
         if not model_info:
-            print_warning(f"未知模型: {model_key}")
+            print_warning(f"Unknown model: {model_key}")
             continue
 
         # Check if this model requires manual download
         if model_info.get("manual_download"):
             has_manual_download = True
-            print_info(f"模型 '{model_info['name']}' 需要手动下载")
+            print_info(f"Model '{model_info['name']}' requires manual download")
             for instruction in model_info["manual_download"]["instructions"]:
                 print(f"  {instruction}")
             print()
@@ -530,8 +530,8 @@ def download_models(install_dir: Path, model_keys: List[str]) -> bool:
         # Download using download-models.sh
         download_type = model_info.get("download_type")
         if download_type:
-            print_info(f"下载 {model_info['name']}...")
-            print_warning("模型下载可能需要较长时间和较多网络流量")
+            print_info(f"Downloading {model_info['name']}...")
+            print_warning("Model download may take a long time and significant bandwidth")
 
             try:
                 subprocess.run(
@@ -540,20 +540,20 @@ def download_models(install_dir: Path, model_keys: List[str]) -> bool:
                      "--non-interactive"],
                     check=True
                 )
-                print_success(f"{model_info['name']} 下载完成")
+                print_success(f"{model_info['name']} downloaded successfully")
                 downloaded_something = True
             except subprocess.CalledProcessError as e:
-                print_error(f"{model_info['name']} 下载失败: {e}")
+                print_error(f"{model_info['name']} download failed: {e}")
                 return False
 
     # Always download VAD and Punctuation models (they are small and essential)
-    print_header("下载辅助模型")
-    print_info("下载 Punctuation（标点符号）和 VAD（语音活动检测）模型...")
-    print_info("这些模型体积小但功能重要，建议总是下载")
+    print_header("Downloading Auxiliary Models")
+    print_info("Downloading Punctuation and VAD (Voice Activity Detection) models...")
+    print_info("These models are small but important, recommended to always download")
 
     # Download Punctuation model using download-models.sh
     try:
-        print_info("下载 punctuation 模型...")
+        print_info("Downloading punctuation model...")
         subprocess.run(
             [str(download_script), "--type", "punctuation",
              "--dir", str(install_dir / "models"),
@@ -561,10 +561,10 @@ def download_models(install_dir: Path, model_keys: List[str]) -> bool:
             check=True,
             timeout=180
         )
-        print_success("punctuation 模型下载完成")
+        print_success("punctuation model downloaded successfully")
         downloaded_something = True
     except subprocess.TimeoutExpired:
-        print_warning("punctuation 模型下载超时")
+        print_warning("punctuation model download timed out")
     except subprocess.CalledProcessError as e:
         # Check if model files exist and are valid
         punctuation_dir = install_dir / "models" / "punctuation"
@@ -572,76 +572,76 @@ def download_models(install_dir: Path, model_keys: List[str]) -> bool:
             files = list(punctuation_dir.rglob("*"))
             non_empty_files = [f for f in files if f.is_file() and f.stat().st_size > 0]
             if non_empty_files:
-                print_info("punctuation 模型已存在")
+                print_info("punctuation model already exists")
                 downloaded_something = True
             else:
-                print_warning("punctuation 模型下载失败")
+                print_warning("punctuation model download failed")
         else:
-            print_warning("punctuation 模型下载失败")
+            print_warning("punctuation model download failed")
 
     # Download VAD model directly using correct URL
     print()
     if download_vad_model(install_dir):
         downloaded_something = True
     else:
-        print_warning("VAD 模型下载失败")
-        print_info("提示: VAD 模型对于 SenseVoice 是必需的，对于 Streaming Zipformer 是可选的")
+        print_warning("VAD model download failed")
+        print_info("Note: VAD model is required for SenseVoice, optional for Streaming Zipformer")
 
     # Show manual download instructions if needed
     if has_manual_download:
-        print_header("手动下载说明")
-        print_warning("以下模型需要手动下载:")
+        print_header("Manual Download Instructions")
+        print_warning("The following models require manual download:")
         print()
 
         for model_key in model_keys:
             model_info = MODELS.get(model_key)
             if model_info and model_info.get("manual_download"):
-                print(f"模型: {model_info['name']}")
-                print(f"语言: {model_info['languages']}")
-                print(f"下载地址: {model_info['manual_download']['url']}")
+                print(f"Model: {model_info['name']}")
+                print(f"Languages: {model_info['languages']}")
+                print(f"Download URL: {model_info['manual_download']['url']}")
                 print()
-                print("下载步骤:")
+                print("Download steps:")
                 for step in model_info["manual_download"]["instructions"]:
                     print(f"  {step}")
                 print()
 
     if downloaded_something or has_manual_download:
-        print_header("模型下载完成")
+        print_header("Model Download Complete")
         if has_manual_download:
-            print_info("请按照上述说明手动下载其他模型")
+            print_info("Please follow the instructions above to manually download other models")
             print()
 
         # Show how to download models later
-        print_info("后续下载模型的方法:")
+        print_info("Methods for downloading models later:")
         print()
-        print(f"  交互式选择: {download_script}")
-        print(f"  下载特定模型: {download_script} --type <sense-voice|streaming-zipformer|vad|punctuation|all>")
-        print(f"  指定目录: {download_script} --type all --dir {install_dir}/models")
+        print(f"  Interactive selection: {download_script}")
+        print(f"  Download specific model: {download_script} --type <sense-voice|streaming-zipformer|vad|punctuation|all>")
+        print(f"  Specify directory: {download_script} --type all --dir {install_dir}/models")
         print()
 
         # Show sherpa-onnx official website for more models
-        print_header("更多模型")
-        print_info("您可以从 sherpa-onnx 官网下载更多预训练模型:")
+        print_header("More Models")
+        print_info("You can download more pretrained models from sherpa-onnx official website:")
         print()
-        print("  🌐 Online Transducer 模型（流式识别，低延迟）:")
+        print("  Online Transducer models (streaming, low latency):")
         print("     https://k2-fsa.github.io/sherpa/onnx/pretrained_models/online-transducer/index.html")
         print()
-        print("  🌐 Offline Transducer 模型（非流式识别，高精度）:")
+        print("  Offline Transducer models (batch, high accuracy):")
         print("     https://k2-fsa.github.io/sherpa/onnx/pretrained_models/offline-transducer/index.html")
         print()
-        print("  🌐 语音活动检测 (VAD) 模型:")
+        print("  Voice Activity Detection (VAD) models:")
         print("     https://k2-fsa.github.io/sherpa/onnx/pretrained_models/vad/index.html")
         print()
-        print("  🌐 标点符号模型:")
+        print("  Punctuation models:")
         print("     https://k2-fsa.github.io/sherpa/onnx/pretrained_models/punctuation/index.html")
         print()
-        print("  🌐 所有预训练模型:")
+        print("  All pretrained models:")
         print("     https://k2-fsa.github.io/sherpa/onnx/pretrained_models/index.html")
         print()
-        print_info("手动添加模型:")
-        print(f"  1. 下载模型到: {install_dir}/models/")
-        print(f"  2. 更新配置文件: {install_dir}/config/default.yaml")
-        print(f"  3. 重启服务: {install_dir}/scripts/zasrctl restart")
+        print_info("Manually add models:")
+        print(f"  1. Download models to: {install_dir}/models/")
+        print(f"  2. Update config file: {install_dir}/config/default.yaml")
+        print(f"  3. Restart service: {install_dir}/scripts/zasrctl restart")
         print()
 
     return True
@@ -649,28 +649,28 @@ def download_models(install_dir: Path, model_keys: List[str]) -> bool:
 
 def verify_installation(install_dir: Path) -> bool:
     """Verify zasr installation"""
-    print_header("验证安装")
+    print_header("Verifying Installation")
 
     binary = install_dir / "bin" / "zasr-server"
     if not binary.exists():
-        print_error(f"zasr-server 二进制文件未找到: {binary}")
+        print_error(f"zasr-server binary not found: {binary}")
         return False
 
     ctl_script = install_dir / "scripts" / "zasrctl"
     if not ctl_script.exists():
-        print_error(f"zasrctl 脚本未找到: {ctl_script}")
+        print_error(f"zasrctl script not found: {ctl_script}")
         return False
 
-    print_success("ZASR 服务安装验证成功")
+    print_success("ZASR service installation verified successfully")
     print()
-    print_info("安装位置:")
-    print(f"  二进制: {binary}")
-    print(f"  控制脚本: {ctl_script}")
+    print_info("Installation location:")
+    print(f"  Binary: {binary}")
+    print(f"  Control script: {ctl_script}")
     print()
-    print_info("使用方法:")
-    print(f"  启动服务: {ctl_script} start")
-    print(f"  停止服务: {ctl_script} stop")
-    print(f"  查看状态: {ctl_script} status")
+    print_info("Usage:")
+    print(f"  Start service: {ctl_script} start")
+    print(f"  Stop service: {ctl_script} stop")
+    print(f"  Check status: {ctl_script} status")
     print()
 
     return True
@@ -678,7 +678,7 @@ def verify_installation(install_dir: Path) -> bool:
 
 def main():
     """Main installation flow"""
-    print_header("ZAI.VIM - ZASR 服务安装程序")
+    print_header("ZAI.VIM - ZASR Service Installer")
 
     # Check zasr project
     if not check_zasr_project():
@@ -689,30 +689,30 @@ def main():
 
     # Interactive installation
     print()
-    print_info("欢迎使用 ZASR 服务安装程序")
+    print_info("Welcome to ZASR Service Installer")
     print()
 
     # Select installation directory
     install_dir_str = input(
-        f"安装目录 [默认: {DEFAULT_INSTALL_DIR}]: "
+        f"Installation directory [default: {DEFAULT_INSTALL_DIR}]: "
     ).strip() or str(DEFAULT_INSTALL_DIR)
     install_dir = Path(install_dir_str)
 
     # Select models
     model_keys = select_models()
     if not model_keys:
-        print_warning("未选择模型，退出")
+        print_warning("No model selected, exiting")
         return 1
 
     # Show memory warning
     total_memory = sum(MODELS[key]['memory_mb'] for key in model_keys)
     print()
-    print_warning(f"预计内存占用: {total_memory}MB")
+    print_warning(f"Estimated memory usage: {total_memory}MB")
     print()
 
-    confirm = input("继续安装? (y/N): ").strip().lower()
+    confirm = input("Continue installation? (y/N): ").strip().lower()
     if confirm != 'y':
-        print_info("安装已取消")
+        print_info("Installation cancelled")
         return 0
 
     # Install zasr
@@ -727,13 +727,13 @@ def main():
     if not verify_installation(install_dir):
         return 1
 
-    print_header("安装完成")
-    print_success("ZASR 服务已成功安装")
+    print_header("Installation Complete")
+    print_success("ZASR service installed successfully")
     print()
-    print_info("下一步:")
-    print("  1. 按照上述说明下载模型（如果需要）")
-    print("  2. 在 .vimrc 中设置: let g:zai_auto_enable_asr = 1")
-    print("  3. 启动 Vim，ASR 将自动启用")
+    print_info("Next steps:")
+    print("  1. Download models according to the instructions above (if needed)")
+    print("  2. Set in .vimrc: let g:zai_auto_enable_asr = 1")
+    print("  3. Start Vim, ASR will be automatically enabled")
     print()
 
     # Clean up temporary directory
@@ -746,7 +746,7 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except KeyboardInterrupt:
-        print("\n\n安装已取消")
+        print("\n\nInstallation cancelled")
         # Clean up on interrupt
         cleanup_zasr_project()
         sys.exit(1)
