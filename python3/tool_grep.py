@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Zai.Vim - AI Assistant Integration for Vim
+# Copyright (C) 2025-2026 zighouse <zighouse@users.noreply.github.com>
+#
+# Licensed under the MIT License
+#
 """
 Grep工具集 - 在文件中搜索文本模式，类似于Unix grep命令
 支持递归搜索、正则表达式、大小写敏感等选项

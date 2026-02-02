@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Zai.Vim - AI Assistant Integration for Vim
+# Copyright (C) 2025-2026 zighouse <zighouse@users.noreply.github.com>
+#
+# Licensed under the MIT License
+#
 import json
 import re
 import sys
@@ -71,10 +76,10 @@ def config_path_assistants() -> str:
         conf_dir.mkdir(parents=True, exist_ok=True)
     except:
         return "assistants.yaml"  # fallback
-    
+
     yaml_path = conf_dir / "assistants.yaml"
     json_path = conf_dir / "assistants.json"
-    
+
     # Prefer YAML if exists
     if yaml_path.is_file():
         return str(yaml_path)
@@ -95,7 +100,7 @@ def convert_json_to_yaml(json_path: Path, yaml_path: Path) -> bool:
         # Strip comments before parsing
         cleaned = _strip_comments(content)
         config_data = json.loads(cleaned)
-        
+
         # Write as YAML
         if HAVE_YAML:
             with open(yaml_path, "w", encoding="utf-8") as f:
@@ -117,15 +122,15 @@ def convert_assistants_json_to_yaml() -> bool:
     conf_dir = Path(user_data_dir("zai", "zighouse"))
     json_path = conf_dir / "assistants.json"
     yaml_path = conf_dir / "assistants.yaml"
-    
+
     if not json_path.is_file():
         print(f"No assistants.json found at {json_path}", file=sys.stderr)
         return False
-    
+
     if yaml_path.is_file():
         print(f"assistants.yaml already exists at {yaml_path}", file=sys.stderr)
         return True
-    
+
     return convert_json_to_yaml(json_path, yaml_path)
 
 def parse_number_from_readable(readable_number: str, *,
@@ -209,7 +214,7 @@ class AIAssistantManager:
         conf_dir = Path(user_data_dir("zai", "zighouse"))
         yaml_path = conf_dir / "assistants.yaml"
         json_path = conf_dir / "assistants.json"
-        
+
         # Try YAML first
         if yaml_path.is_file() and HAVE_YAML:
             try:
@@ -220,7 +225,7 @@ class AIAssistantManager:
             except Exception as e:
                 print(f"Failed to load YAML config {yaml_path}: {e}", file=sys.stderr)
                 # Fall through to JSON
-        
+
         # Try JSON
         if json_path.is_file():
             try:
@@ -229,16 +234,16 @@ class AIAssistantManager:
                 cleaned = _strip_comments(content)
                 config_data = json.loads(cleaned)
                 print(f"Loaded configuration from JSON: {json_path}", file=sys.stderr)
-                
+
                 # Auto-convert to YAML for future use
                 if HAVE_YAML and not yaml_path.is_file():
                     if convert_json_to_yaml(json_path, yaml_path):
                         print(f"Auto-converted JSON to YAML for future use", file=sys.stderr)
-                
+
                 return _normalize_keys(config_data)
             except Exception as e:
                 print(f"Failed to load JSON config {json_path}: {e}", file=sys.stderr)
-        
+
         # No configuration file found
         print(f"No configuration file found. Expected {yaml_path} or {json_path}", file=sys.stderr)
         return []
@@ -425,7 +430,7 @@ class AIAssistantManager:
 def main():
     """Command line interface for configuration management."""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="zai.vim AI assistants configuration manager")
     parser.add_argument("--convert", action="store_true",
                        help="Convert assistants.json to assistants.yaml")
@@ -435,9 +440,9 @@ def main():
                        help="Select AI assistant by name or index")
     parser.add_argument("--model", type=str,
                        help="Select model for the AI assistant")
-    
+
     args = parser.parse_args()
-    
+
     if args.convert:
         if convert_assistants_json_to_yaml():
             print("Conversion successful")

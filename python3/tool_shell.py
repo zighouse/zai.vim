@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Zai.Vim - AI Assistant Integration for Vim
+# Copyright (C) 2025-2026 zighouse <zighouse@users.noreply.github.com>
+#
+# Licensed under the MIT License
+#
 """
 Shell工具集 - 使用taskbox Docker容器安全地执行shell和Python命令
 完全基于Docker Python SDK，避免subprocess注入风险

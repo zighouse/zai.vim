@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Zai.Vim - AI Assistant Integration for Vim
+# Copyright (C) 2025-2026 zighouse <zighouse@users.noreply.github.com>
+#
+# Licensed under the MIT License
+#
 """
 图片生成AI功能模块
 支持多种AI图片生成服务，包括SiliconFlow、OpenAI DALL-E等

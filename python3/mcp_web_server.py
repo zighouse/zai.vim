@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Zai.Vim - AI Assistant Integration for Vim
+# Copyright (C) 2025-2026 zighouse <zighouse@users.noreply.github.com>
+#
+# Licensed under the MIT License
+#
 """
 MCP Server for web search and content fetching
 将 tool_web.py 包装成 MCP 服务器

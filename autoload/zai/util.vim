@@ -1,3 +1,8 @@
+" Zai.Vim - AI Assistant Integration for Vim
+" Copyright (C) 2025-2026 zighouse <zighouse@users.noreply.github.com>
+"
+" Licensed under the MIT License
+"
 let s:plugin_root = expand('<sfile>:h:h:h')
 let s:path_sep = has('win32') ? '\' : '/'
 let s:extra_fzf_opts = [
@@ -140,14 +145,14 @@ endfunction
 
 function! zai#util#EditAssistants()
     let l:config_file = s:assistants_path()
-    
+
     " 检查文件是否存在以及格式
     if filereadable(l:config_file)
         " 文件存在，检查是否是JSON格式
         if l:config_file =~# '\.json$'
             " 尝试自动转换为YAML
             let l:yaml_file = substitute(l:config_file, '\.json$', '.yaml', '')
-            
+
             " 调用Python函数进行转换
             let l:python_lines = [
                 \ 'import sys',
@@ -157,16 +162,16 @@ function! zai#util#EditAssistants()
                 \ 'print(\"SUCCESS\" if result else \"FAILED\")'
                 \]
             let l:python_code = join(l:python_lines, "\n")
-            
+
             echohl MoreMsg
             echom "检测到JSON配置文件，正在转换为YAML格式..."
             echohl None
-            
+
             let l:result = trim(system('python3 -c "' . l:python_code . '"'))
             echohl MoreMsg
             echom "结果: " . l:result
             echohl None
-            
+
             if l:result =~# 'SUCCESS$' && filereadable(l:yaml_file)
                 " 转换成功，打开YAML文件
                 let l:config_file = l:yaml_file
@@ -181,10 +186,10 @@ function! zai#util#EditAssistants()
             endif
         endif
     endif
-    
+
     " 打开配置文件
     execute 'new ' . l:config_file
-    
+
     " 设置文件类型
     if l:config_file =~# '\.yaml$' || l:config_file =~# '\.yml$'
         setfiletype yaml
@@ -235,7 +240,7 @@ function! s:fzf_window_opts(list_width)
                 \ 'bat --color=always --style=numbers "$filename" 2>/dev/null || cat "$filename"; ' .
                 \ 'fi'
 
-    let l:opts.options = l:opts.options + [ 
+    let l:opts.options = l:opts.options + [
                 \ '--preview-window', 'right:70%',
                 \ '--prompt', 'Zai Grep> ',
                 \ '--preview', l:preview_cmd
@@ -393,7 +398,7 @@ function! zai#util#Rg(args)
             let l:arg .= l:char
         endif
     endfor
-    
+
     if l:arg != ''
         let l:opts += [l:arg]
     endif
@@ -450,14 +455,14 @@ endfunction
 function! GetPathUnderCursor()
     let line_text = getline('.')
     let col_pos = col('.') - 1  " 转换为 0-based
-    
+
     " 定义路径模式
     " 匹配以 / 开头的绝对路径，或包含 ~/ 的家目录路径
     let path_pattern = '\v(/\S+|~/\S+)'
-    
+
     " 尝试匹配更复杂的路径（包含空格需要用引号包裹）
     let quoted_path_pattern = '\v[''"](\S+)[''"]'
-    
+
     " 首先检查是否在引号内的路径
     let start = 0
     while 1
@@ -465,9 +470,9 @@ function! GetPathUnderCursor()
         if match_start == -1
             break
         endif
-        
+
         let match_end = matchend(line_text, quoted_path_pattern, start)
-        
+
         " 检查光标是否在匹配范围内
         if col_pos >= match_start && col_pos < match_end
             let quoted = matchstr(line_text, quoted_path_pattern, start)
@@ -475,10 +480,10 @@ function! GetPathUnderCursor()
             let path = substitute(quoted, '\v[''"](\S+)[''"]', '\1', '')
             return path
         endif
-        
+
         let start = match_end
     endwhile
-    
+
     " 如果没有在引号内，尝试普通路径匹配
     let start = 0
     while 1
@@ -486,21 +491,21 @@ function! GetPathUnderCursor()
         if match_start == -1
             return ''
         endif
-        
+
         let match_end = matchend(line_text, path_pattern, start)
-        
+
         " 检查光标是否在匹配范围内
         if col_pos >= match_start && col_pos < match_end
             let path = matchstr(line_text, path_pattern, start)
-            
+
             " 扩展 ~ 到用户家目录
             if path =~# '^~/'
                 let path = expand(path)
             endif
-            
+
             return path
         endif
-        
+
         let start = match_end
     endwhile
 endfunction
@@ -509,14 +514,14 @@ endfunction
 function! GetEnhancedPathUnderCursor()
     let line_text = getline('.')
     let col_pos = col('.') - 1
-    
+
     " 支持多种路径格式：
     " 1. 绝对路径: /path/to/file
     " 2. 家目录: ~/path/to/file
     " 3. Windows 路径: C:\path\to\file 或 \\server\share
     " 4. 带空格和特殊字符的引号路径
     " 5. 相对路径: ./file 或 ../dir/file
-    
+
     "let patterns = [
     "    \ '\v[''"](\S[^''"]+\S)[''"]',           " 引号包裹的路径
     "    \ '\v(/\S[^[:space:]]*)',                " Unix 绝对路径
@@ -534,8 +539,8 @@ function! GetEnhancedPathUnderCursor()
         \ '\v(\\\\[^[:space:]]+)',
         \ '\v(\.{1,2}/\S[^[:space:]]*)',
         \ '\v(\w[^[:space:]]*/\S[^[:space:]]*)',
-        \]
-    
+        \ ]
+
     for pattern in patterns
         let start = 0
         while 1
@@ -543,29 +548,29 @@ function! GetEnhancedPathUnderCursor()
             if match_start == -1
                 break
             endif
-            
+
             let match_end = matchend(line_text, pattern, start)
-            
+
             if col_pos >= match_start && col_pos < match_end
                 let path = matchstr(line_text, pattern, start)
-                
+
                 " 清理引号
                 if path =~# '^[''"]' && path =~# '[''"]$'
                     let path = path[1:-2]
                 endif
-                
+
                 " 扩展 ~
                 if path =~# '^~/'
                     let path = expand(path)
                 endif
-                
+
                 return path
             endif
-            
+
             let start = match_end
         endwhile
     endfor
-    
+
     return ''
 endfunction
 

@@ -1,3 +1,8 @@
+" Zai.Vim - AI Assistant Integration for Vim
+" Copyright (C) 2025-2026 zighouse <zighouse@users.noreply.github.com>
+"
+" Licensed under the MIT License
+"
 " zai#asr - ASR (Automatic Speech Recognition) plugin for Vim 9.1+
 " Voice input in insert mode using zasr-server
 " Author: zighouse

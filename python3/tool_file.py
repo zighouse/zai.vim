@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Zai.Vim - AI Assistant Integration for Vim
+# Copyright (C) 2025-2026 zighouse <zighouse@users.noreply.github.com>
+#
+# Licensed under the MIT License
+#
 """
 File toolbox —— 动态兼容层
 所有导出函数统一加上 invoke_ 前缀，供 ToolManager.call_tool 路由

@@ -1,3 +1,8 @@
+" Zai.Vim - AI Assistant Integration for Vim
+" Copyright (C) 2025-2026 zighouse <zighouse@users.noreply.github.com>
+"
+" Licensed under the MIT License
+"
 scriptencoding utf-8
 
 let s:home = expand('<sfile>:h:h')
@@ -17,7 +22,7 @@ function! zai#init() abort
     let s:fim_api_key_name = exists('g:zai_fim_api_key_name') ? g:zai_fim_api_key_name : 'DEEPSEEK_API_KEY'
     let s:fim_model = exists('g:zai_fim_model') ? g:zai_fim_model : 'deepseek-chat'
 
-    let s:python_cmd = has('win32') ? 'python' : '/usr/bin/env python3' 
+    let s:python_cmd = has('win32') ? 'python' : '/usr/bin/env python3'
 
     if has('win32')
         let s:base_url = exists('g:zai_base_url') ? ['--base-url', g:zai_base_url] : []

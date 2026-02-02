@@ -1,3 +1,8 @@
+" Zai.Vim - AI Assistant Integration for Vim
+" Copyright (C) 2025-2026 zighouse <zighouse@users.noreply.github.com>
+"
+" Licensed under the MIT License
+"
 scriptencoding utf-8
 
 let s:fim_job = v:null
@@ -134,20 +139,20 @@ function! s:fim_popup_filter(winid, key) abort
     if a:key == "\<CR>"
         let l:line = getline('.')
         let l:fim_charcol = charcol('.') - s:fim_mode
-        let l:before = slice(l:line, 0, s:fim_charcol)
-        let l:after = slice(l:line, s:fim_charcol)
-        
+        let l:before = slice(l:line, 0, l:fim_charcol)
+        let l:after = slice(l:line, l:fim_charcol)
+
         call setline('.', l:before . s:fim_result[0])
-        
+
         if len(s:fim_result) > 1
             call append('.', s:fim_result[1:])
         endif
-        
+
         if !empty(l:after)
-            call setline(line('.') + len(s:fim_result) - 1, 
+            call setline(line('.') + len(s:fim_result) - 1,
                   \ getline(line('.') + len(s:fim_result) - 1) . l:after)
         endif
-        
+
         call popup_close(a:winid)
         let s:fim_win = 0
         let g:zai_fim_result = join(s:fim_result, "\n")
