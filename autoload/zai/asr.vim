@@ -53,8 +53,21 @@ let s:in_sentence = 0
 " Timestamp when ASR was started (for protection period)
 let s:start_time = 0
 
+" Initial cursor position when ASR starts (recorded but not used until first result)
+let s:initial_start_line = 0
+let s:initial_start_col = 0
+
 " Flag to prevent multiple stop calls
 let s:is_stopping = 0
+
+" Track buffer modifications to detect user input
+let s:last_changedtick = 0
+
+" Sign column visual feedback
+let s:asr_sign_id = 0          " Sign ID for ASR indicator
+let s:asr_sign_timer = 0       " Timer ID for animation
+let s:asr_sign_frame = 0       " Current animation frame
+let s:asr_sign_icons = ['🎤', '◌', '◎', '●']  " Animation sequence
 
 " ============================================================================
 " ZASR Service Management
@@ -205,13 +218,30 @@ function! zai#asr#start() abort
     let s:is_stopping = 0
     let s:start_time = reltime()  " Record start time for protection period
 
-    "" Set up autocommands to stop on any key press
-    "augroup ZaiASRStop
-    "    autocmd!
-    "    autocmd InsertCharPre * call s:maybe_insert_and_stop()
-    "    autocmd CursorMovedI * call s:maybe_insert_and_stop()
-    "    autocmd InsertLeave * call s:maybe_insert_and_stop()
-    "augroup END
+    " Record initial cursor position to use when first result arrives
+    let s:initial_start_line = line('.')
+    let s:initial_start_col = col('.')
+
+    " Set up autocommands to detect user modifications
+    augroup ZaiASRStop
+        autocmd!
+        " Detect text changes in insert mode
+        autocmd TextChangedI * call s:check_user_modification()
+        " Detect cursor movement (backup detection)
+        autocmd CursorMovedI * call s:check_user_modification()
+        " Update sign position when cursor moves
+        autocmd CursorMovedI * call s:show_asr_sign()
+        " Stop when leaving insert mode
+        autocmd InsertLeave * call s:stop_asr()
+    augroup END
+
+    " Record initial buffer state
+    let l:current_buf = bufnr('')
+    let s:last_changedtick = getbufvar(l:current_buf, 'changedtick')
+
+    " Define signs if not already defined, start visual feedback
+    call s:define_asr_signs()
+    call s:start_asr_animation()
 
     " Show status message
     echohl MoreMsg
@@ -228,9 +258,9 @@ function! s:stop_asr() abort
     let s:is_stopping = 1
     let s:asr_active = 0
 
-    "" Clear autocommands
-    "autocmd! ZaiASRStop
-    "augroup! ZaiASRStop
+    " Clear autocommands
+    silent! autocmd! ZaiASRStop
+    silent! augroup! ZaiASRStop
 
     " Send stop signal to Python script
     if type(s:asr_job) == v:t_job
@@ -297,6 +327,9 @@ function! s:stop_asr() abort
     echohl MoreMsg
     echom 'ASR stopped'
     echohl None
+
+    " Stop visual feedback
+    call s:stop_asr_animation()
 endfunction
 
 " Delete specified number of characters in insert mode
@@ -341,6 +374,35 @@ function! s:maybe_insert_and_stop() abort
     call s:stop_asr()
 endfunction
 
+" Check if user modified the buffer during ASR
+function! s:check_user_modification() abort
+    if !s:asr_active || s:is_stopping
+        return
+    endif
+
+    " Check if we're in the protection period (first 5 seconds)
+    let l:elapsed = reltimefloat(reltime(s:start_time))
+    if l:elapsed < 5.0
+        " Ignore buffer changes during protection period
+        return
+    endif
+
+    " Check if buffer was modified by user (not by ASR)
+    let l:current_buf = bufnr('')
+    let l:current_changedtick = getbufvar(l:current_buf, 'changedtick')
+
+    " Only stop if user typed something (changedtick increased)
+    " AND we're not in the middle of displaying ASR results
+    if l:current_changedtick > s:last_changedtick && !s:has_partial && empty(s:pending_text)
+        echom 'ASR: Detected user input, stopping recognition...'
+        call s:stop_asr()
+        return
+    endif
+
+    " Update tracking to avoid detecting our own changes
+    let s:last_changedtick = l:current_changedtick
+endfunction
+
 " Callback for stdout (received recognized text)
 function! s:on_stdout(job_id, data) abort
     let l:line = a:data
@@ -364,9 +426,10 @@ function! s:on_stdout(job_id, data) abort
                     let l:new_text = l:msg.text
 
                     " Record start position on first partial result
+                    " Use the initial position recorded at ASR start time
                     if !s:in_sentence
-                        let s:sentence_start_line = line('.')
-                        let s:sentence_start_col = col('.')
+                        let s:sentence_start_line = s:initial_start_line
+                        let s:sentence_start_col = s:initial_start_col
                         let s:in_sentence = 1
                     endif
 
@@ -378,8 +441,16 @@ function! s:on_stdout(job_id, data) abort
                     " Set the new line content
                     call setline(l:current_line, l:before_text . l:new_text)
 
-                    " Move cursor to end of new text
-                    call cursor(l:current_line, strchars(l:before_text) + strchars(l:new_text) + 1)
+                    " Update changedtick so we don't detect our own changes
+                    let l:current_buf = bufnr('')
+                    let s:last_changedtick = getbufvar(l:current_buf, 'changedtick')
+
+                    " Move cursor to end of inserted text using Right arrow keys
+                    let l:target_col = s:sentence_start_col + strchars(l:new_text)
+                    let l:current_col = col('.')
+                    if l:target_col > l:current_col
+                        call feedkeys(repeat("\<Right>", l:target_col - l:current_col), 'it')
+                    endif
 
                     " Update tracking variables
                     let s:pending_text = l:new_text
@@ -401,8 +472,16 @@ function! s:on_stdout(job_id, data) abort
                     " Set the new line content with final text
                     call setline(l:current_line, l:before_text . l:final_text)
 
-                    " Move cursor to end of final text
-                    call cursor(l:current_line, strchars(l:before_text) + strchars(l:final_text) + 1)
+                    " Update changedtick so we don't detect our own changes
+                    let l:current_buf = bufnr('')
+                    let s:last_changedtick = getbufvar(l:current_buf, 'changedtick')
+
+                    " Move cursor to end of inserted text using Right arrow keys
+                    let l:target_col = s:sentence_start_col + strchars(l:final_text)
+                    let l:current_col = col('.')
+                    if l:target_col > l:current_col
+                        call feedkeys(repeat("\<Right>", l:target_col - l:current_col), 'it')
+                    endif
 
                     " Reset sentence state
                     let s:pending_text = ''
@@ -499,6 +578,107 @@ function! zai#asr#setup() abort
     echohl MoreMsg
     echom 'zai#asr loaded. Press <C-G> in insert mode to start voice input, toggle to stop.'
     echohl None
+endfunction
+
+" ============================================================================
+" Sign Column Visual Feedback
+" ============================================================================
+
+" Define ASR signs
+function! s:define_asr_signs() abort
+    " Define base ASR sign (microphone)
+    try
+        execute 'sign define ZaiASR text=🎤 texthl=Special'
+    catch
+        " Fallback to ASCII
+        execute 'sign define ZaiASR text=* texthl=Special'
+    endtry
+
+    " Define animated sign frames (pulse effect)
+    let l:frame = 0
+    for l:icon in s:asr_sign_icons
+        try
+            execute printf('sign define ZaiASRFrame%d text=%s texthl=Special',
+                         \ l:frame, l:icon)
+        catch
+            execute printf('sign define ZaiASRFrame%d text=%s texthl=Special',
+                         \ l:frame, '.')
+        endtry
+        let l:frame += 1
+    endfor
+endfunction
+
+" Place sign on current line
+function! s:show_asr_sign() abort
+    if !s:asr_active
+        return
+    endif
+
+    let l:current_line = line('.')
+    let l:current_buf = bufnr('')
+
+    " Remove old sign if exists
+    if s:asr_sign_id != 0
+        execute printf('silent! sign unplace %d buffer=%d', s:asr_sign_id, l:current_buf)
+    endif
+
+    " Place new sign with unique ID (line + 10000 to avoid conflicts)
+    let s:asr_sign_id = l:current_line + 10000
+    execute printf('sign place %d line=%d name=ZaiASR buffer=%d', s:asr_sign_id, l:current_line, l:current_buf)
+endfunction
+
+" Update sign with animation frame
+function! s:update_asr_sign() abort
+    if !s:asr_active || s:asr_sign_timer == 0
+        return
+    endif
+
+    let l:current_line = line('.')
+    let l:current_buf = bufnr('')
+
+    " Remove current sign
+    if s:asr_sign_id != 0
+        execute printf('silent! sign unplace %d buffer=%d', s:asr_sign_id, l:current_buf)
+    endif
+
+    " Place next frame
+    let l:frame_name = 'ZaiASRFrame' . s:asr_sign_frame
+    let s:asr_sign_id = l:current_line + 10000
+    execute printf('sign place %d line=%d name=%s buffer=%d', s:asr_sign_id, l:current_line, l:frame_name, l:current_buf)
+
+    " Cycle to next frame
+    let s:asr_sign_frame = (s:asr_sign_frame + 1) % len(s:asr_sign_icons)
+endfunction
+
+" Start animation
+function! s:start_asr_animation() abort
+    " Stop any existing animation
+    call s:stop_asr_animation()
+
+    " Show initial sign
+    call s:show_asr_sign()
+
+    " Start timer to update every 500ms
+    let s:asr_sign_timer = timer_start(500, {-> s:update_asr_sign()}, {'repeat': -1})
+endfunction
+
+" Stop animation and remove sign
+function! s:stop_asr_animation() abort
+    " Stop timer
+    if s:asr_sign_timer != 0
+        call timer_stop(s:asr_sign_timer)
+        let s:asr_sign_timer = 0
+    endif
+
+    " Remove sign
+    if s:asr_sign_id != 0
+        let l:current_buf = bufnr('')
+        execute printf('silent! sign unplace %d buffer=%d', s:asr_sign_id, l:current_buf)
+        let s:asr_sign_id = 0
+    endif
+
+    " Reset animation frame
+    let s:asr_sign_frame = 0
 endfunction
 
 " Restore cpoptions
