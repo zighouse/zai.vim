@@ -53,10 +53,6 @@ let s:in_sentence = 0
 " Timestamp when ASR was started (for protection period)
 let s:start_time = 0
 
-" Initial cursor position when ASR starts (recorded but not used until first result)
-let s:initial_start_line = 0
-let s:initial_start_col = 0
-
 " Flag to prevent multiple stop calls
 let s:is_stopping = 0
 
@@ -68,6 +64,10 @@ let s:asr_sign_id = 0          " Sign ID for ASR indicator
 let s:asr_sign_timer = 0       " Timer ID for animation
 let s:asr_sign_frame = 0       " Current animation frame
 let s:asr_sign_icons = ['🎤', '◌', '◎', '●']  " Animation sequence
+
+" Text property for highlighting partial ASR text
+let s:partial_prop_id = 0      " Property ID for current partial text
+let s:partial_prop_type = 'ZaiASRPartial'  " Property type name
 
 " ============================================================================
 " ZASR Service Management
@@ -218,10 +218,6 @@ function! zai#asr#start() abort
     let s:is_stopping = 0
     let s:start_time = reltime()  " Record start time for protection period
 
-    " Record initial cursor position to use when first result arrives
-    let s:initial_start_line = line('.')
-    let s:initial_start_col = col('.')
-
     " Set up autocommands to detect user modifications
     augroup ZaiASRStop
         autocmd!
@@ -239,8 +235,9 @@ function! zai#asr#start() abort
     let l:current_buf = bufnr('')
     let s:last_changedtick = getbufvar(l:current_buf, 'changedtick')
 
-    " Define signs if not already defined, start visual feedback
+    " Define signs and highlight if not already defined, start visual feedback
     call s:define_asr_signs()
+    call s:define_partial_highlight()
     call s:start_asr_animation()
 
     " Show status message
@@ -330,6 +327,9 @@ function! s:stop_asr() abort
 
     " Stop visual feedback
     call s:stop_asr_animation()
+
+    " Clear partial text highlight
+    call s:clear_partial_highlight()
 endfunction
 
 " Delete specified number of characters in insert mode
@@ -426,10 +426,10 @@ function! s:on_stdout(job_id, data) abort
                     let l:new_text = l:msg.text
 
                     " Record start position on first partial result
-                    " Use the initial position recorded at ASR start time
+                    " Use CURRENT cursor position for each new sentence
                     if !s:in_sentence
-                        let s:sentence_start_line = s:initial_start_line
-                        let s:sentence_start_col = s:initial_start_col
+                        let s:sentence_start_line = line('.')
+                        let s:sentence_start_col = col('.')
                         let s:in_sentence = 1
                     endif
 
@@ -440,6 +440,9 @@ function! s:on_stdout(job_id, data) abort
 
                     " Set the new line content
                     call setline(l:current_line, l:before_text . l:new_text)
+
+                    " Highlight the partial text with underline
+                    call s:highlight_partial_text(s:sentence_start_col, s:sentence_start_col + strchars(l:new_text) - 1)
 
                     " Update changedtick so we don't detect our own changes
                     let l:current_buf = bufnr('')
@@ -471,6 +474,9 @@ function! s:on_stdout(job_id, data) abort
 
                     " Set the new line content with final text
                     call setline(l:current_line, l:before_text . l:final_text)
+
+                    " Clear the partial text highlight (sentence is now final)
+                    call s:clear_partial_highlight()
 
                     " Update changedtick so we don't detect our own changes
                     let l:current_buf = bufnr('')
@@ -679,6 +685,68 @@ function! s:stop_asr_animation() abort
 
     " Reset animation frame
     let s:asr_sign_frame = 0
+endfunction
+
+" ============================================================================
+" Text Property for Partial Text Highlight
+" ============================================================================
+
+" Define highlight group and property type for partial text
+function! s:define_partial_highlight() abort
+    " Define highlight group with underline
+    highlight default link ZaiASRPartialText Underlined
+    highlight default ZaiASRPartialText cterm=underline ctermfg=Cyan gui=underline guifg=Cyan
+
+    " Define property type (only if not already defined)
+    if exists('*prop_type_add') && exists('*prop_type_get')
+        " Check if property type already exists
+        if empty(prop_type_get(s:partial_prop_type))
+            call prop_type_add(s:partial_prop_type, {
+                \ 'highlight': 'ZaiASRPartialText',
+                \ 'priority': 10,
+                \ 'combine': 1,
+                \ 'start_incl': 0,
+                \ 'end_incl': 0
+                \ })
+        endif
+    endif
+endfunction
+
+" Add text property to highlight partial text
+function! s:highlight_partial_text(start_col, end_col) abort
+    if !exists('*prop_add')
+        return
+    endif
+
+    let l:current_buf = bufnr('')
+    let l:current_line = s:sentence_start_line
+
+    " Remove old property if exists
+    call s:clear_partial_highlight()
+
+    " Add new property for the partial text range
+    let s:partial_prop_id = prop_add(l:current_line, a:start_col, {
+        \ 'type': s:partial_prop_type,
+        \ 'end_lnum': l:current_line,
+        \ 'end_col': a:end_col + 1,
+        \ 'bufnr': l:current_buf
+        \ })
+endfunction
+
+" Clear text property for partial text
+function! s:clear_partial_highlight() abort
+    if !exists('*prop_remove')
+        return
+    endif
+
+    if s:partial_prop_id != 0
+        let l:current_buf = bufnr('')
+        try
+            call prop_remove({'type': s:partial_prop_type, 'id': s:partial_prop_id, 'bufnr': l:current_buf}, 0, 0)
+            let s:partial_prop_id = 0
+        catch
+        endtry
+    endif
 endfunction
 
 " Restore cpoptions
