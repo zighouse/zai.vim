@@ -37,9 +37,6 @@ let s:asr_active = 0
 " Buffer for received text
 let s:pending_text = ''
 
-" Length of last partial text inserted (for deletion)
-let s:last_partial_len = 0
-
 " Flag indicating if partial text is currently displayed
 let s:has_partial = 0
 
@@ -64,6 +61,11 @@ let s:asr_sign_id = 0          " Sign ID for ASR indicator
 let s:asr_sign_timer = 0       " Timer ID for animation
 let s:asr_sign_frame = 0       " Current animation frame
 let s:asr_sign_icons = ['🎤', '◌', '◎', '●']  " Animation sequence
+
+" Three-segment buffer for accurate multi-byte character handling
+let s:buffer_beginning = ''    " Text before the current sentence (finalized)
+let s:buffer_middle = ''       " Text being recognized (partial results)
+let s:buffer_end = ''          " Text after cursor when starting mid-line
 
 " Text property for highlighting partial ASR text
 let s:partial_prop_id = 0      " Property ID for current partial text
@@ -210,13 +212,17 @@ function! zai#asr#start() abort
 
     let s:asr_active = 1
     let s:pending_text = ''
-    let s:last_partial_len = 0
     let s:has_partial = 0
     let s:in_sentence = 0
     let s:sentence_start_line = 0
     let s:sentence_start_col = 0
     let s:is_stopping = 0
     let s:start_time = reltime()  " Record start time for protection period
+
+    " Initialize three-segment buffer
+    let s:buffer_beginning = ''
+    let s:buffer_middle = ''
+    let s:buffer_end = ''
 
     " Set up autocommands to detect user modifications
     augroup ZaiASRStop
@@ -313,12 +319,16 @@ function! s:stop_asr() abort
 
     " 重置状态变量
     let s:pending_text = ''
-    let s:last_partial_len = 0
     let s:has_partial = 0
     let s:in_sentence = 0
     let s:sentence_start_line = 0
     let s:sentence_start_col = 0
     let s:is_stopping = 0
+
+    " Clear three-segment buffer
+    let s:buffer_beginning = ''
+    let s:buffer_middle = ''
+    let s:buffer_end = ''
 
     " Show stop message
     echohl MoreMsg
@@ -330,15 +340,6 @@ function! s:stop_asr() abort
 
     " Clear partial text highlight
     call s:clear_partial_highlight()
-endfunction
-
-" Delete specified number of characters in insert mode
-function! s:delete_chars(count) abort
-    if a:count <= 0
-        return
-    endif
-    " Send backspace keys to delete characters
-    call feedkeys(repeat("\<BS>", a:count), 'n')
 endfunction
 
 " Insert pending text before stopping (called on key press)
@@ -367,7 +368,6 @@ function! s:maybe_insert_and_stop() abort
 
     " Partial text is already displayed, just clear tracking and stop
     let s:pending_text = ''
-    let s:last_partial_len = 0
     let s:has_partial = 0
 
     " Then stop ASR
@@ -421,59 +421,85 @@ function! s:on_stdout(job_id, data) abort
 
             elseif l:msg.type ==# 'partial'
                 " Partial recognition result (intermediate)
-                " Replace the current sentence text from its start position
                 if has_key(l:msg, 'text') && !empty(l:msg.text)
                     let l:new_text = l:msg.text
 
-                    " Record start position on first partial result
-                    " Use CURRENT cursor position for each new sentence
+                    " Initialize buffer on first partial result of a sentence
                     if !s:in_sentence
                         let s:sentence_start_line = line('.')
-                        let s:sentence_start_col = col('.')
+                        let s:sentence_start_col = charcol('.')
+
+                        " Split current line at cursor position
+                        let l:line_content = getline(s:sentence_start_line)
+                        " Get text before cursor (character-based, not byte-based)
+                        let s:buffer_beginning = strcharpart(l:line_content, 0, s:sentence_start_col - 1)
+                        " Get text after cursor
+                        let s:buffer_end = strcharpart(l:line_content, s:sentence_start_col - 1)
+                        " Middle starts empty, will be filled with recognition results
+                        let s:buffer_middle = ''
                         let s:in_sentence = 1
                     endif
 
-                    " Get current line and replace from start position to end
-                    let l:current_line = s:sentence_start_line
-                    let l:line_content = getline(l:current_line)
-                    let l:before_text = strcharpart(l:line_content, 0, s:sentence_start_col - 1)
+                    " Update middle buffer with new partial text
+                    let s:buffer_middle = l:new_text
 
-                    " Set the new line content
-                    call setline(l:current_line, l:before_text . l:new_text)
+                    " Reconstruct the complete line by concatenating all three segments
+                    let l:complete_line = s:buffer_beginning . s:buffer_middle . s:buffer_end
+                    call setline(s:sentence_start_line, l:complete_line)
 
-                    " Highlight the partial text with underline
-                    call s:highlight_partial_text(s:sentence_start_col, s:sentence_start_col + strchars(l:new_text) - 1)
+                    " Calculate position for highlighting (beginning length to end of middle)
+                    let l:highlight_start = strchars(s:buffer_beginning) + 1
+                    let l:highlight_end = l:highlight_start + strchars(s:buffer_middle) - 1
+
+                    " Highlight the partial text (middle segment) with underline
+                    if l:highlight_end >= l:highlight_start
+                        call s:highlight_partial_text(l:highlight_start, l:highlight_end)
+                    endif
 
                     " Update changedtick so we don't detect our own changes
                     let l:current_buf = bufnr('')
                     let s:last_changedtick = getbufvar(l:current_buf, 'changedtick')
 
-                    " Move cursor to end of inserted text using Right arrow keys
-                    let l:target_col = s:sentence_start_col + strchars(l:new_text)
-                    let l:current_col = col('.')
+                    " Move cursor to end of middle text
+                    let l:target_col = strchars(s:buffer_beginning) + strchars(s:buffer_middle) + 1
+                    let l:current_col = charcol('.')
                     if l:target_col > l:current_col
                         call feedkeys(repeat("\<Right>", l:target_col - l:current_col), 'it')
                     endif
 
                     " Update tracking variables
                     let s:pending_text = l:new_text
-                    let s:last_partial_len = strchars(l:new_text)
                     let s:has_partial = 1
                 endif
 
             elseif l:msg.type ==# 'final'
                 " Final recognition result
-                " Replace the current sentence text from its start position
                 if has_key(l:msg, 'text') && !empty(l:msg.text)
                     let l:final_text = l:msg.text
 
-                    " Get current line and replace from start position to end
-                    let l:current_line = s:sentence_start_line
-                    let l:line_content = getline(l:current_line)
-                    let l:before_text = strcharpart(l:line_content, 0, s:sentence_start_col - 1)
+                    " If we were tracking a sentence, finalize it
+                    if s:in_sentence
+                        " Update middle with final text and append to beginning
+                        let s:buffer_middle = l:final_text
+                        let s:buffer_beginning = s:buffer_beginning . s:buffer_middle
+                        let s:buffer_middle = ''
 
-                    " Set the new line content with final text
-                    call setline(l:current_line, l:before_text . l:final_text)
+                        " Reconstruct the final line (beginning + end, no middle)
+                        let l:final_line = s:buffer_beginning . s:buffer_end
+                        call setline(s:sentence_start_line, l:final_line)
+                    else
+                        " Not in a sentence, just insert at current position
+                        let l:current_line = line('.')
+                        let l:line_content = getline(l:current_line)
+                        let l:before_text = strcharpart(l:line_content, 0, charcol('.') - 1)
+                        let l:after_text = strcharpart(l:line_content, charcol('.') - 1)
+                        let l:final_line = l:before_text . l:final_text . l:after_text
+                        call setline(l:current_line, l:final_line)
+
+                        " Update buffer state for consistency
+                        let s:buffer_beginning = l:before_text . l:final_text
+                        let s:buffer_end = l:after_text
+                    endif
 
                     " Clear the partial text highlight (sentence is now final)
                     call s:clear_partial_highlight()
@@ -482,20 +508,22 @@ function! s:on_stdout(job_id, data) abort
                     let l:current_buf = bufnr('')
                     let s:last_changedtick = getbufvar(l:current_buf, 'changedtick')
 
-                    " Move cursor to end of inserted text using Right arrow keys
-                    let l:target_col = s:sentence_start_col + strchars(l:final_text)
-                    let l:current_col = col('.')
+                    " Move cursor to end of inserted text
+                    let l:target_col = strchars(s:buffer_beginning) + 1
+                    let l:current_col = charcol('.')
                     if l:target_col > l:current_col
                         call feedkeys(repeat("\<Right>", l:target_col - l:current_col), 'it')
                     endif
 
-                    " Reset sentence state
+                    " Reset sentence state and buffer
                     let s:pending_text = ''
-                    let s:last_partial_len = 0
                     let s:has_partial = 0
                     let s:in_sentence = 0
                     let s:sentence_start_line = 0
                     let s:sentence_start_col = 0
+                    let s:buffer_beginning = ''
+                    let s:buffer_middle = ''
+                    let s:buffer_end = ''
                 endif
 
             elseif l:msg.type ==# 'error'
@@ -724,11 +752,26 @@ function! s:highlight_partial_text(start_col, end_col) abort
     " Remove old property if exists
     call s:clear_partial_highlight()
 
+    " Get the current line content
+    let l:line_content = getline(l:current_line)
+
+    " Convert character positions to byte positions for prop_add()
+    " byteidx() returns the byte index of the character at given character index (0-based)
+    " prop_add() expects byte positions (1-based)
+    if exists('*byteidx')
+        let l:start_byte = byteidx(l:line_content, a:start_col - 1) + 1
+        let l:end_byte = byteidx(l:line_content, a:end_col - 1) + 1
+    else
+        " Fallback: assume single-byte encoding (not accurate for multi-byte characters)
+        let l:start_byte = a:start_col
+        let l:end_byte = a:end_col
+    endif
+
     " Add new property for the partial text range
-    let s:partial_prop_id = prop_add(l:current_line, a:start_col, {
+    let s:partial_prop_id = prop_add(l:current_line, l:start_byte, {
         \ 'type': s:partial_prop_type,
         \ 'end_lnum': l:current_line,
-        \ 'end_col': a:end_col + 1,
+        \ 'end_col': l:end_byte + 1,
         \ 'bufnr': l:current_buf
         \ })
 endfunction
