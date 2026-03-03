@@ -27,7 +27,7 @@ OPTIONAL_DEPS = {
         "beautifulsoup4>=4.12.0",  # bs4
         "selenium>=4.10.0",
         "undetected-chromedriver>=3.5.0",
-        "html-to-markdown>=1.0.0",  # HTML to Markdown conversion
+        "trafilatura>=2.0.0",
     ],
     "file": [
         "python-magic>=0.4.27",  # File type detection

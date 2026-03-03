@@ -477,6 +477,8 @@ def invoke_web_search(
     engine: str = "",
     category: str = "",
     time_range: str = "",
+    language: str = "auto",
+    safesearch: int = 0,
     max_results: int = 10,
     return_format: str = "markdown"
 ) -> str:
@@ -496,8 +498,6 @@ def invoke_web_search(
     Returns:
         Formatted search results
     """
-    language: str = "auto"
-    safesearch: int = 0
     client = get_searxng_client()
 
     # Build categories list

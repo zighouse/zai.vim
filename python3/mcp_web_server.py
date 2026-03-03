@@ -74,11 +74,11 @@ async def handle_list_tools() -> list[Tool]:
                         "description": "时间范围过滤：day, week, month, year",
                         "default": ""
                     },
-                    #"language": {
-                    #    "type": "string",
-                    #    "description": "语言代码（如：en, zh, auto）",
-                    #    "default": "auto"
-                    #},
+                    "language": {
+                        "type": "string",
+                        "description": "语言代码（如：en, zh, auto）",
+                        "default": "auto"
+                    },
                     "safesearch": {
                         "type": "integer",
                         "description": "安全搜索级别：0=关闭, 1=适中, 2=严格",
