@@ -16,16 +16,28 @@ endif
 
 " Check and install dependencies
 function! s:CheckDependencies() abort
-    if !executable('python3')
+    if executable('python3')
+        let s:python_cmd = 'python3'
+    elseif executable('python')
+        let s:python_version = systemlist('python --version')[0]
+        if s:python_version =~ '^Python 3\.'
+            let s:python_cmd = 'python'
+        else
         echohl WarningMsg
-        echomsg "Zai is dependent on Python3. Please install Python3 first."
+            echomsg "Zai requires Python 3.x. Found: " . s:python_version . ". Please install Python 3."
+            echohl None
+            return
+        endif
+    else
+        echohl WarningMsg
+        echomsg "Zai is dependent on Python 3.x. Please install Python 3 first."
         echohl None
         return
     endif
 
     let s:install_script = expand('<sfile>:p:h:h') . '/install.py'
     if filereadable(s:install_script)
-        silent! call system('python3 ' . shellescape(s:install_script))
+        silent! call system(s:python_cmd . ' ' . shellescape(s:install_script))
     endif
 endfunction
 
