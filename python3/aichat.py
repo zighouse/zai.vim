@@ -31,6 +31,18 @@ _DEFAULT_API_KEY_NAME = "DEEPSEEK_API_KEY"
 _DEFAULT_BASE_URL = "https://api.deepseek.com"
 _DEFAULT_MODEL = "deepseek-chat"
 
+# Compact summary system prompt
+_COMPACT_SYSTEM_PROMPT = """\
+Please compress the following conversation history into a structured summary. The summary should include:
+1. Completed work: tasks finished, files modified
+2. Current state: working directory, active configuration, files being processed
+3. Key decisions: important technical decisions and design choices
+4. Next steps: pending tasks and follow-up plans
+5. Important technical details: key configurations, code snippets
+The summary should be concise yet complete. Output in Markdown format."""
+
+_COMPACT_SUMMARY_TAG = "<compact summary>"
+
 class AIChat:
     def __init__(self):
         self._cli = Client()
@@ -44,6 +56,7 @@ class AIChat:
         self._history = [] # [{request:msg, response:[msg]}]
         self._cur_round = {"request":[], "response":[]}
         self._has_archives = False
+        self._auto_compact = False
         self._llm = None
         self._files = []
         self._config = {
@@ -101,6 +114,7 @@ class AIChat:
         self._cli.register("-history_keep_last_n", lambda: self._config.pop("history_keep_last_n", None))
         self._cli.register("prompt", lambda v: self.set_config("prompt", v.strip()), use_raw_cmd=True)
         self._cli.register("-prompt", lambda: self._config.pop("prompt", None))
+        self._cli.register("compact", self._on_compact, use_raw_cmd=True)
         self._cli.register("file", self._on_file_attach)
         self._cli.register("-file", lambda: self._files.clear())
         self._cli.register("sandbox", lambda v: self._tool.set_sandbox_home(v))
@@ -636,7 +650,14 @@ class AIChat:
                 current_request = current_round["request"]
             max_history_tokens = self._calculate_max_history_tokens(current_request)
             keep_last_n = self._config.get('history_keep_last_n', 6)
-            self._prune_and_compact_history(max_history_tokens, keep_last_n)
+            # Skip archive pruning if history already starts with a compact summary
+            has_compact_summary = (
+                self._history
+                and isinstance(self._history[0].get("request"), dict)
+                and self._history[0]["request"].get("content", "").startswith(_COMPACT_SUMMARY_TAG)
+            )
+            if not has_compact_summary:
+                self._prune_and_compact_history(max_history_tokens, keep_last_n)
             # 展开 history（summary round 会作为 system/request 插入短 summary）
             for round_obj in self._history:
                 if round_obj.get("summary"):
@@ -1260,6 +1281,133 @@ class AIChat:
             self._aiconfig.show_list()
         elif list_type == "tool":
             self._tool.show_list()
+
+    def _on_compact(self, args: str = ""):
+        """处理 /compact 命令：手动或自动压缩对话上下文
+
+        Args:
+            args: 命令参数
+                - 空: 默认压缩
+                - "auto": 切换自动压缩开关
+                - 其他: 作为自定义 instructions 附加到摘要提示词
+        """
+        args = args.strip()
+
+        # /compact auto — 切换自动压缩开关
+        if args == "auto":
+            self._auto_compact = not self._auto_compact
+            status = "ON" if self._auto_compact else "OFF"
+            print(f"Auto-compact: {status}")
+            return True
+
+        # 执行压缩
+        if not self._history:
+            print("Nothing to compact (history is empty).")
+            return True
+
+        keep_last_n = self._config.get('history_keep_last_n', 6)
+        keep_last_n = max(1, int(keep_last_n))
+
+        # 1. 计算压缩前 token 数
+        tokens_before = 0
+        for round_obj in self._history:
+            tokens_before += self._round_token_estimate(round_obj)
+
+        if len(self._history) <= keep_last_n:
+            print(f"Only {len(self._history)} rounds (keep_last_n={keep_last_n}), nothing to compact.")
+            return True
+
+        # 2. 构建要压缩的轮次（较早的历史，不含最近 keep_last_n 轮）
+        earlier = self._history[:-keep_last_n]
+        archived_rounds = len(earlier)
+
+        # 3. 将 earlier rounds 展平为消息列表
+        messages = self._flatten_history_to_messages(earlier)
+
+        # 4. 构建系统提示词
+        system_prompt = _COMPACT_SYSTEM_PROMPT
+        if args:
+            system_prompt += f"\n\nAdditional instructions: {args}"
+
+        # 5. 调用子 LLM 生成摘要
+        print(f"Compacting {archived_rounds} rounds (~{tokens_before} tokens)...")
+        summary = self._run_sub_llm_loop(messages, system_prompt=system_prompt)
+
+        if not summary:
+            print("Compact failed: could not generate summary.", file=sys.stderr)
+            return True
+
+        # 6. 写入 JSONL compact_boundary
+        tokens_after = self._count_tokens(summary) + sum(
+            self._round_token_estimate(r) for r in self._history[-keep_last_n:]
+        )
+        self._session.append_compact_boundary(
+            summary, archived_rounds, tokens_before, tokens_after
+        )
+
+        # 7. 修剪 _history：摘要 + 最近 keep_last_n 轮
+        compact_round = {
+            "request": {"role": "system", "content": _COMPACT_SUMMARY_TAG + "\n" + summary},
+            "response": [],
+            "summary": True,
+        }
+        recent_rounds = self._history[-keep_last_n:]
+        self._history = [compact_round] + recent_rounds
+
+        # 8. 打印确认
+        print(f"\nCompact done: {tokens_before} → {tokens_after} tokens ({archived_rounds} rounds archived)")
+        return True
+
+    def _flatten_history_to_messages(self, rounds: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+        """将 history rounds 展平为 role/content 消息列表
+
+        Args:
+            rounds: 历史 round 列表
+
+        Returns:
+            扁平的消息列表 [{"role": ..., "content": ...}, ...]
+        """
+        messages = []
+        for round_obj in rounds:
+            req = round_obj.get("request")
+            if req and isinstance(req, dict) and "content" in req:
+                role = req.get("role", "user")
+                content = req["content"]
+                # 截断过长的单条消息
+                if len(content) > 4000:
+                    content = content[:2000] + "\n...[truncated]...\n" + content[-2000:]
+                messages.append({"role": role, "content": content})
+
+            for resp in round_obj.get("response", []):
+                if not isinstance(resp, dict):
+                    continue
+                # tool result messages: use "user" role for sub-LLM compatibility
+                if resp.get("role") == "tool":
+                    content = resp.get("content", "")
+                    if content:
+                        if len(content) > 4000:
+                            content = content[:2000] + "\n...[truncated]...\n" + content[-2000:]
+                        tool_name = resp.get("name", "tool")
+                        messages.append({"role": "user", "content": f"[{tool_name} result]: {content}"})
+                    continue
+                if "content" in resp:
+                    role = resp.get("role", "assistant")
+                    content = resp["content"]
+                    if resp.get("tool_calls"):
+                        # 简化 tool_calls 为摘要
+                        tool_names = []
+                        for tc in resp["tool_calls"]:
+                            func = tc.get("function")
+                            if isinstance(func, dict):
+                                name = func.get("name", "")
+                                if name:
+                                    tool_names.append(name)
+                        if tool_names:
+                            content += f"\n[tool_calls: {', '.join(tool_names)}]"
+                    if len(content) > 4000:
+                        content = content[:2000] + "\n...[truncated]...\n" + content[-2000:]
+                    messages.append({"role": role, "content": content})
+        return messages
 
     def _open_client(self, api_key_name=None, base_url=None):
         """Open client with given or default parameters"""
