@@ -20,6 +20,7 @@ from typing import Dict, List, Any, Union, Optional
 
 from config import AIAssistantManager, parse_number_from_readable
 from logger import Logger
+from session import SessionWriter
 from tool import ToolManager
 from tool_shell import invoke_shell_sandbox_info, invoke_shell_cleanup, invoke_execute_shell
 from client import Client
@@ -34,6 +35,7 @@ class AIChat:
     def __init__(self):
         self._cli = Client()
         self._logger = Logger()
+        self._session = SessionWriter()
         self._aiconfig = AIAssistantManager()
         self._assistant = None
         self._tool = ToolManager()
@@ -785,6 +787,7 @@ class AIChat:
                     "api_error": True
                 }
                 self._logger.append_message(error_msg)
+                self._session.append_assistant_message(error_msg.get('content', ''))
                 return error_msg
             except Exception as e:
                 error_msg = {
@@ -795,6 +798,7 @@ class AIChat:
                     "unknown_error": True
                 }
                 self._logger.append_message(error_msg)
+                self._session.append_assistant_message(error_msg.get('content', ''))
                 return error_msg
         else:
             if params['messages'][0]['role'] == 'system':
@@ -834,6 +838,7 @@ class AIChat:
                     "api_error": True
                 }
                 self._logger.append_message(error_msg)
+                self._session.append_assistant_message(error_msg.get('content', ''))
                 return error_msg
             except Exception as e:
                 error_msg = {
@@ -844,6 +849,7 @@ class AIChat:
                     "unknown_error": True
                 }
                 self._logger.append_message(error_msg)
+                self._session.append_assistant_message(error_msg.get('content', ''))
                 return error_msg
             
             # 正常处理流式响应
@@ -910,6 +916,13 @@ class AIChat:
             if full_response['tool_calls']:
                 msg['tool_calls'] = full_response['tool_calls']
             self._logger.append_message(msg)
+            # 追加助手消息到 JSONL
+            self._session.append_assistant_message(
+                msg.get('content', ''),
+                msg.get('tool_calls'),
+                msg.get('content_tokens', 0),
+                msg.get('reasoning_tokens', 0)
+            )
 
         return msg
 
@@ -928,6 +941,14 @@ class AIChat:
         return msg
 
     def _main_chat_loop(self):
+        # 打开 JSONL 会话
+        if not self._session.get_session_id():
+            if not self._session.open():
+                print(f"[Session] Warning: Failed to open session file. JSONL persistence disabled.", file=sys.stderr)
+            else:
+                print(f"[Session] Started session: {self._session.get_session_id()}")
+                print(f"[Session] File: {self._session.get_session_path()}")
+
         response = None
         while not self._cli.is_stopped():
             request = None
@@ -938,13 +959,18 @@ class AIChat:
                 if request_tokens:
                     request["tokenizer"] = self._get_tokenizer_name()
                     request["content_tokens"] = request_tokens
-                
+
                 # 检查请求 tokens 是否过高
                 max_context_tokens = self._get_max_context_tokens()
                 if request_tokens > max_context_tokens * 0.7:  # 达到70%阈值时警告
                     print(f"WARNING: Requsted tokens ({request_tokens}) is closing to the {request_tokens/max_context_tokens*100:.1f}% of the maximum context length ({max_context_tokens}).")
-                
+
                 self._logger.append_message(request)
+                # 追加用户消息到 JSONL
+                self._session.append_user_message(
+                    request.get("content", ""),
+                    request.get("content_tokens", 0)
+                )
                 self._cur_round = {"request": request, "response":[]}
                 response = self._generate_response(self._cur_round)
             if response:
@@ -965,10 +991,35 @@ class AIChat:
                     # append user request to tool_returns
                     if tool_returns:
                         tool_returns.append(request)
+                        # 用户请求追加到 JSONL
+                        self._session.append_user_message(
+                            request.get("content", ""),
+                            request.get("content_tokens", 0)
+                        )
                     else:
                         tool_returns = request
+                        # 用户请求追加到 JSONL
+                        self._session.append_user_message(
+                            request.get("content", ""),
+                            request.get("content_tokens", 0)
+                        )
                 if tool_returns:
                     self._logger.append_message(tool_returns)
+                    # 追加 tool 结果到 JSONL
+                    if isinstance(tool_returns, list):
+                        for tr in tool_returns:
+                            if 'tool_call_id' in tr and 'name' in tr:
+                                self._session.append_tool_result(
+                                    tr.get('tool_call_id', ''),
+                                    tr.get('name', ''),
+                                    tr.get('content', '')
+                                )
+                    elif 'tool_call_id' in tool_returns and 'name' in tool_returns:
+                        self._session.append_tool_result(
+                            tool_returns.get('tool_call_id', ''),
+                            tool_returns.get('name', ''),
+                            tool_returns.get('content', '')
+                        )
                     self._cur_round["response"].append(tool_returns)
                     response = self._generate_response(self._cur_round)
                 if response:
