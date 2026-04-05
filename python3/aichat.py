@@ -273,6 +273,75 @@ class AIChat:
 
         return OpenAI(api_key=api_key, base_url=base_url)
 
+    def _ensure_llm(self):
+        """Ensure LLM client is initialized (lazy init)"""
+        if not self._llm:
+            self._llm = self._open_llm(
+                api_key_name=self._config.get('api_key_name', _DEFAULT_API_KEY_NAME),
+                base_url=self._config.get('base_url', _DEFAULT_BASE_URL)
+            )
+
+    def _run_sub_llm_loop(self,
+                          messages: List[Dict[str, Any]],
+                          system_prompt: str = "",
+                          stream: bool = False,
+                          max_tokens: int = 2048) -> str:
+        """
+        Run an independent LLM call (for summary generation, etc.)
+
+        This method creates a fresh message context and does NOT:
+        - Save to _history
+        - Write to Logger or SessionWriter
+        - Enable tool calls
+
+        Args:
+            messages: Conversation history as role/content dicts
+            system_prompt: Override system prompt for the sub-task
+            stream: Whether to stream output (default False)
+            max_tokens: Maximum output tokens (default 2048)
+            Full text response, or empty string on error
+        """
+        # Build independent message list
+        sub_messages = []
+        if system_prompt:
+            sub_messages.append({"role": "system", "content": system_prompt})
+        sub_messages.extend(messages)
+
+        params = {
+            'model': self._config['model'].get('name', ''),
+            'messages': sub_messages,
+            'stream': stream,
+            'max_tokens': max_tokens,
+        }
+        # Apply model-specific params (temperature, etc.) but not tools or core keys
+        safe_opts = {'temperature', 'top_p', 'max_tokens', 'presence_penalty', 'frequency_penalty'}
+        model_params = self._config['model'].get('params', {})
+        params.update({k: v for k, v in model_params.items() if k in safe_opts})
+
+        try:
+            self._ensure_llm()
+            if stream:
+                response_stream = self._llm.chat.completions.create(**params)
+                content_parts = []
+                for chunk in response_stream:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        content_parts.append(chunk.choices[0].delta.content)
+                        print(chunk.choices[0].delta.content, end='', flush=True)
+                if content_parts:
+                    print()  # trailing newline after streaming
+                return ''.join(content_parts)
+            else:
+                response = self._llm.chat.completions.create(**params)
+                if response.choices and response.choices[0].message:
+                    return response.choices[0].message.content or ""
+                return ""
+        except (BadRequestError, APIError, APIConnectionError, RateLimitError) as e:
+            print(f"[Compact] Warning: Sub LLM call failed: {e}", file=sys.stderr)
+            return ""
+        except Exception as e:
+            print(f"[Compact] Warning: Unexpected error: {e}", file=sys.stderr)
+            return ""
+
     def _filter_request(self, request):
         return request
 
@@ -772,9 +841,7 @@ class AIChat:
         #print(f"params: {params}")
         start_time = time.time()
 
-        if not self._llm:
-            self._llm = self._open_llm(api_key_name=self._config.get('api_key_name', _DEFAULT_API_KEY_NAME),
-                    base_url=self._config.get('base_url', _DEFAULT_BASE_URL))
+        self._ensure_llm()
         if is_FIM:
             try:
                 response = self._llm.completions.create(**params)
