@@ -34,6 +34,25 @@ from appdirs import user_data_dir
 _DEFAULT_MAX_CONTENT_SIZE = 10 * 1024 * 1024  # 10MB
 
 
+def get_sessions_dir(project_path: Optional[str] = None) -> Path:
+    """
+    返回会话存储目录
+
+    Args:
+        project_path: 项目根路径，用于按项目隔离。
+                      如果为 None，使用 os.getcwd()。
+
+    Returns:
+        ~/.local/share/zai/sessions/<sanitized-project-path>/
+    """
+    path = project_path or os.getcwd()
+    base_dir = Path(user_data_dir("zai", "zighouse")) / "sessions"
+    project_dir_name = sanitize_path(path)
+    session_dir = base_dir / project_dir_name
+    session_dir.mkdir(parents=True, exist_ok=True)
+    return session_dir
+
+
 def sanitize_path(path: str, max_length: int = 200) -> str:
     """
     将项目路径转为安全目录名
@@ -114,11 +133,7 @@ class SessionWriter:
         Returns:
             ~/.local/share/zai/sessions/<sanitized-project-path>/
         """
-        base_dir = Path(user_data_dir("zai", "zighouse")) / "sessions"
-        project_dir_name = sanitize_path(self._project_path)
-        session_dir = base_dir / project_dir_name
-        session_dir.mkdir(parents=True, exist_ok=True)
-        return session_dir
+        return get_sessions_dir(self._project_path)
 
     def _get_session_path(self, session_id: str) -> Path:
         """
@@ -422,3 +437,435 @@ class SessionWriter:
         析构时关闭文件
         """
         self.close()
+
+
+class SessionLoader:
+    """
+    JSONL 会话恢复加载器
+
+    从 SessionWriter 写入的 JSONL 文件中加载会话数据，
+    重建 aichat.py 的 _history round 结构。
+
+    支持渐进式加载大文件（>5MB），只读取元数据和最近的对话。
+    """
+
+    PROGRESSIVE_LOAD_THRESHOLD = 5 * 1024 * 1024  # 5MB
+    PROGRESSIVE_HEAD_SIZE = 64 * 1024  # 64KB
+    PROGRESSIVE_TAIL_SIZE = 64 * 1024  # 64KB
+
+    def __init__(self, project_path: Optional[str] = None):
+        """
+        初始化 SessionLoader
+
+        Args:
+            project_path: 项目根路径，用于定位会话目录。
+                          如果为 None，使用 os.getcwd()。
+        """
+        self._project_path: str = project_path or os.getcwd()
+
+    def _get_sessions_dir(self, project_path: Optional[str] = None) -> Path:
+        """
+        返回会话存储目录
+
+        Args:
+            project_path: 项目路径，默认使用 self._project_path
+
+        Returns:
+            ~/.local/share/zai/sessions/<sanitized-project-path>/
+        """
+        return get_sessions_dir(project_path or self._project_path)
+
+    def _get_session_path(self, session_id: str, project_path: Optional[str] = None) -> Path:
+        """
+        获取指定会话 ID 的文件路径
+
+        Args:
+            session_id: 会话 ID (YYYYMMDD_HHMMSS)
+            project_path: 项目路径，默认使用 self._project_path
+
+        Returns:
+            完整的会话文件路径
+        """
+        return self._get_sessions_dir(project_path) / f"{session_id}.jsonl"
+
+    @staticmethod
+    def _safe_parse_json(line: str) -> Optional[Dict[str, Any]]:
+        """
+        安全解析单行 JSON
+
+        Args:
+            line: 单行 JSON 字符串
+
+        Returns:
+            解析后的字典，解析失败返回 None
+        """
+        line = line.strip()
+        if not line:
+            return None
+        try:
+            return json.loads(line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return None
+
+    def _rebuild_history(self, messages: list) -> list:
+        """
+        将扁平的消息列表重建为 round 结构
+
+        按照 user 消息分轮：每条 user 消息开始一个新 round，
+        后续的 assistant/tool_result 消息归入该 round 的 response。
+
+        Args:
+            messages: 按时间顺序排列的消息列表
+
+        Returns:
+            _history 格式的 round 列表
+        """
+        history = []
+        current_round = None
+
+        for msg in messages:
+            msg_type = msg.get('type')
+
+            if msg_type == 'user':
+                # 保存上一个 round
+                if current_round is not None:
+                    history.append(current_round)
+                # 开始新 round
+                current_round = {
+                    "request": {"role": "user", "content": msg["content"]},
+                    "response": []
+                }
+                if msg.get("tokens"):
+                    current_round["request"]["content_tokens"] = msg["tokens"]
+
+            elif msg_type == 'assistant':
+                if current_round is None:
+                    current_round = {"request": None, "response": []}
+                asst_msg = {"role": "assistant", "content": msg["content"]}
+                if msg.get("tool_calls"):
+                    asst_msg["tool_calls"] = msg["tool_calls"]
+                if msg.get("tokens"):
+                    asst_msg["content_tokens"] = msg["tokens"]
+                if msg.get("reasoning_tokens"):
+                    asst_msg["reasoning_tokens"] = msg["reasoning_tokens"]
+                current_round["response"].append(asst_msg)
+
+            elif msg_type == 'tool_result':
+                if current_round is None:
+                    current_round = {"request": None, "response": []}
+                tool_msg = {
+                    "role": "tool",
+                    "tool_call_id": msg["tool_call_id"],
+                    "name": msg["name"],
+                    "content": msg["content"]
+                }
+                current_round["response"].append(tool_msg)
+
+            # metadata 和 compact_boundary 不直接进入 round
+
+        # 保存最后一个 round
+        if current_round is not None:
+            history.append(current_round)
+
+        return history
+
+    def _build_compact_round(self, boundary: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        从 compact_boundary 条目构建 summary round
+
+        Args:
+            boundary: compact_boundary 类型的 JSONL 条目
+
+        Returns:
+            summary round 字典
+        """
+        return {
+            "request": {
+                "role": "system",
+                "content": "<compact summary>\n" + boundary.get("summary", "")
+            },
+            "response": [],
+            "summary": True,
+            "archived_rounds": boundary.get("archived_rounds", 0),
+            "tokens_before": boundary.get("tokens_before", 0),
+            "tokens_after": boundary.get("tokens_after", 0)
+        }
+
+    def _progressive_load(self, file_path: Path):
+        """
+        渐进式加载大文件
+
+        只读取文件头部和尾部，获取 metadata 和最近的对话内容。
+
+        Args:
+            file_path: JSONL 文件路径
+
+        Returns:
+            (messages, metadata, compact_boundary) 元组
+        """
+        file_size = file_path.stat().st_size
+        metadata = {}
+
+        # 1. 读取头部 metadata（使用二进制模式避免 UTF-8 seek 问题）
+        head_bytes = min(self.PROGRESSIVE_HEAD_SIZE, file_size)
+        with open(file_path, 'rb') as f:
+            head_data = f.read(head_bytes).decode('utf-8', errors='ignore')
+        for line in head_data.split('\n'):
+            entry = self._safe_parse_json(line)
+            if entry and entry.get('type') == 'metadata':
+                metadata[entry['key']] = entry['value']
+
+        # 2. 读取尾部内容（二进制模式安全 seek）
+        tail_bytes = min(self.PROGRESSIVE_TAIL_SIZE, file_size)
+        with open(file_path, 'rb') as f:
+            seek_pos = max(0, file_size - tail_bytes)
+            f.seek(seek_pos)
+            raw_tail = f.read()
+            tail_data = raw_tail.decode('utf-8', errors='ignore')
+            # 如果不是从文件开头读取，丢弃第一个不完整的行
+            if seek_pos > 0:
+                newline_pos = tail_data.find('\n')
+                if newline_pos >= 0:
+                    tail_data = tail_data[newline_pos + 1:]
+
+        # 3. 解析尾部消息
+        messages = []
+        compact_boundary = None
+        for line in tail_data.split('\n'):
+            entry = self._safe_parse_json(line)
+            if not entry:
+                continue
+            if entry.get('type') == 'metadata':
+                metadata[entry['key']] = entry['value']
+            elif entry.get('type') == 'compact_boundary':
+                compact_boundary = entry
+            else:
+                messages.append(entry)
+
+        return messages, metadata, compact_boundary
+
+    def _scan_session_stats(self, file_path: Path) -> Dict[str, Any]:
+        """
+        扫描会话文件获取统计信息
+
+        逐行读取文件，统计轮数、token 数、metadata 等。
+
+        Args:
+            file_path: JSONL 文件路径
+
+        Returns:
+            统计信息字典
+        """
+        stats = {
+            "rounds": 0,
+            "total_tokens": 0,
+            "metadata": {},
+            "compact_boundaries": []
+        }
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    entry = self._safe_parse_json(line)
+                    if not entry:
+                        continue
+
+                    entry_type = entry.get('type')
+                    if entry_type == 'user':
+                        stats["rounds"] += 1
+                        stats["total_tokens"] += entry.get("tokens", 0)
+                    elif entry_type == 'assistant':
+                        stats["total_tokens"] += entry.get("tokens", 0)
+                        stats["total_tokens"] += entry.get("reasoning_tokens", 0)
+                    elif entry_type == 'metadata':
+                        stats["metadata"][entry['key']] = entry['value']
+                    elif entry_type == 'compact_boundary':
+                        stats["compact_boundaries"].append(entry)
+        except (IOError, OSError):
+            pass
+
+        return stats
+
+    def load_session(self, session_id: str, progressive: bool = False) -> list:
+        """
+        加载指定会话并重建 _history round 结构
+
+        Args:
+            session_id: 会话 ID (YYYYMMDD_HHMMSS 格式)
+            progressive: 是否启用渐进式加载
+
+        Returns:
+            _history 列表: [{"request": msg, "response": [msgs]}, ...]
+
+        Raises:
+            FileNotFoundError: 会话文件不存在
+            ValueError: JSONL 文件格式损坏
+        """
+        file_path = self._get_session_path(session_id)
+
+        if not file_path.exists():
+            raise FileNotFoundError(f"Session file not found: {file_path}")
+
+        file_size = file_path.stat().st_size
+
+        # 空文件
+        if file_size == 0:
+            return []
+
+        # 判断是否使用渐进式加载
+        use_progressive = progressive or file_size > self.PROGRESSIVE_LOAD_THRESHOLD
+
+        if use_progressive:
+            messages, metadata, compact_boundary = self._progressive_load(file_path)
+            history = self._rebuild_history(messages)
+            if compact_boundary:
+                compact_round = self._build_compact_round(compact_boundary)
+                history.insert(0, compact_round)
+            return history
+
+        # 完整加载
+        messages = []
+        boundaries = []  # [(index_in_messages, boundary_entry), ...]
+        parsed_any = False
+
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                entry = self._safe_parse_json(line)
+                if not entry:
+                    continue
+                parsed_any = True
+
+                entry_type = entry.get('type')
+                if entry_type == 'compact_boundary':
+                    boundaries.append((len(messages), entry))
+                elif entry_type in ('user', 'assistant', 'tool_result'):
+                    messages.append(entry)
+                # metadata 不进入消息列表
+
+        if not parsed_any:
+            raise ValueError(f"All lines in session file are corrupt: {file_path}")
+
+        # 处理 compact_boundary：只保留最后一个 boundary 之后的消息
+        # 并将所有 boundary 的 summary 合并为一个 summary round
+        if boundaries:
+            last_idx, last_boundary = boundaries[-1]
+            messages_after = messages[last_idx:]
+            # 合并所有 boundary 的 summary（最早的在前）
+            combined_summary = "\n\n".join(
+                b.get("summary", "") for _, b in boundaries if b.get("summary")
+            )
+            combined_boundary = {
+                "summary": combined_summary,
+                "archived_rounds": sum(b.get("archived_rounds", 0) for _, b in boundaries),
+                "tokens_before": last_boundary.get("tokens_before", 0),
+                "tokens_after": last_boundary.get("tokens_after", 0),
+            }
+            compact_round = self._build_compact_round(combined_boundary)
+            history = self._rebuild_history(messages_after)
+            history.insert(0, compact_round)
+        else:
+            history = self._rebuild_history(messages)
+
+        return history
+
+    def list_sessions(self, project_path: Optional[str] = None) -> list:
+        """
+        列出指定项目的所有会话
+
+        Args:
+            project_path: 项目路径，如果为 None 使用初始化时的路径
+
+        Returns:
+            会话摘要列表，按时间倒序排列
+        """
+        sessions_dir = self._get_sessions_dir(project_path)
+
+        if not sessions_dir.exists():
+            return []
+
+        sessions = []
+        for jsonl_file in sorted(sessions_dir.glob("*.jsonl"), reverse=True):
+            session_id = jsonl_file.stem
+            file_size = jsonl_file.stat().st_size
+
+            # 快速摘要：只读取头部获取 metadata + 统计行数
+            # 避免逐行扫描所有内容
+            stats = self._quick_stats(jsonl_file)
+
+            # 从文件名解析创建时间
+            created_at = ""
+            try:
+                dt = datetime.strptime(session_id, "%Y%m%d_%H%M%S")
+                created_at = dt.isoformat() + 'Z'
+            except ValueError:
+                pass
+
+            sessions.append({
+                "session_id": session_id,
+                "file_path": str(jsonl_file.absolute()),
+                "file_size": file_size,
+                "created_at": created_at,
+                "rounds": stats["rounds"],
+                "total_tokens": stats["total_tokens"],
+                "title": stats.get("title", ""),
+                "model": stats.get("model", ""),
+            })
+
+        return sessions
+
+    def _quick_stats(self, file_path: Path) -> Dict[str, Any]:
+        """
+        快速统计会话信息（只读取文件头尾）
+
+        Args:
+            file_path: JSONL 文件路径
+
+        Returns:
+            {"rounds": int, "total_tokens": int, "title": str, "model": str}
+        """
+        stats = {"rounds": 0, "total_tokens": 0}
+        file_size = file_path.stat().st_size
+
+        try:
+            # 读取头部获取 metadata
+            with open(file_path, 'rb') as f:
+                head_data = f.read(min(self.PROGRESSIVE_HEAD_SIZE, file_size)).decode('utf-8', errors='ignore')
+            for line in head_data.split('\n'):
+                entry = self._safe_parse_json(line)
+                if entry:
+                    if entry.get('type') == 'metadata':
+                        stats[entry['key']] = entry['value']
+                    elif entry.get('type') == 'user':
+                        stats["rounds"] += 1
+                        stats["total_tokens"] += entry.get("tokens", 0)
+                    elif entry.get('type') == 'assistant':
+                        stats["total_tokens"] += entry.get("tokens", 0)
+
+            # 对于小文件直接逐行统计 rounds
+            if file_size <= self.PROGRESSIVE_HEAD_SIZE:
+                return stats
+
+            # 对于大文件，用尾部也统计 rounds（近似值）
+            with open(file_path, 'rb') as f:
+                seek_pos = max(0, file_size - self.PROGRESSIVE_TAIL_SIZE)
+                f.seek(seek_pos)
+                tail_data = f.read().decode('utf-8', errors='ignore')
+                if seek_pos > 0:
+                    newline_pos = tail_data.find('\n')
+                    if newline_pos >= 0:
+                        tail_data = tail_data[newline_pos + 1:]
+            for line in tail_data.split('\n'):
+                entry = self._safe_parse_json(line)
+                if entry:
+                    if entry.get('type') == 'user':
+                        stats["rounds"] += 1
+                        stats["total_tokens"] += entry.get("tokens", 0)
+                    elif entry.get('type') == 'assistant':
+                        stats["total_tokens"] += entry.get("tokens", 0)
+                    elif entry.get('type') == 'metadata':
+                        stats[entry['key']] = entry['value']
+
+        except (IOError, OSError):
+            pass
+
+        return stats

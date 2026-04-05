@@ -20,7 +20,7 @@ from typing import Dict, List, Any, Union, Optional
 
 from config import AIAssistantManager, parse_number_from_readable
 from logger import Logger
-from session import SessionWriter
+from session import SessionWriter, SessionLoader
 from tool import ToolManager
 from tool_shell import invoke_shell_sandbox_info, invoke_shell_cleanup, invoke_execute_shell
 from client import Client
@@ -36,6 +36,7 @@ class AIChat:
         self._cli = Client()
         self._logger = Logger()
         self._session = SessionWriter()
+        self._session_loader = SessionLoader()
         self._aiconfig = AIAssistantManager()
         self._assistant = None
         self._tool = ToolManager()
@@ -105,6 +106,8 @@ class AIChat:
         self._cli.register("sandbox", lambda v: self._tool.set_sandbox_home(v))
         self._cli.register("-sandbox", lambda: self._tool.set_sandbox_home(''))
         self._cli.register("load", self._on_load_log)
+        self._cli.register("resume", self._on_resume)
+        self._cli.register("sessions", self._on_list_sessions)
         self._cli.register("list", self._on_list)
         self._cli.register("use", self._on_use)
         self._cli.register("show", self._on_show)
@@ -1120,6 +1123,70 @@ class AIChat:
                 self._cur_round = {"request":[], "response":[]}
             #print(f"{self._history}")
             return True
+
+    def _on_resume(self, session_id: str = ""):
+        """从 JSONL 恢复会话
+
+        Args:
+            session_id: 会话 ID。如果为空，恢复最近的会话。
+        """
+        session_id = session_id.strip()
+        if not session_id:
+            # 列出最近的会话，选择最新的一个
+            sessions = self._session_loader.list_sessions()
+            if not sessions:
+                print("No sessions found.", file=sys.stderr)
+                return True
+            session_id = sessions[0]["session_id"]
+
+        try:
+            history = self._session_loader.load_session(session_id)
+        except FileNotFoundError:
+            print(f"Session '{session_id}' not found.", file=sys.stderr)
+            return True
+        except ValueError as e:
+            print(f"Session '{session_id}' is corrupt: {e}", file=sys.stderr)
+            return True
+
+        if not history:
+            print(f"Session '{session_id}' is empty.", file=sys.stderr)
+            return True
+
+        # 保存当前未完成的 round
+        if self._cur_round and self._cur_round["request"]:
+            self._history.append(self._cur_round)
+
+        # 用加载的 history 替换当前 history
+        self._history = history
+        self._cur_round = {"request": [], "response": []}
+        self._files = []
+
+        # 同时打开 SessionWriter 以追加模式继续写入
+        self._session.open(session_id)
+
+        rounds_count = len(history)
+        print(f"Session '{session_id}' restored ({rounds_count} rounds).")
+        return True
+
+    def _on_list_sessions(self):
+        """列出当前项目的所有会话"""
+        sessions = self._session_loader.list_sessions()
+        if not sessions:
+            print("No sessions found.")
+            return True
+
+        print(f"{'Session ID':<22} {'Rounds':>6} {'Tokens':>8} {'Size':>10} {'Title'}")
+        print("-" * 70)
+        for s in sessions:
+            if s['file_size'] < 1024 * 1024:
+                size_str = f"{s['file_size'] / 1024:.1f}K"
+            else:
+                size_str = f"{s['file_size'] / (1024*1024):.1f}M"
+            title = s.get('title', '')
+            if len(title) > 30:
+                title = title[:27] + "..."
+            print(f"{s['session_id']:<22} {s['rounds']:>6} {s['total_tokens']:>8} {size_str:>10} {title}")
+        return True
 
     def _on_list(self, list_type):
         if list_type == "ai":
