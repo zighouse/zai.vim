@@ -917,6 +917,25 @@ class AIChat:
             max_context_tokens = self._get_max_context_tokens()
             if request_tokens > max_context_tokens * 0.9:  # 达到90%阈值时警告
                 print(f"WARNING: Requsted tokens ({request_tokens}) is closing to the {request_tokens/max_context_tokens*100:.1f}% of the maximum context length ({max_context_tokens}).")
+
+            # 自动压缩：当 _auto_compact 开启且 token 超过安全阈值时触发
+            # safety_factor 表示保留给当前请求+响应的比例，(1 - safety_factor) 是 history 上限
+            if self._auto_compact and request_tokens > max_context_tokens * (1 - self._config.get('history_safety_factor', 0.25)):
+                history_len_before = len(self._history)
+                self._on_compact()
+                # 仅当 history 真正被压缩时才重建 params
+                if len(self._history) < history_len_before:
+                    params = self._get_completion_params(current_round)
+                    # 重新计算 token 数以反映压缩后的状态
+                    request_tokens = 0
+                    for m in params['messages']:
+                        if "content_tokens" in m:
+                            request_tokens += m["content_tokens"]
+                        elif "content" in m:
+                            request_tokens += self._count_tokens(m['content'])
+                        if "reasoning_tokens" in m:
+                            request_tokens += m["reasoning_tokens"]
+                    print(f"(request-tokens after compact: {request_tokens})")
             
             try:
                 stream = self._llm.chat.completions.create(**params)
