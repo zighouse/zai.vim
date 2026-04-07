@@ -41,6 +41,34 @@ For detailed command reference: >
     :help zai-command-details|
 
 ==============================================================================
+CONTEXT MANAGEMENT                                  *zai-context-management*
+==============================================================================
+
+Manage conversation context and sessions.
+
+COMPACT                                                     *zai-compact*
+
+Compress conversation history into a structured summary to save tokens.
+
+Usage: >
+    :compact [instructions]     Compress context with optional instructions
+    :compact auto               Toggle auto-compact mode
+
+Auto-compact triggers when request tokens exceed the safety threshold.
+Configure threshold with `:history_safety_factor <float>`.
+
+RESUME                                                      *zai-resume*
+
+Resume a previous session from JSONL persistence.
+
+Usage: >
+    :resume [session-id]        Resume specific session
+    :sessions                   List all saved sessions
+
+Sessions are automatically saved as JSONL files and can be restored
+with :resume. The session ID can be obtained from :sessions output.
+
+==============================================================================
 TOOL SYSTEM OVERVIEW                                     *zai-tools*
 ==============================================================================
 

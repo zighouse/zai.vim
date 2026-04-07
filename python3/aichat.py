@@ -205,6 +205,10 @@ class AIChat:
           - 保留最近 keep_last_n 轮完整内容（如果 token 预算允许）
           - 将更早轮归档并创建一个归档引用条目
         结果会把 self._history 转换为： [ {archived:True, content: "归档引用..."}, round1, round2, ... ]
+
+        注意：此方法是旧的归档机制（文件级归档 + fetch_archive 工具）。新的 compact 机制
+        （/compact 命令，LLM 语义摘要）在 _on_compact() 中实现。两者共存：当 _history[0]
+        已是 compact summary 时，_get_completion_params 会跳过此方法。
         """
         # 获取 keep_last_n 配置，默认值为 6，确保为正整数
         if keep_last_n is None:

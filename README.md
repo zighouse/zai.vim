@@ -485,6 +485,10 @@ Session commands configure AI assistant settings and are processed by Zai's back
 - `:no-log` - Disable logging
 - `:-no-log` - Enable logging
 - `:load <log-file>` - Load context from Zai log file
+- `:compact [instructions]` - Compress conversation context into a structured summary
+- `:compact auto` - Toggle auto-compact mode (compress when tokens exceed threshold)
+- `:resume [session-id]` - Resume a previous session from JSONL persistence
+- `:sessions` - List all saved sessions
 - `:-<param>` - Reset any parameter to default (e.g., `:-temperature`)
 
 Session Commands with AI assistants YAML configuration:
