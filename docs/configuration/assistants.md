@@ -38,7 +38,7 @@ The file contains a list of AI assistant configurations:
     context: 128K                   # Optional: context length
     out-length: { default: 4K, max: 8K }  # Optional: output length
     cost: { in: 2, out: 3, unit: RMB/MTk }  # Optional: pricing
-    features: json, tool-call, complete, fim  # Optional: capabilities
+    features: json, tool-call, complete  # Optional: capabilities
 ```
 
 ## Example Configuration
@@ -67,7 +67,7 @@ The file contains a list of AI assistant configurations:
     context: 128K
     out-length: { default: 4K, max: 8K }
     cost: { hit: 0.2, in: 2, out: 3, unit: RMB/MTk }
-    features: json, tool-call, complete, fim
+    features: json, tool-call, complete
   - name: deepseek-reasoner
     size: 685.40B
     context: 128K
@@ -130,7 +130,6 @@ Models can declare support for these features:
 | `json` | JSON mode / structured output |
 | `tool-call` | Function calling / tool use |
 | `complete` | Text completion |
-| `fim` | Fill-in-middle completion |
 | `prefix` | Prefix completion |
 | `talk` | Conversational chat |
 | `tools` | Tool calling support |
@@ -152,7 +151,7 @@ Models can declare support for these features:
     context: 128K
     out-length: { default: 4K, max: 8K }
     cost: { hit: 0.2, in: 2, out: 3, unit: RMB/MTk }
-    features: json, tool-call, complete, fim
+    features: json, tool-call, complete
   - name: deepseek-reasoner
     size: 685.40B
     context: 128K

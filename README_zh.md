@@ -307,7 +307,7 @@ DEEPSEEK_API_KEY=sk-********************************
     context: 128K                             # 上下文长度 (建议，非必选，默认 32K)
     out-length: { default: 4K, max: 8K }      # 输出长度 (可选)
     cost: { hit: 0.2, in: 2, out: 3, unit: RMB/MTk } #  (可选) 价格：缓冲命中、输入、输出、单位(人民币每百万词)
-    features: json, tool-call, complete, fim         # (可选) 支持特性
+    features: json, tool-call, complete         # (可选) 支持特性
   - name: deepseek-reasoner
     size: 685.40B
     context: 128K

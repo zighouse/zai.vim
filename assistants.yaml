@@ -1,0 +1,280 @@
+- name: deepseek                        # AI助理标识/服务商 (自定义)
+  base-url: https://api.deepseek.com    # api 调用地址
+  api-key-name: DEEPSEEK_API_KEY        # api 调用口令环境变量名
+  tokenizer: deepseek-ai/DeepSeek-V3.2  # 统一的分词器 (可选，用于限制请求长度)
+  model:                                # 服务商提供的模型清单
+  - name: deepseek-chat                       # 模型标识 (要与服务商的清单一致)
+    size: 685.40B                             # 模型尺寸 (暂时仅用作展示)
+    context: 128K                             # 上下文长度 (用于限制请求长度)
+    output: { default: 4K, max: 8K }          # 输出长度 (默认, 最大)
+    cost: { hit: 0.2, in: 2, out: 3 }   # 价格：缓冲命中、输入、输出、单位(人民币每百万词)
+    features: json, tools, complete      # 支持特性
+  - name: deepseek-reasoner
+    size: 685.40B
+    context: 128K
+    output: { default: 32K, max: 64K }
+    cost: { hit: 0.2, in: 2, out: 3 }
+    features: json, tools, complete
+
+- name: 硅基流动
+  api-key-name: SILICONFLOW_API_KEY
+  base-url: https://api.siliconflow.cn
+  model:
+  - name: Pro/deepseek-ai/DeepSeek-V3.2
+    size: 671B
+    context: 160K
+    output: { default: 4K, max: 8K }
+    cost: { in: 2, out: 3 }
+    features: talk, prefix, tools, infer, moe
+  - name: Pro/zai-org/GLM-4.7
+    size: 355B
+    active: 32B
+    context: 198K
+    cost: { hit: 0.8, in: 4.0, out: 16.0 }
+    features: talk, prefix, tools, moe, infer
+  - name: moonshotai/Kimi-K2-Thinking
+    size: 1T
+    context: 256K
+    cost: { in: 4, out: 16 }
+    features: talk, prefix, tools, infer, moe
+  - name: Pro/moonshotai/Kimi-K2-Thinking
+    size: 1T
+    context: 256K
+    cost: { in: 4, out: 16 }
+    features: talk, prefix, tools, infer, moe
+  - name: zai-org/GLM-4.6V
+    size: 106B
+    context: 128K
+    cost: { in: 1, out: 3 }
+    features: talk, prefix, tools, vision, infer, moe
+  - name: MiniMaxAI/MiniMax-M2
+    size: 230B
+    active: 10B
+    context: 192K
+    cost: { in: 2.1, out: 8.4 }
+    features: talk, prefix, tools, coder, infer, moe
+  - name: Kwaipilot/KAT-Dev
+    size: 32B
+    context: 128K
+    features: talk, prefix, tools, coder
+    cost: { in: 1, out: 4 }
+    memo: 软件工程
+  - name: deepseek-ai/DeepSeek-OCR
+    size: 3B
+    context: 8K
+    cost: free
+    features: talk, vision, ocr
+  - name: Qwen/Qwen-Image-Edit-2509
+    size: 20B
+    context: 32K
+    features: 生图, 多图编辑, 图生图
+    cost: { price: 0.3, unit: RMB/image }
+  - name: fnlp/MOSS-TTSD-v0.5
+    size: 2.05B
+    features: 语音, TTS, 多语言
+    cost: { price: 50, unit: RMB/Mbytes }
+  - name: deepseek-ai/DeepSeek-R1-0528-Qwen3-8B
+    size: 8B
+    context: 128K
+    features: talk, infer
+    const: free
+  - name: inclusionAI/Ling-1T
+  - name: Qwen/Qwen-Image-Edit # ￥0.3/Image 生图
+  - name: Qwen/Qwen-Image # ￥0.3/Image 生图
+  - name: tencent/Hunyuan-MT-7B # 对话 Prefix 7B 32K
+  - name: inclusionAI/Ling-mini-2.0 # ￥2/M Tokens 对话 Prefix Tools MoE 16B 128K
+  - name: ByteDance-Seed/Seed-OSS-36B-Instruct # ￥4/M Tokens 对话 Prefix Tools 36B 256K
+  - name: Wan-AI/Wan2.2-I2V-A14B # ￥2/Video 视频 MoE 27B New
+  - name: Wan-AI/Wan2.2-T2V-A14B # ￥2/M Video 视频 MoE 27B
+  - name: zai-org/GLM-4.6
+  - name: zai-org/GLM-4.5V # ￥6/M Tokens 对话 Tools 视觉推理模型 MoE 106B 64K
+  - name: zai-org/GLM-4.5 # ￥14/M Tokens 对话 Tools 推理模型 MoE 335B 128K
+  - name: zai-org/GLM-4.5-Air # ￥6/M Tokens 对话 Tools 推理模型 MoE 106B 128K
+  - name: stepfun-ai/step3 # ￥10/M Tokens 对话 Tools 视觉 MoE 321B 64K
+  - name: Qwen/Qwen3-Coder-30B-A3B-Instruct # ￥2.8/M Tokens 对话 Prefix Tools Coder MoE 30B 256K
+  - name: Qwen/Qwen3-Coder-480B-A35B-Instruct # ￥16/M Tokens 对话 Prefix Tools Coder MoE 480B 256K
+  - name: Qwen/Qwen3-30B-A3B-Thinking-2507 # ￥2.8/M Tokens 对话 Tools 推理模型 MoE 30B 256K
+  - name: Qwen/Qwen3-30B-A3B-Instruct-2507 # ￥2.8/M Tokens 对话 Tools MoE 30B 256K
+  - name: Qwen/Qwen3-30B-A3B # ￥2.8/M Tokens 对话 Tools 推理模型 MoE 30B 128K
+    tokenizer: Qwen/Qwen3-30B-A3B
+  - name: Qwen/Qwen3-235B-A22B-Thinking-2507 # ￥10/M Tokens 对话 Prefix Tools MoE 235B 256K
+  - name: Qwen/Qwen3-235B-A22B-Instruct-2507 # ￥10/M Tokens 对话 Prefix Tools MoE 235B 256K
+  - name: THUDM/GLM-4.1V-9B-Thinking # 免费对话视觉 9B 64K
+  - name: Pro/THUDM/GLM-4.1V-9B-Thinking # ￥1/M Tokens 对话视觉 9B 64K
+  - name: baidu/ERNIE-4.5-300B-A47B # ￥8/M Tokens 对话 MoE 300B 128K
+  - name: tencent/Hunyuan-A13B-Instruct # ￥4/M Tokens 对话推理模型 MoE 80B 128K
+  - name: moonshotai/Kimi-Dev-72B # ￥8/M Tokens 对话推理模型 72B 128K
+  - name: Tongyi-Zhiwen/QwenLong-L1-32B # ￥4/M Tokens 对话 Prefix 推理模型 32B 128K
+  - name: Qwen/Qwen3-8B
+    tokenizer: Qwen/Qwen3-8B
+    context: 128K
+    output: 8K
+    const: free
+    features: talk, infer, tools
+  - name: Qwen/Qwen2.5-7B-Instruct
+  - name: Qwen/Qwen2-7B-Instruct
+
+- name: Gemini # 需要日本或者台湾 ip
+  api-key-name: GEMINI_API_KEY
+  base-url: https://generativelanguage.googleapis.com/v1beta/openai/
+  model:
+    - gemini-2.5-flash-lite   # in:$0.1/mtk out:$0.4/mtk free-level no-call
+    - gemini-2.5-flash        # in:$0.30/mtk out:$2.5/mtk free-level no-call
+    - gemini-2.5-pro          # in:$1.25/mtk out:$10/mtk free-level no-call
+    - gemini-3-flash-preview  # in:$0.5/mtk out:$3/mtk free-level no-call
+    - gemini-3-pro-preview    # in:$2/mtk out:$12/mtk non-free
+
+- name: 火山方舟
+  api-key-name: VOLCES_API_KEY
+  base-url: https://ark.cn-beijing.volces.com/api/v3
+  # completion: https://ark.cn-beijing.volces.com/api/v3/chat/completions
+  # tokenization: https://ark.cn-beijing.volces.com/api/v3/tokenization
+  model:
+  - name: doubao-seed-1-8-251228
+    context: 256K
+    output: 64K
+    cost:  {hit: 0.16, in: 0.8, out: 2, level: ["in<=32K", "out<=200K"]}
+    cost2: {hit: 0.16, in: 0.8, out: 4, level: ["in<=32K", "out>200K"]}
+    cost3: {hit: 0.16, in: 1.2, out: 8, level: ["32K<=in<=128K"]}
+    cost4: {hit: 0.16, in: 2.4, out: 12, level: ["in>128K"]}
+    features: vision, tools
+    # 支持思考程度可调节（reasoning effort）：分为 minimal、low、medium、high 四种模式，其中minimal为不思考
+    params: { reasoning_effort: "high" }
+  - name: doubao-seed-1-6-251015 # 分段计费 2/M 上下文256k 输出32k
+  - deepseek-v3-1-250821
+  - doubao-seedance-1-0-pro-250528 # {"name": "doubao-seedance-1-0-pro-250528", "comment": "图像生成、视频生成"},
+  - doubao-seed-1-6-vision-250815
+  - doubao-seed-1-6-thinking-250715
+  - doubao-seed-1-6-flash-250828
+  - doubao-1-5-thinking-pro-250415
+  - doubao-1.5-vision-pro-250328
+  - doubao-1-5-ui-tars-250428
+  - deepseek-r1-250528
+  - deepseek-v3-250324
+  - doubao-1-5-pro-32k-250115
+  - doubao-1-5-pro-256k-250115
+  - doubao-1-5-lite-32k-250115
+  - kimi-k2-250905
+
+- name: 月之暗面
+  api-key-name: MOONSHOT_API_KEY
+  base-url: https://api.moonshot.cn/v1
+  model:
+  - name: kimi-k2-0905-preview # tokens:256k, 代码
+  - name: kimi-k2-turbo-preview # tokens:256k, 高速版, ~kimi-k2-0905-preview, 输出速度:60~100ps
+  - name: moonshot-v1-128k # tokens:128k, 生成超长文本
+  - name: moonshot-v1-128k-vision-preview # 图生文
+  - name: kimi-latest # 128k 图片理解
+  - name: kimi-thinking-preview # ' 长思考'
+
+- name: aliyun
+  api-key-name: ALIYUN_API_KEY
+  base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  tokenizer: Qwen/Qwen3-8B
+  model:
+  - name: qwen3-max
+    context: 256K
+    input: 252K
+    output: 64K
+    cost: { hit: 0.64, in: 3.2, out: 12.8 }
+    features: tools, search
+    params: { extra_body: { enable_search: true } }
+  - name: qwen-plus
+    context: 1M
+    input: 997K
+    output: 32K
+    cost: { in: 0.8, out: 2, out_think: 8, hit: 0.16 }
+    features: tools, search
+    params: { extra_body: { enable_search: true } }
+  - name: qwen-max
+    context: 32K
+    input: 30K
+    output: 8K
+    cost: {in: 2.4, out: 9.6, hit: 0.48 }
+    features: tools, search
+    params: { extra_body: { enable_search: true } }
+  - name: qwen3-coder-plus
+    context: 1M
+    input: 1M
+    output: 64K
+    cost: { in: 4, out: 16, hit: 0.8 }
+    features: tools
+  - name: qwen3-flash
+    context: 1M
+    input: 997K
+    output: 32K
+    cost: { in: 0.15, out: 1.5, hit: 0.03 }
+    features: tools, search
+    params: { extra_body: { enable_search: true } }
+  - name: qwen3-coder-flash
+    features: tools
+    context: 1M
+    input: 997K
+    output: 64K
+    cost: { in: 1, out: 4, hit: 0.2 }
+  #- name: qwen-deep-research
+  #  context: 1M
+  #  input: 997K
+  #  output: 32K
+  #  cost: { in: 54, out: 163 }  # 巨贵！
+  #  features: chat              # 只能 chat
+  #- name: qwen3-coder-480b-a35b-instruct
+  #  context: 256K
+  #  input: 200K
+  #  output: 64K
+  #  cost: { in: 6, out: 24 }    # 性价比低
+  #  feature: chat               # 只能 chat
+  - name: Moonshot-Kimi-K2-Instruct
+
+- name: longcat
+  base-url: https://api.longcat.chat/openai
+  api-key-name: LONGCAT_API_KEY
+  model:
+  - LongCat-Flash-Chat
+  - LongCat-Flash-Thinking
+
+- name: 周庆波
+  base-url: http://10.67.30.153:1035/v1
+  api-key-name: KEDACOM_API_KEY_1
+  model:
+  - name: qwen3-8b
+    tokenizer: Qwen/Qwen3-8B
+    # 可以通过在 :prompt 中加入 /no_think 来清空 <think>...</think> 之间的内容。
+
+- name: 周庆波-qwen3-4b
+  base-url: http://10.67.30.153:1038/v1
+  api-key-name: KEDACOM_API_KEY_1
+  model:
+  - name: qwen3-4b-instruct
+    tokenizer: Qwen/Qwen3-4b
+        
+- name: keda-qwen3-8b-instruct # 韦国华
+  base-url: http://1520511133688406.cn-shanghai.pai-eas.aliyuncs.com/api/predict/quickstart_deploy_20251104_qr8y/v1
+  api-key-name: KEDACOM_API_KEY_2
+  model: [ Qwen3-8B]
+  tokenizer: Qwen/Qwen3-8B
+  params: { extra_body: { chat_template_kwargs: { enable_thinking: false } } }
+
+- name: zhipu # 智谱
+  base-url: https://open.bigmodel.cn/api/paas/v4
+  api-key-name: ZHIPU_API_KEY
+  model:
+  - name: glm-4.7
+    context: 200K
+    output: 128K
+  - name: glm-4.6
+    context: 200K
+    output: 128K
+  - name: glm-4.5
+    context: 128K
+    output: 96K
+  - name: glm-4.5-air
+    context: 128K
+    output: 96K
+  - name: glm-4.5-airx
+    context: 128K
+    output: 96K
+  - name: glm-4.5-flash
+    context: 128K
+    output: 96K
+    cost: free

@@ -302,7 +302,7 @@ Sample code of assistants.yaml:
     context: 128K                             # context length, not a must but recommended.
     out-length: { default: 4K, max: 8K }      # output sequence length, optional
     cost: { hit: 0.2, in: 2, out: 3, unit: RMB/MTk } # optional
-    features: json, tool-call, complete, fim         # optional
+    features: json, tool-call, complete         # optional
   - name: deepseek-reasoner
     size: 685.40B
     context: 128K
