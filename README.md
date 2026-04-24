@@ -84,7 +84,7 @@ return {
     {
         "zighouse/zai.vim",
         config = function()
-            vim.g.zai_default_model = "deepseek-chat"
+            vim.g.zai_default_model = "deepseek-v4-flash"
         end
     }
 }
@@ -297,18 +297,24 @@ Sample code of assistants.yaml:
   api-key-name: DEEPSEEK_API_KEY        # environment name of the api key
   tokenizer: deepseek-ai/DeepSeek-V3.2  # for tokens calculation, optional
   model:                                # selected models from the provider's model list
-  - name: deepseek-chat                       # model identifier from provider
-    size: 685.40B                             # model size, optional.
-    context: 128K                             # context length, not a must but recommended.
-    out-length: { default: 4K, max: 8K }      # output sequence length, optional
-    cost: { hit: 0.2, in: 2, out: 3, unit: RMB/MTk } # optional
-    features: json, tool-call, complete         # optional
-  - name: deepseek-reasoner
-    size: 685.40B
-    context: 128K
-    out-length: { default: 32K, max: 64K }
-    cost: { hit: 0.2, in: 2, out: 3, unit: RMB/MTk }
-    features: json, tool-call, complete
+  - name: deepseek-v4-flash                   # model identifier from provider
+    size: { weight: 284B, active: 13B, trained: 32T } # model size, optional.
+    context: 1M                               # context length, not a must but recommended.
+    output: 384K                              # output sequence length, optional
+    cost: { hit: 0.2, in: 1, out: 2 }         # optional
+    features: json, tools, complete, fim      # optional
+    params:
+    - extra_body: {thinking: {type: enabled}}
+      reasoning_effort: "high"
+  - name: deepseek-v4-pro
+    size: { weight: 1.6T, active: 49B, trained: 33T }
+    context: 1M
+    output: 384K
+    cost: { hit: 1, in: 12, out: 24 }
+    features: json, tools, complete, fim
+    params:
+    - extra_body: {thinking: {type: enabled}}
+      reasoning_effort: "high"
 
 - name: Gemini
   api-key-name: GEMINI_API_KEY
@@ -609,7 +615,7 @@ DeepSeek configuration:
 ```vim
 let g:zai_base_url = "https://api.deepseek.com"
 let g:zai_api_key_name = "DEEPSEEK_API_KEY"
-let g:zai_default_model = "deepseek-chat"
+let g:zai_default_model = "deepseek-v4-flash"
 ```
 
 Change model during conversation:

@@ -87,7 +87,7 @@ return {
     {
         "zighouse/zai.vim",
         config = function()
-            vim.g.zai_default_model = "deepseek-chat"
+            vim.g.zai_default_model = "deepseek-v4-flash"
         end
     }
 }
@@ -302,18 +302,24 @@ DEEPSEEK_API_KEY=sk-********************************
   api-key-name: DEEPSEEK_API_KEY        # api 调用口令环境变量名
   tokenizer: deepseek-ai/DeepSeek-V3.2  # 统一的分词器 (可选，用于限制请求长度)
   model:                                # 服务商提供的模型清单
-  - name: deepseek-chat                       # 模型标识 (要与服务商的清单一致)
-    size: 685.40B                             # 模型尺寸 (可选，暂时仅用作展示)
-    context: 128K                             # 上下文长度 (建议，非必选，默认 32K)
-    out-length: { default: 4K, max: 8K }      # 输出长度 (可选)
-    cost: { hit: 0.2, in: 2, out: 3, unit: RMB/MTk } #  (可选) 价格：缓冲命中、输入、输出、单位(人民币每百万词)
-    features: json, tool-call, complete         # (可选) 支持特性
-  - name: deepseek-reasoner
-    size: 685.40B
-    context: 128K
-    out-length: { default: 32K, max: 64K }
-    cost: { hit: 0.2, in: 2, out: 3, unit: RMB/MTk }
-    features: json, tool-call, complete
+  - name: deepseek-v4-flash                   # 模型标识 (要与服务商的清单一致)
+    size: { weight: 284B, active: 13B, trained: 32T }  # 模型尺寸 (暂时仅用作展示)
+    context: 1M                               # 上下文长度 (用于限制请求长度)
+    output: 384K                              # 输出长度 (默认, 最大)
+    cost: { hit: 0.2, in: 1, out: 2 }         # 价格：缓冲命中、输入、输出、单位(人民币每百万词)
+    features: json, tools, complete, fim      # 支持特性
+    params:
+    - extra_body: {thinking: {type: enabled}}
+      reasoning_effort: "high"
+  - name: deepseek-v4-pro
+    size: { weight: 1.6T, active: 49B, trained: 33T }
+    context: 1M
+    output: 384K
+    cost: { hit: 1, in: 12, out: 24 }
+    features: json, tools, complete, fim
+    params:
+    - extra_body: {thinking: {type: enabled}}
+      reasoning_effort: "high"
 
 - name: Gemini
   api-key-name: GEMINI_API_KEY
@@ -635,7 +641,7 @@ Zai 提供了多个工具集供 AI 调用以与系统交互：
 ```vim
 let g:zai_base_url = "https://api.deepseek.com"
 let g:zai_api_key_name = "DEEPSEEK_API_KEY"
-let g:zai_default_model = "deepseek-chat"
+let g:zai_default_model = "deepseek-v4-flash"
 ```
 
 之后可以使用 `:model` 会话命令来改变当前聊天的模型：
@@ -706,7 +712,7 @@ PROMPT
 又例如：
 
 ```
-:model deepseek-chat
+:model deepseek-v4-flash
 :temperature 0.3
 ```
 

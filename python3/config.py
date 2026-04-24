@@ -267,7 +267,7 @@ class AIAssistantManager:
         """
         model format:
           - index in int or string:  0 / 1 / '0' / '1'
-          - name match: 'deepseek-chat'
+          - name match: 'deepseek-v4-flash'
         return port['model'] which is a dict with the name of the model
         """
         if not provider:

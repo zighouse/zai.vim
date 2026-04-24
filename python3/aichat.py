@@ -29,7 +29,7 @@ from tokens import AITokenizer
 # Default values
 _DEFAULT_API_KEY_NAME = "DEEPSEEK_API_KEY"
 _DEFAULT_BASE_URL = "https://api.deepseek.com"
-_DEFAULT_MODEL = "deepseek-chat"
+_DEFAULT_MODEL = "deepseek-v4-flash"
 
 # Compact summary system prompt
 _COMPACT_SYSTEM_PROMPT = """\

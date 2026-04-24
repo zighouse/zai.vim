@@ -81,8 +81,8 @@ Set the default AI model to use.
 
 ```vim
 " DeepSeek models
-let g:zai_default_model = "deepseek-chat"
-let g:zai_default_model = "deepseek-reasoner"
+let g:zai_default_model = "deepseek-v4-flash"
+let g:zai_default_model = "deepseek-v4-pro"
 
 " OpenAI models
 let g:zai_default_model = "gpt-4"
