@@ -243,11 +243,6 @@ COMMANDS:
     {cmd_prefix}max_tokens <int>     - Set response length limit
     {cmd_prefix}prompt <text>        - Set prompt or system message content
     {cmd_prefix}prompt<<EOF          - Start block mode for prompt, end with EOF (or any marker)
-    {cmd_prefix}complete_type <str>  - File-type for completion
-    {cmd_prefix}prefix <str>         - Prefix for completion
-    {cmd_prefix}prefix<<EOF          - Start block mode for prefix, end with EOF (or any marker)
-    {cmd_prefix}suffix <str>         - Suffix for FIM-completion
-    {cmd_prefix}suffix<<EOF          - Start block mode for suffix, end with EOF (or any marker)
     {cmd_prefix}no-log               - Disable file logging
     {cmd_prefix}load <log-file>      - Load context from a Zai log file.
     {cmd_prefix}-<param>             - Reset parameter to default

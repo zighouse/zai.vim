@@ -91,12 +91,6 @@ class AIChat:
         self._cli.register("-no_log", lambda: self._logger.set_enable(True))
         self._cli.register("talk_mode", lambda v: self.set_config("talk_mode", v))
         self._cli.register("-talk_mode", lambda: self._config.pop("talk_mode", None))
-        self._cli.register("complete_type", lambda v: self.set_config("complete_type", v))
-        self._cli.register("-complete_type", lambda: self._config.pop("complete_type", None))
-        self._cli.register("prefix", lambda v: self.set_config("prefix", v.strip()), use_raw_cmd=True)
-        self._cli.register("-prefix", lambda: self._config.pop("prefix", None))
-        self._cli.register("suffix", lambda v: self.set_config("suffix", v.strip()), use_raw_cmd=True)
-        self._cli.register("-suffix", lambda: self._config.pop("suffix", None))
         self._cli.register("temperature", lambda v: self.set_config("temperature", float(v)))
         self._cli.register("-temperature", lambda: self._config.pop("temperature", None))
         self._cli.register("top_p", lambda v: self._config.pop("top_p", None))
@@ -832,8 +826,6 @@ class AIChat:
                 }
         full_content = full_response['content']
         reasoning_content = []
-        is_FIM = False
-
         # 日期变化检测 — 在 _get_completion_params 调用之前捕获，确保 system prompt 与检测同一次 datetime
         now = datetime.now()
         today_key = now.strftime("%Y-%m-%d")
@@ -849,36 +841,6 @@ class AIChat:
                 "base_url": self._config.get("base_url",_DEFAULT_BASE_URL),
                 }
 
-        if 'complete_type' in self._config:
-            messages = params['messages']
-            if 'suffix' in self._config:
-                # FIM-completion
-                is_FIM = True
-                if messages[-1]['role'] == 'user':
-                    params.pop('messages', None)
-                    params['prompt'] = f"```{self._config['complete_type']}\n{messages[-1]['content']}"
-                    params['suffix'] = self._config.get("suffix","")
-                    params['stream'] = False
-                    self._config.pop('suffix', None)
-            else:
-                # prefix-completion
-                params['messages'] = [ m for m in messages if m['role'] != 'system' ]
-                params['stop'] = '```'
-                if 'prefix' in self._config:
-                    prefix = self._config['prefix']
-                    self._config.pop('prefix', None)
-                else:
-                    prefix = ''
-                params['messages'].append({
-                    'role': 'assistant',
-                    'content': f"```{self._config['complete_type']}\n{prefix}",
-                    'prefix': True
-                    })
-            if not 'max_tokens' in params:
-                params['max_tokens'] = 400
-            if not 'temperature':
-                params['temperature'] = 0.2
-
         msg.update(params)
         msg.pop('stream', None)
         msg.pop('messages', None)
@@ -887,151 +849,122 @@ class AIChat:
         start_time = time.time()
 
         self._ensure_llm()
-        if is_FIM:
-            try:
-                response = self._llm.completions.create(**params)
-                if content := response.choices[0].text:
-                    full_content.append(content)
-                    print(content, flush=True)
-            except (BadRequestError, APIError, APIConnectionError, RateLimitError) as e:
-                error_msg = {
-                    "role": "assistant",
-                    "content": f"{type(e).__name__}: Request failed with error: {str(e)}",
-                    "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    "elapsed_time": 0,
-                    "api_error": True
-                }
-                self._logger.append_message(error_msg)
-                self._session.append_assistant_message(error_msg.get('content', ''))
-                return error_msg
-            except Exception as e:
-                error_msg = {
-                    "role": "assistant",
-                    "content": f"{type(e).__name__}: Request failed with error: {str(e)}",
-                    "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    "elapsed_time": 0,
-                    "unknown_error": True
-                }
-                self._logger.append_message(error_msg)
-                self._session.append_assistant_message(error_msg.get('content', ''))
-                return error_msg
-        else:
-            if params['messages'][0]['role'] == 'system':
-                sys_prompt = [ params['messages'][0]['content'] ]
-                if self._has_archives:
-                    from tool_archive import get_prompt, set_config
-                    set_config(self._config)
-                    sys_prompt.append(get_prompt(True))
-                sys_prompt.append(self._prompt_for_title)
-                params['messages'][0]['content'] = "\n".join(sys_prompt)
-            # 日期变更：在 user 消息之前插入日期更新消息（用 user role 避免破坏 assistant/user 交替模式）
-            if date_changed:
-                today_string = self._get_date_string()
-                for i in range(len(params['messages']) - 1, -1, -1):
-                    if params['messages'][i]['role'] == 'user':
-                        params['messages'].insert(i, {
-                            "role": "user",
-                            "content": f"当前日期已更新为：{today_string}"
-                        })
-                        break
-            if tools := self._tool.get_tools():
-                params['tools'] = tools
-            request_tokens = 0 # FIXME: calculate a correct rolling request tokens.
-            for m in params['messages']:
-                if "content_tokens" in m:
-                    request_tokens = request_tokens + m["content_tokens"]
-                else:
-                    request_tokens = request_tokens + self._count_tokens(m['content'])
-                if "reasoning_tokens" in m:
-                    request_tokens = request_tokens + m["reasoning_tokens"]
-            if request_tokens:
-                print(f"(request-tokens: {request_tokens})")
+        if params['messages'][0]['role'] == 'system':
+            sys_prompt = [ params['messages'][0]['content'] ]
+            if self._has_archives:
+                from tool_archive import get_prompt, set_config
+                set_config(self._config)
+                sys_prompt.append(get_prompt(True))
+            sys_prompt.append(self._prompt_for_title)
+            params['messages'][0]['content'] = "\n".join(sys_prompt)
+        # 日期变更：在 user 消息之前插入日期更新消息（用 user role 避免破坏 assistant/user 交替模式）
+        if date_changed:
+            today_string = self._get_date_string()
+            for i in range(len(params['messages']) - 1, -1, -1):
+                if params['messages'][i]['role'] == 'user':
+                    params['messages'].insert(i, {
+                        "role": "user",
+                        "content": f"当前日期已更新为：{today_string}"
+                    })
+                    break
+        if tools := self._tool.get_tools():
+            params['tools'] = tools
+        request_tokens = 0 # FIXME: calculate a correct rolling request tokens.
+        for m in params['messages']:
+            if "content_tokens" in m:
+                request_tokens = request_tokens + m["content_tokens"]
+            else:
+                request_tokens = request_tokens + self._count_tokens(m['content'])
+            if "reasoning_tokens" in m:
+                request_tokens = request_tokens + m["reasoning_tokens"]
+        if request_tokens:
+            print(f"(request-tokens: {request_tokens})")
             
-            # 检查 tokens 是否超限
-            max_context_tokens = self._get_max_context_tokens()
-            if request_tokens > max_context_tokens * 0.9:  # 达到90%阈值时警告
-                print(f"WARNING: Requsted tokens ({request_tokens}) is closing to the {request_tokens/max_context_tokens*100:.1f}% of the maximum context length ({max_context_tokens}).")
+        # 检查 tokens 是否超限
+        max_context_tokens = self._get_max_context_tokens()
+        if request_tokens > max_context_tokens * 0.9:  # 达到90%阈值时警告
+            print(f"WARNING: Requsted tokens ({request_tokens}) is closing to the {request_tokens/max_context_tokens*100:.1f}% of the maximum context length ({max_context_tokens}).")
 
-            # 自动压缩：当 _auto_compact 开启且 token 超过安全阈值时触发
-            # safety_factor 表示保留给当前请求+响应的比例，(1 - safety_factor) 是 history 上限
-            if self._auto_compact and request_tokens > max_context_tokens * (1 - self._config.get('history_safety_factor', 0.25)):
-                history_len_before = len(self._history)
-                self._on_compact()
-                # 仅当 history 真正被压缩时才重建 params
-                if len(self._history) < history_len_before:
-                    params = self._get_completion_params(current_round)
-                    # 重新计算 token 数以反映压缩后的状态
-                    request_tokens = 0
-                    for m in params['messages']:
-                        if "content_tokens" in m:
-                            request_tokens += m["content_tokens"]
-                        elif "content" in m:
-                            request_tokens += self._count_tokens(m['content'])
-                        if "reasoning_tokens" in m:
-                            request_tokens += m["reasoning_tokens"]
-                    print(f"(request-tokens after compact: {request_tokens})")
+        # 自动压缩：当 _auto_compact 开启且 token 超过安全阈值时触发
+        # safety_factor 表示保留给当前请求+响应的比例，(1 - safety_factor) 是 history 上限
+        if self._auto_compact and request_tokens > max_context_tokens * (1 - self._config.get('history_safety_factor', 0.25)):
+            history_len_before = len(self._history)
+            self._on_compact()
+            # 仅当 history 真正被压缩时才重建 params
+            if len(self._history) < history_len_before:
+                params = self._get_completion_params(current_round)
+                # 重新计算 token 数以反映压缩后的状态
+                request_tokens = 0
+                for m in params['messages']:
+                    if "content_tokens" in m:
+                        request_tokens += m["content_tokens"]
+                    elif "content" in m:
+                        request_tokens += self._count_tokens(m['content'])
+                    if "reasoning_tokens" in m:
+                        request_tokens += m["reasoning_tokens"]
+                print(f"(request-tokens after compact: {request_tokens})")
             
-            try:
-                stream = self._llm.chat.completions.create(**params)
-            except (BadRequestError, APIError, APIConnectionError, RateLimitError) as e:
-                error_msg = {
-                    "role": "assistant",
-                    "content": f"{type(e).__name__}: Request failed with error: {str(e)}",
-                    "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    "elapsed_time": 0,
-                    "api_error": True
-                }
-                self._logger.append_message(error_msg)
-                self._session.append_assistant_message(error_msg.get('content', ''))
-                return error_msg
-            except Exception as e:
-                error_msg = {
-                    "role": "assistant",
-                    "content": f"{type(e).__name__}: Request failed with error: {str(e)}",
-                    "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    "elapsed_time": 0,
-                    "unknown_error": True
-                }
-                self._logger.append_message(error_msg)
-                self._session.append_assistant_message(error_msg.get('content', ''))
-                return error_msg
+        try:
+            stream = self._llm.chat.completions.create(**params)
+        except (BadRequestError, APIError, APIConnectionError, RateLimitError) as e:
+            error_msg = {
+                "role": "assistant",
+                "content": f"{type(e).__name__}: Request failed with error: {str(e)}",
+                "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "elapsed_time": 0,
+                "api_error": True
+            }
+            self._logger.append_message(error_msg)
+            self._session.append_assistant_message(error_msg.get('content', ''))
+            return error_msg
+        except Exception as e:
+            error_msg = {
+                "role": "assistant",
+                "content": f"{type(e).__name__}: Request failed with error: {str(e)}",
+                "time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "elapsed_time": 0,
+                "unknown_error": True
+            }
+            self._logger.append_message(error_msg)
+            self._session.append_assistant_message(error_msg.get('content', ''))
+            return error_msg
             
-            # 正常处理流式响应
-            for chunk in stream:
-                chunk_message = chunk.choices[0].delta
+        # 正常处理流式响应
+        for chunk in stream:
+            chunk_message = chunk.choices[0].delta
+            if not full_content:
+                if hasattr(chunk_message, 'reasoning_content'):
+                    if think := chunk_message.reasoning_content:
+                        if not reasoning_content and think.strip():
+                            print('<think>')
+                        if reasoning_content or think.strip():
+                            print(think, end='', flush=True)
+                            reasoning_content.append(think)
+                        time.sleep(random.uniform(0.01, 0.05))
+
+            if hasattr(chunk_message, 'tool_calls') and chunk_message.tool_calls:
+                for tool_call in chunk_message.tool_calls:
+                    if 'tool_calls' in full_response and len(full_response['tool_calls']) <= tool_call.index:
+                        full_response['tool_calls'].append({
+                            'id': tool_call.id,
+                            'type': 'function',
+                            'function': {'name': None, 'arguments': []}
+                            })
+                    if tool_call.function:
+                        function = tool_call.function
+                        fullres_func = full_response["tool_calls"][tool_call.index]['function']
+                        if function.name:
+                            fullres_func['name'] = function.name
+                        if function.arguments:
+                            fullres_func['arguments'].append(function.arguments)
+
+            if content := chunk_message.content:
                 if not full_content:
-                    if hasattr(chunk_message, 'reasoning_content'):
-                        if think := chunk_message.reasoning_content:
-                            if not reasoning_content and think.strip():
-                                print('<think>')
-                            if reasoning_content or think.strip():
-                                print(think, end='', flush=True)
-                                reasoning_content.append(think)
-                            time.sleep(random.uniform(0.01, 0.05))
-
-                if hasattr(chunk_message, 'tool_calls') and chunk_message.tool_calls:
-                    for tool_call in chunk_message.tool_calls:
-                        if 'tool_calls' in full_response and len(full_response['tool_calls']) <= tool_call.index:
-                            full_response['tool_calls'].append({
-                                'id': tool_call.id,
-                                'type': 'function',
-                                'function': {'name': None, 'arguments': []}
-                                })
-                        if tool_call.function:
-                            function = tool_call.function
-                            fullres_func = full_response["tool_calls"][tool_call.index]['function']
-                            if function.name:
-                                fullres_func['name'] = function.name
-                            if function.arguments:
-                                fullres_func['arguments'].append(function.arguments)
-
-                if content := chunk_message.content:
-                    if not full_content:
-                        if reasoning_content:
-                            print('\n</think>\n')
-                    print(content, end='', flush=True)
-                    full_content.append(content)
-                    time.sleep(random.uniform(0.01, 0.05))
+                    if reasoning_content:
+                        print('\n</think>\n')
+                print(content, end='', flush=True)
+                full_content.append(content)
+                time.sleep(random.uniform(0.01, 0.05))
 
         if reasoning_content:
             if isinstance(reasoning_content, list):
@@ -1078,10 +1011,6 @@ class AIChat:
         if self._files and len(self._files):
             msg['files'] = self._files
             self._files = []
-        if self._config.get('complete_type',''):
-            msg['complete_type'] = self._config['complete_type']
-            if self._config.get('prefix',''):
-                msg['prefix'] = self._config['prefix']
         return msg
 
     def _main_chat_loop(self):
