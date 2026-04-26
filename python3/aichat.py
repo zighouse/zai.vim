@@ -65,6 +65,7 @@ class AIChat:
             'history_keep_last_n': 6
         }
         self._tokenizer = AITokenizer()
+        self._last_date = datetime.now().strftime("%Y-%m-%d")
         if 'zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', ''):
             self._system_prompt = "作为一名严格的编程、软件工程与计算机科学助手，" + \
                     "将遵循以下步骤处理每个问题：\n " + \
@@ -145,6 +146,16 @@ class AIChat:
         elif self._assistant and "tokenizer" in self._assistant:
             tokenizer_name = self._assistant.get("tokenizer", None)
         return tokenizer_name;
+
+    def _get_date_string(self) -> str:
+        """返回日期字符串，例如 '2026年4月26日 星期日' 或 'Sunday, April 26, 2026'（使用本地系统时间）"""
+        now = datetime.now()
+        if 'zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', ''):
+            weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+            return f"{now.year}年{now.month}月{now.day}日 {weekdays[now.weekday()]}"
+        else:
+            weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            return weekdays[now.weekday()] + ", " + now.strftime("%B %d, %Y")
 
     def _count_tokens(self, text: str) -> int:
         """用 AITokenizer 精确计数；若不可用则退回启发式估算（chars / 4）。"""
@@ -642,10 +653,12 @@ class AIChat:
         这个函数会先调用 _prune_and_compact_history，
         然后把 summary（若存在）和 window 按顺序展开为 messages。
         """
+        date_label = "当前日期" if ('zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', '')) else "Current date"
         params = { 'stream': True, 'messages':[] }
         messages = [ {
             "role":    "system",
-            "content": self._config.get("prompt", self._system_prompt)
+            "content": self._config.get("prompt", self._system_prompt) + \
+                    "\n" + date_label + "：" + self._get_date_string()
             } ]
         if self._history and self._config.get("talk_mode", "chain") == "chain":
             # 动态计算历史 tokens 限制
@@ -821,6 +834,13 @@ class AIChat:
         reasoning_content = []
         is_FIM = False
 
+        # 日期变化检测 — 在 _get_completion_params 调用之前捕获，确保 system prompt 与检测同一次 datetime
+        now = datetime.now()
+        today_key = now.strftime("%Y-%m-%d")
+        date_changed = today_key != self._last_date
+        if date_changed:
+            self._last_date = today_key
+
         params = self._get_completion_params(current_round)
         msg = {
                 "role":     "assistant",
@@ -904,6 +924,16 @@ class AIChat:
                     sys_prompt.append(get_prompt(True))
                 sys_prompt.append(self._prompt_for_title)
                 params['messages'][0]['content'] = "\n".join(sys_prompt)
+            # 日期变更：在 user 消息之前插入日期更新消息（用 user role 避免破坏 assistant/user 交替模式）
+            if date_changed:
+                today_string = self._get_date_string()
+                for i in range(len(params['messages']) - 1, -1, -1):
+                    if params['messages'][i]['role'] == 'user':
+                        params['messages'].insert(i, {
+                            "role": "user",
+                            "content": f"当前日期已更新为：{today_string}"
+                        })
+                        break
             if tools := self._tool.get_tools():
                 params['tools'] = tools
             request_tokens = 0 # FIXME: calculate a correct rolling request tokens.
