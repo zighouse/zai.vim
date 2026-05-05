@@ -1,0 +1,30 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "agent",
+      "description": "Spawn an autonomous sub-agent to complete a complex task. The sub-agent runs its own LLM loop with access to all currently-loaded tools (file operations, shell, web search, grep, etc.). Use this for multi-step tasks like: exploring a codebase to find specific patterns, analyzing code structure, generating implementation plans, researching a topic, or performing complex file operations that require multiple tool calls. The sub-agent's answer is returned as the tool result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "A clear, detailed description of the task for the sub-agent. Include all necessary context since the sub-agent starts with a fresh conversation. The sub-agent will not see the parent conversation history."
+          },
+          "agent_type": {
+            "type": "string",
+            "description": "Type of agent: 'general' for full autonomy with all tools, 'explore' for read-only investigation and analysis (will not modify files), 'plan' for producing structured implementation plans without modifications.",
+            "enum": ["general", "explore", "plan"],
+            "default": "general"
+          },
+          "max_turns": {
+            "type": "integer",
+            "description": "Maximum number of tool-use turns the sub-agent may take (1-20). Default is 10. Use lower values for simple tasks, higher for complex multi-step tasks.",
+            "default": 10
+          }
+        },
+        "required": ["task"]
+      }
+    }
+  }
+]

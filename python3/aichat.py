@@ -67,6 +67,15 @@ class AIChat:
         self._tokenizer = AITokenizer()
         self._last_date = datetime.now().strftime("%Y-%m-%d")
 
+        # Sub-agent module initialization
+        from agent import init as _agent_init
+        _agent_init(
+            config=self._config,
+            llm_getter=lambda: self._llm,
+            tool=self._tool,
+            count_tokens_fn=self._count_tokens,
+        )
+
         # Compact pipeline (lazy import to avoid circular deps)
         from compact import CompactPipeline
         self._compact_pipeline = CompactPipeline(
