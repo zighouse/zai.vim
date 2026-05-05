@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Union, Optional
 from appdirs import user_data_dir
 from toolcommon import set_sandbox_home, sandbox_home
+from hooks import HookManager
 
 class ToolManager:
     """管理工具集，支持动态发现与调用"""
@@ -18,6 +19,7 @@ class ToolManager:
     def __init__(self):
         # toolset_name -> [tool_meta, ...]
         self._toolsets: Dict[str, List[Dict[str, Any]]] = {}
+        self._hook_manager: Optional[HookManager] = None
 
     # ----------- 内部工具 -----------
     def _load_toolset_meta(self, toolset_name: str) -> List[Dict[str, Any]]:
@@ -63,7 +65,21 @@ class ToolManager:
         """
         根据 function_name 动态调用对应 toolset 中的实现函数
         约定：每个 toolset 模块需提供 invoke_{function_name}(**arguments)
+
+        支持 pre/post 钩子：
+        - PreToolUse 钩子可以修改参数或阻止执行
+        - PostToolUse 钩子可以处理结果
+        - PostToolUseFailure 钩子可以处理错误
         """
+        # Run pre-tool hooks
+        if self._hook_manager and self._hook_manager.has_hooks(HookManager.PRE_TOOL_USE):
+            continue_exec, stop_reason, updated_input = \
+                self._hook_manager.run_pre_tool_hooks(function_name, arguments)
+            if not continue_exec:
+                raise RuntimeError(f"Pre-tool hook blocked: {stop_reason}")
+            if updated_input is not None:
+                arguments = updated_input
+
         ts = self._find_toolset_by_function(function_name)
         if ts is None:
             raise RuntimeError(f"未知工具函数 `{function_name}`")
@@ -73,10 +89,29 @@ class ToolManager:
             raise RuntimeError(
                 f"工具集 `{ts}` 中未找到实现函数 `invoke_{function_name}`"
             )
-        result = invoker(**arguments)
-        if isinstance(result, str):
-            return result
-        return json.dumps(result, indent=2, ensure_ascii=False)
+
+        try:
+            result = invoker(**arguments)
+        except Exception as ex:
+            # Run post-tool-failure hooks
+            if self._hook_manager and self._hook_manager.has_hooks(HookManager.POST_TOOL_USE_FAILURE):
+                self._hook_manager.run_post_tool_failure_hooks(
+                    function_name, arguments, str(ex)
+                )
+            raise
+
+        # Serialize result
+        serialized = result if isinstance(result, str) else json.dumps(result, indent=2, ensure_ascii=False)
+
+        # Run post-tool hooks
+        if self._hook_manager and self._hook_manager.has_hooks(HookManager.POST_TOOL_USE):
+            continue_exec, extra = self._hook_manager.run_post_tool_hooks(
+                function_name, arguments, serialized
+            )
+            if extra:
+                serialized = f"{serialized}\n[hook] {extra}"
+
+        return serialized
 
     def list_toolsets(self) -> List[str]:
         """扫描当前目录下所有 tool_*.json，返回排序后的工具集名称列表"""
@@ -252,3 +287,37 @@ class ToolManager:
 
     def show_sandbox_home(self):
         print(f"sandbox home:\n  {sandbox_home()}")
+
+    # ---- Hook management ----
+
+    def set_hook_manager(self, hook_manager: HookManager):
+        """Set the hook manager for pre/post tool hooks."""
+        self._hook_manager = hook_manager
+
+    def get_hook_manager(self) -> Optional[HookManager]:
+        """Get the current hook manager."""
+        return self._hook_manager
+
+    def load_hooks(self, config: dict, llm_fn=None):
+        """Load hooks from configuration dict.
+
+        Creates a HookManager if not already set, and loads hook config.
+
+        Args:
+            config: dict with "hooks" key containing hook definitions
+            llm_fn: optional callable for prompt-type hooks
+        """
+        if self._hook_manager is None:
+            self._hook_manager = HookManager(llm_fn=llm_fn)
+        if llm_fn and self._hook_manager:
+            # Update the runner's LLM function
+            from hooks import HookRunner
+            self._hook_manager._runner._llm_fn = llm_fn
+        self._hook_manager.load_from_dict(config)
+
+    def show_hooks(self):
+        """Display configured hooks."""
+        if self._hook_manager:
+            print(self._hook_manager.summary())
+        else:
+            print("  (no hooks configured)")

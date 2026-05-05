@@ -83,6 +83,9 @@ class AIChat:
             run_sub_llm_fn=self._run_sub_llm_loop,
             config=self._config,
         )
+
+        # Load hooks from project config
+        self._load_project_hooks()
         if 'zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', ''):
             self._system_prompt = "作为一名严格的编程、软件工程与计算机科学助手，" + \
                     "将遵循以下步骤处理每个问题：\n " + \
@@ -1503,6 +1506,13 @@ class AIChat:
                 if self._tool.use_tool(list(argv[1:])):
                     self._tool.show_tools()
                 return True
+            if opt.lower() == 'hooks':
+                if argc >= 3:
+                    from hooks import HookManager
+                    hook_config = {"hooks": {argv[1]: [{"matcher": "*", "hooks": [{"type": "command", "command": argv[2]}]}]}}
+                    self._tool.load_hooks(hook_config, llm_fn=self._run_hook_llm)
+                self._tool.show_hooks()
+                return True
 
     def _on_show(self, *argv):
         argc = len(argv)
@@ -1524,6 +1534,9 @@ class AIChat:
                 return True
             elif argv[0] == 'tool':
                 self._tool.show_tools()
+                return True
+            elif argv[0] == 'hooks':
+                self._tool.show_hooks()
                 return True
             elif opt == 'sandbox':
                 self._tool.show_sandbox_home()
@@ -1618,6 +1631,32 @@ class AIChat:
 
     def open_log(self, log_dir="", log_filename=""):
         self._logger.open(log_dir, log_filename)
+
+    def _load_project_hooks(self):
+        """Load tool hooks from project configuration (zai_project.yaml)."""
+        try:
+            from toolcommon import get_project_config
+            config = get_project_config()
+            if config and 'hooks' in config:
+                self._tool.load_hooks(config, llm_fn=self._run_hook_llm)
+                if self._tool.get_hook_manager() and self._tool.get_hook_manager().has_hooks():
+                    print("[hooks] Project hooks loaded", file=sys.stderr)
+        except Exception as ex:
+            print(f"[hooks] Failed to load project hooks: {ex}", file=sys.stderr)
+
+    def _run_hook_llm(self, prompt_text: str) -> str:
+        """Run a quick LLM call for prompt-type hooks."""
+        try:
+            if not self._llm:
+                return ""
+            response = self._llm.chat.completions.create(
+                model=self._config.get("model", {}).get("name", "deepseek-chat"),
+                messages=[{"role": "user", "content": prompt_text}],
+                max_tokens=1024,
+            )
+            return response.choices[0].message.content or ""
+        except Exception:
+            return ""
 
     def _on_start(self, *argv):
         if len(argv) == 1 and argv[0] == 'taskbox':
