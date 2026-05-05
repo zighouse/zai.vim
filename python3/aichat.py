@@ -66,6 +66,14 @@ class AIChat:
         }
         self._tokenizer = AITokenizer()
         self._last_date = datetime.now().strftime("%Y-%m-%d")
+
+        # Compact pipeline (lazy import to avoid circular deps)
+        from compact import CompactPipeline
+        self._compact_pipeline = CompactPipeline(
+            count_tokens_fn=self._count_tokens,
+            run_sub_llm_fn=self._run_sub_llm_loop,
+            config=self._config,
+        )
         if 'zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', ''):
             self._system_prompt = "作为一名严格的编程、软件工程与计算机科学助手，" + \
                     "将遵循以下步骤处理每个问题：\n " + \
@@ -609,7 +617,7 @@ class AIChat:
                     result.append(group[0].copy())
             else:
                 if group[0]["role"] != "assistant":
-                    result.extends([it.copy for it in group])
+                    result.extend([it.copy() for it in group])
                 else:
                     filted = {k: v if not archive_reasoning or k!="reasoning_content"
                               else self._archive_content(v) for k,v in group[0].items()}
@@ -885,15 +893,18 @@ class AIChat:
         if request_tokens > max_context_tokens * 0.9:  # 达到90%阈值时警告
             print(f"WARNING: Requsted tokens ({request_tokens}) is closing to the {request_tokens/max_context_tokens*100:.1f}% of the maximum context length ({max_context_tokens}).")
 
-        # 自动压缩：当 _auto_compact 开启且 token 超过安全阈值时触发
-        # safety_factor 表示保留给当前请求+响应的比例，(1 - safety_factor) 是 history 上限
-        if self._auto_compact and request_tokens > max_context_tokens * (1 - self._config.get('history_safety_factor', 0.25)):
-            history_len_before = len(self._history)
-            self._on_compact()
-            # 仅当 history 真正被压缩时才重建 params
-            if len(self._history) < history_len_before:
+        # 自动压缩：渐进式压缩管线
+        # Level 1-2 零成本截断/摘要，Level 3 需 LLM 调用（仅 auto_compact 时）
+        if request_tokens > max_context_tokens * 0.5:
+            _, stats = self._compact_pipeline.run(
+                history=self._history,
+                current_round=current_round,
+                max_context_tokens=max_context_tokens,
+                auto_compact=self._auto_compact,
+            )
+            if stats.level1_applied or stats.level2_applied or stats.level3_applied:
+                print(f"[compact] {stats.summary()}")
                 params = self._get_completion_params(current_round)
-                # 重新计算 token 数以反映压缩后的状态
                 request_tokens = 0
                 for m in params['messages']:
                     if "content_tokens" in m:
@@ -903,6 +914,12 @@ class AIChat:
                     if "reasoning_tokens" in m:
                         request_tokens += m["reasoning_tokens"]
                 print(f"(request-tokens after compact: {request_tokens})")
+                # Level 3 写入 session compact boundary
+                if stats.level3_applied:
+                    self._session.append_compact_boundary(
+                        "", stats.level2_rounds_summarized + stats.level3_tokens_before,
+                        stats.level3_tokens_before, stats.level3_tokens_after
+                    )
             
         try:
             stream = self._llm.chat.completions.create(**params)
@@ -1269,8 +1286,10 @@ class AIChat:
 
         Args:
             args: 命令参数
-                - 空: 默认压缩
+                - 空: 默认压缩（Level 3 LLM 语义摘要）
                 - "auto": 切换自动压缩开关
+                - "status": 显示当前压缩状态
+                - "level <1|2|3>": 强制执行指定级别
                 - 其他: 作为自定义 instructions 附加到摘要提示词
         """
         args = args.strip()
@@ -1282,7 +1301,38 @@ class AIChat:
             print(f"Auto-compact: {status}")
             return True
 
-        # 执行压缩
+        # /compact status — 显示压缩状态
+        if args == "status":
+            max_context = self._get_max_context_tokens()
+            print(self._compact_pipeline.get_status(self._history, max_context))
+            return True
+
+        # /compact level <1|2|3> — 强制指定级别
+        if args.startswith("level "):
+            try:
+                level = int(args.split()[1])
+                if level not in (1, 2, 3):
+                    print("Usage: /compact level <1|2|3>")
+                    return True
+            except (ValueError, IndexError):
+                print("Usage: /compact level <1|2|3>")
+                return True
+
+            if not self._history:
+                print("Nothing to compact (history is empty).")
+                return True
+
+            _, stats = self._compact_pipeline.run(
+                history=self._history,
+                max_context_tokens=self._get_max_context_tokens(),
+                force_level=level,
+                auto_compact=True,
+                extra_instructions="",
+            )
+            print(f"[compact level {level}] {stats.summary()}")
+            return True
+
+        # 默认：执行 LLM 语义压缩（Level 3）
         if not self._history:
             print("Nothing to compact (history is empty).")
             return True
