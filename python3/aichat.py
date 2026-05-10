@@ -31,6 +31,12 @@ _DEFAULT_API_KEY_NAME = "DEEPSEEK_API_KEY"
 _DEFAULT_BASE_URL = "https://api.deepseek.com"
 _DEFAULT_MODEL = "deepseek-v4-flash"
 
+# Remove socks proxy env vars that httpx cannot handle without socksio
+for _proxy_var in ('ALL_PROXY', 'all_proxy'):
+    _val = os.environ.get(_proxy_var, '')
+    if _val.lower().startswith('socks'):
+        del os.environ[_proxy_var]
+
 # Compact summary system prompt
 _COMPACT_SYSTEM_PROMPT = """\
 Please compress the following conversation history into a structured summary. The summary should include:
