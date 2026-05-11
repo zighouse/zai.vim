@@ -1,6 +1,11 @@
 [
   {
     "type": "function",
+    "category": "search",
+    "is_read_only": true,
+    "is_concurrency_safe": true,
+    "max_result_size": 8000,
+    "prompt": "当需要在多个文件中搜索文本模式时使用，类似于 Unix grep 命令。支持递归搜索、正则表达式、大小写等选项。搜索范围限制在沙箱主目录内。",
     "function": {
       "name": "grep",
       "description": "在文件中搜索指定文本模式，类似于 Unix grep 命令。支持递归搜索、不区分大小写匹配、结果限制等选项。出于安全考虑，搜索范围限制在沙箱主目录。",

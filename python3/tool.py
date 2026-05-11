@@ -4,279 +4,364 @@
 #
 # Licensed under the MIT License
 #
+"""
+ToolPool: auto-registered tool management with tier-aware discovery.
+
+Replaces the old ToolManager.  Tools are auto-discovered from tool_*.json
++ tool_*.py at startup — no manual use_tool() needed.
+"""
+
 import json
-import re
-import importlib
+import sys
+import threading
 from pathlib import Path
-from typing import Dict, List, Any, Union, Optional
-from appdirs import user_data_dir
-from toolcommon import set_sandbox_home, sandbox_home
+from typing import Any, Callable, Dict, List, Optional
+
+
+class ToolHookBlocked(Exception):
+    """Raised when a pre-tool hook blocks execution."""
+    def __init__(self, reason: str):
+        super().__init__(f"[HOOK_BLOCKED] {reason}")
+
+
+class ToolNotFound(Exception):
+    """Raised when the requested tool function is not registered."""
+    def __init__(self, name: str):
+        super().__init__(f"[TOOL_NOT_FOUND] unknown tool function `{name}`")
+
 from hooks import HookManager
+from tool_spec import (
+    ToolResult,
+    ToolSpec,
+    classify_output_scale,
+)
+from tool_registry import ToolRegistry, get_registry, init_registry
+from tool_sub_agent import ToolSubAgent
+from toolcommon import set_sandbox_home, sandbox_home
 
-class ToolManager:
-    """管理工具集，支持动态发现与调用"""
+# Agent prefix for second-class category dispatch
+_AGENT_PREFIX = "agent_"
+_AGENT_MAX_RECURSION_DEPTH = 2
 
-    def __init__(self):
-        # toolset_name -> [tool_meta, ...]
-        self._toolsets: Dict[str, List[Dict[str, Any]]] = {}
+# Thread-local to prevent unbounded recursive agent_agent nesting
+_agent_recursion = threading.local()
+
+
+def _get_agent_depth() -> int:
+    """Get current agent call depth for this thread."""
+    return getattr(_agent_recursion, "depth", 0)
+
+
+def _inc_agent_depth() -> int:
+    """Increment agent call depth, return new depth."""
+    depth = getattr(_agent_recursion, "depth", 0) + 1
+    _agent_recursion.depth = depth
+    return depth
+
+
+def _dec_agent_depth():
+    """Decrement agent call depth."""
+    depth = getattr(_agent_recursion, "depth", 1) - 1
+    _agent_recursion.depth = max(depth, 0)
+
+
+class ToolPool:
+    """Auto-discovered tool pool with tier-aware exposure.
+
+    On construction, tools are auto-scanned and organised.  The pool exposes
+    first-class tools directly and second-class tools through category agents.
+    """
+
+    def __init__(self, tools_dir: Optional[str] = None):
+        self._registry: Optional[ToolRegistry] = None
+        self._tools_dir = tools_dir
         self._hook_manager: Optional[HookManager] = None
+        self._llm_fn: Optional[Callable] = None
+        self._initialised = False
 
-    # ----------- 内部工具 -----------
-    def _load_toolset_meta(self, toolset_name: str) -> List[Dict[str, Any]]:
-        """读取 tool_{name}.json 元信息"""
-        toolset_path = Path(__file__).parent / f"tool_{toolset_name}.json"
-        try:
-            return json.loads(toolset_path.read_text(encoding="utf-8"))
-        except Exception as e:
-            print(f"[WARN] 无法加载 toolset `{toolset_name}`: {e}")
-            return []
+    # ------------------------------------------------------------------
+    # Initialisation
+    # ------------------------------------------------------------------
 
-    def _ensure_toolset_module(self, toolset_name: str):
-        """动态 import tool_{toolset_name} 模块，返回 module 对象"""
-        # 已加载则直接返回
-        if toolset_name in self._toolsets:
-            return importlib.import_module(f"tool_{toolset_name}")
-        raise RuntimeError(f"toolset `{toolset_name}` 尚未使用，无法调用其函数")
+    def _ensure_initialised(self):
+        """Lazy init: scan + cache on first use."""
+        if self._initialised:
+            return
+        self._registry = get_registry(tools_dir=self._tools_dir)
+        if self._registry.tool_count == 0:
+            self._registry.scan()
+            self._registry.load_from_cache()
+        self._initialised = True
 
-    def _find_toolset_by_function(self, function_name: str) -> Optional[str]:
-        """根据函数名反查所属 toolset"""
-        for toolset_name, tools in self._toolsets.items():
-            for tool in tools:
-                if tool.get("function", {}).get("name") == function_name:
-                    return toolset_name
-        return None
+    def compile_categories(self, llm_fn: Callable):
+        """Compile LLM category summaries (call after LLM is available)."""
+        self._ensure_initialised()
+        self._registry.compile_categories(llm_fn)
 
-    def get_tools(self, excludes=[]) -> List[Dict[str, Any]]:
-        tools = []
-        exclude_names = []
+    # ------------------------------------------------------------------
+    # Tool exposure (replaces old get_tools / use_tool)
+    # ------------------------------------------------------------------
+
+    def get_tools(self, excludes=None) -> List[Dict[str, Any]]:
+        """Return tools to include in the API request.
+
+        First-class tools (full schema) + category agents (for second-class).
+        """
+        self._ensure_initialised()
+        tools = self._registry.get_all_api_tools()
+        if not excludes:
+            return tools
+        exclude_names = set()
         for ex in excludes:
-            if 'function' in ex and 'name' in ex['function']:
-                exclude_names.append(ex['function']['name'])
-        for k,v in self._toolsets.items():
-            if not exclude_names:
-                tools.extend(v)
-            else:
-                for it in v:
-                    if 'function' in it and 'name' in it['function'] and it['function']['name'] not in exclude_names:
-                        tools.append(it)
-        return tools
+            fn = ex.get("function", {})
+            if fn.get("name"):
+                exclude_names.add(fn["name"])
+        return [t for t in tools
+                if t.get("function", {}).get("name") not in exclude_names]
+
+    def get_category_tools(self, category: str) -> List[Dict[str, Any]]:
+        """Get all tool definitions for a category (used by sub-agents)."""
+        self._ensure_initialised()
+        return self._registry.get_category_tools(category)
+
+    def get_category_invokers(self, category: str) -> List:
+        """Get (ToolSpec, callable) pairs for all tools in a category."""
+        self._ensure_initialised()
+        return self._registry.get_category_invokers(category)
+
+    # ------------------------------------------------------------------
+    # Tool execution
+    # ------------------------------------------------------------------
 
     def call_tool(self, function_name: str, arguments: dict) -> Any:
-        """
-        根据 function_name 动态调用对应 toolset 中的实现函数
-        约定：每个 toolset 模块需提供 invoke_{function_name}(**arguments)
+        """Execute a tool by name with hook support and result handling.
 
-        支持 pre/post 钩子：
-        - PreToolUse 钩子可以修改参数或阻止执行
-        - PostToolUse 钩子可以处理结果
-        - PostToolUseFailure 钩子可以处理错误
+        Supports pre/post hooks, result size management, and call tracking.
+        Agent-prefixed calls (agent_*) are routed to ToolSubAgent.
         """
+        self._ensure_initialised()
+
+        # ---- Agent dispatch: route agent_* calls to sub-agents ----
+        if function_name.startswith(_AGENT_PREFIX):
+            return self._dispatch_agent(function_name, arguments)
+
+        # ---- Normal tool dispatch ----
+
         # Run pre-tool hooks
-        if self._hook_manager and self._hook_manager.has_hooks(HookManager.PRE_TOOL_USE):
-            continue_exec, stop_reason, updated_input = \
+        if self._hook_manager and self._hook_manager.has_hooks(
+            HookManager.PRE_TOOL_USE
+        ):
+            continue_exec, stop_reason, updated_input = (
                 self._hook_manager.run_pre_tool_hooks(function_name, arguments)
+            )
             if not continue_exec:
-                raise RuntimeError(f"Pre-tool hook blocked: {stop_reason}")
+                raise ToolHookBlocked(stop_reason)
             if updated_input is not None:
                 arguments = updated_input
 
-        ts = self._find_toolset_by_function(function_name)
-        if ts is None:
-            raise RuntimeError(f"未知工具函数 `{function_name}`")
-        mod = self._ensure_toolset_module(ts)
-        invoker = getattr(mod, f"invoke_{function_name}", None)
+        invoker = self._registry.get_invoker(function_name)
         if invoker is None:
-            raise RuntimeError(
-                f"工具集 `{ts}` 中未找到实现函数 `invoke_{function_name}`"
-            )
+            raise ToolNotFound(function_name)
 
         try:
             result = invoker(**arguments)
         except Exception as ex:
-            # Run post-tool-failure hooks
-            if self._hook_manager and self._hook_manager.has_hooks(HookManager.POST_TOOL_USE_FAILURE):
+            # Post-tool-failure hooks
+            if self._hook_manager and self._hook_manager.has_hooks(
+                HookManager.POST_TOOL_USE_FAILURE
+            ):
                 self._hook_manager.run_post_tool_failure_hooks(
                     function_name, arguments, str(ex)
                 )
+            self._registry.record_call(function_name, is_error=True)
             raise
 
-        # Serialize result
-        serialized = result if isinstance(result, str) else json.dumps(result, indent=2, ensure_ascii=False)
+        # Serialise & measure
+        if isinstance(result, str):
+            serialized = result
+        else:
+            serialized = json.dumps(result, indent=2, ensure_ascii=False)
 
-        # Run post-tool hooks
-        if self._hook_manager and self._hook_manager.has_hooks(HookManager.POST_TOOL_USE):
+        result_chars = len(serialized)
+
+        # Large result handling: write to file if over threshold
+        spec = self._registry.get_tool(function_name)
+        truncated = False
+        file_path = None
+        if spec and spec.max_result_size > 0 and result_chars > spec.max_result_size:
+            truncated = True
+            # Write the full content to a temp file
+            file_path = self._write_large_result(function_name, serialized)
+            # Truncate the in-memory content with a notice
+            serialized = (
+                f"{serialized[: spec.max_result_size]}\n\n"
+                f"[结果被截断: 完整内容 ({result_chars} 字符) 已写入 {file_path}]"
+            )
+
+        # Post-tool hooks
+        if self._hook_manager and self._hook_manager.has_hooks(
+            HookManager.POST_TOOL_USE
+        ):
             continue_exec, extra = self._hook_manager.run_post_tool_hooks(
                 function_name, arguments, serialized
             )
             if extra:
                 serialized = f"{serialized}\n[hook] {extra}"
 
+        # Track call statistics
+        self._registry.record_call(function_name, result_chars)
+
         return serialized
 
-    def list_toolsets(self) -> List[str]:
-        """扫描当前目录下所有 tool_*.json，返回排序后的工具集名称列表"""
-        current_dir = Path(__file__).parent
-        tool_files = list(current_dir.glob('tool_*.json'))
-        toolsets = []
-        for tool_file in tool_files:
-            match = re.match(r'tool_(.+)\.json', tool_file.name)
-            if match:
-                toolsets.append(match.group(1))
-        return sorted(toolsets)
+    def _write_large_result(self, function_name: str, content: str) -> str:
+        """Write oversized tool output to a temp file, return the path."""
+        sandbox_root = sandbox_home()
+        out_dir = sandbox_root / ".tool_outputs"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        # Evict oldest files if over limit
+        self._evict_old_results(out_dir, max_files=50)
+        import time
+        ts = int(time.time() * 1000)
+        fname = f"{function_name}_{ts}.txt"
+        fpath = out_dir / fname
+        fpath.write_text(content, encoding="utf-8")
+        return str(fpath)
 
-    def show_list(self):
-        tools = self.list_toolsets()
-        if tools:
-            for name in tools:
-                print(f"  - {name}")
+    @staticmethod
+    def _evict_old_results(out_dir: Path, max_files: int = 50):
+        """Remove oldest .txt files exceeding max_files."""
+        files = sorted(out_dir.glob("*.txt"), key=lambda p: p.stat().st_mtime)
+        if len(files) > max_files:
+            for old in files[:len(files) - max_files]:
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
 
-    def show_toolset(self, toolset_name: Optional[str] = None):
+    # ------------------------------------------------------------------
+    # Sub-agent dispatch
+    # ------------------------------------------------------------------
+
+    def _dispatch_agent(self, function_name: str, arguments: dict) -> str:
+        """Route an agent_{category} call to a ToolSubAgent.
+
+        Includes recursion guard: agent_agent calls beyond the configured
+        depth are rejected to prevent unbounded nesting.
         """
-        显示工具集详情
+        category = function_name[len(_AGENT_PREFIX):]
+        task = arguments.get("task", "")
 
-        Args:
-            toolset_name: 工具集名称，如果为None则显示所有已应用的工具集
-        """
-        if toolset_name is None:
-            # 显示所有已应用的工具集
-            if not self._toolsets:
-                print("No tools loaded.")
-                return
+        if not task:
+            return f"[{function_name}] ERROR: missing 'task' argument"
 
-            for toolset_name, tools in self._toolsets.items():
-                print(f"\n{toolset_name}:")
-                tool_names = []
-                for tool in tools:
-                    if tool.get('function') and tool['function'].get('name'):
-                        tool_names.append(tool['function']['name'])
+        if self._llm_fn is None:
+            return f"[{function_name}] ERROR: LLM function not configured"
 
-                if tool_names:
-                    # 对已选中的方法添加勾选标记
-                    checked_names = [f"✓ {name}" for name in tool_names]
-                    print(f"  {', '.join(checked_names)}")
-        else:
-            # 显示指定工具集
-            current_dir = Path(__file__).parent
-            toolset_path = current_dir / f'tool_{toolset_name}.json'
+        # Recursion guard
+        depth = _inc_agent_depth()
+        try:
+            if depth > _AGENT_MAX_RECURSION_DEPTH:
+                return (
+                    f"[{function_name}] ERROR: max recursion depth "
+                    f"({_AGENT_MAX_RECURSION_DEPTH}) exceeded. "
+                    f"The agent_{category} tool cannot spawn nested agents."
+                )
 
-            if not toolset_path.exists():
-                print(f"Toolset `{toolset_name}` not found.")
-                return
+            tools = self.get_category_tools(category)
+            invokers = self.get_category_invokers(category)
 
-            try:
-                full_toolset = json.loads(toolset_path.read_text(encoding='utf-8'))
-                print(f"\n{toolset_name}:")
+            if not tools:
+                return (
+                    f"[{function_name}] ERROR: category "
+                    f"'{category}' has no tools"
+                )
 
-                # 获取当前已选中的方法
-                selected_methods = set()
-                if toolset_name in self._toolsets:
-                    for tool in self._toolsets[toolset_name]:
-                        if tool.get('function') and tool['function'].get('name'):
-                            selected_methods.add(tool['function']['name'])
+            agent = ToolSubAgent(
+                category=category,
+                category_tools=tools,
+                category_invokers=invokers,
+                llm_fn=self._llm_fn,
+            )
 
-                # 显示所有方法，对已选中的添加勾选
-                for tool in full_toolset:
-                    if tool.get('function') and tool['function'].get('name'):
-                        method_name = tool['function']['name']
-                        if method_name in selected_methods:
-                            print(f" -  [ ✓ ] {method_name}")
-                        else:
-                            print(f" -  [   ] {method_name}")
+            result = agent.run(task)
+            print(f"[agent:{category}] {agent._tool_calls_made} tool call(s), "
+                  f"{agent._errors} error(s)", file=sys.stderr)
+            return result
+        finally:
+            _dec_agent_depth()
 
-            except Exception as e:
-                print(f"Failed to load toolset `{toolset_name}`: {e}")
+    def set_llm_fn(self, llm_fn: Callable):
+        """Set the LLM function used for sub-agent dispatch."""
+        self._llm_fn = llm_fn
 
-    def use_tool(self, tool_spec: Union[str, List[str], Dict[str, List[str]]]) -> bool:
-        """
-        加载工具集或指定工具，支持多种形式：
-          字符串：
-            'file'               -> 加载整个 file 工具集
-            'file.mkdir'         -> 仅加载 file 工具集中的 mkdir
-          列表：['file', 'web'] / ['file.mkdir'] / ['file:', 'mkdir', 'ls']
-          字典：{'file': ['mkdir', 'ls'], 'web': ['search']}
-        返回是否全部成功
-        """
-        # 统一转成 Dict[toolset_name, List[func_name]] 形式
-        spec_map: Dict[str, List[str]] = {}
-
-        if isinstance(tool_spec, str):
-            if "." in tool_spec:
-                ts, fn = tool_spec.split(".", 1)
-                spec_map[ts] = [fn]
-            else:
-                spec_map[tool_spec] = []  # 全量
-
-        elif isinstance(tool_spec, list):
-            cur_ts = None
-            for item in tool_spec:
-                if item.endswith(":"):
-                    cur_ts = item[:-1]
-                    spec_map.setdefault(cur_ts, [])
-                elif "." in item:
-                    ts, fn = item.split(".", 1)
-                    spec_map.setdefault(ts, []).append(fn)
-                else:
-                    # 纯函数名，要求 cur_ts 已存在
-                    if cur_ts is None:
-                        # 把 item 当成 toolset 全量加载
-                        spec_map.setdefault(item, [])
-                    else:
-                        spec_map[cur_ts].append(item)
-
-        elif isinstance(tool_spec, dict):
-            spec_map = tool_spec
-        else:
-            print("[ERROR] 非法的 tool_spec 类型")
-            return False
-
-        # 真正加载
-        ok = True
-        for ts, funcs in spec_map.items():
-            meta = self._load_toolset_meta(ts)
-            if not meta:
-                ok = False
-                continue
-            # 若 funcs 为空则代表全量
-            if not funcs:
-                selected = meta
-            else:
-                selected = [t for t in meta if t.get("function", {}).get("name") in funcs]
-                miss = set(funcs) - {t.get("function", {}).get("name") for t in selected}
-                if miss:
-                    print(f"[WARN] toolset `{ts}` 中未找到函数: {miss}")
-                    ok = False
-            # 合并进 self._toolsets（去重）
-            exist_names = {
-                t.get("function", {}).get("name")
-                for t in self._toolsets.setdefault(ts, [])
-            }
-            for t in selected:
-                name = t.get("function", {}).get("name")
-                if name and name not in exist_names:
-                    self._toolsets[ts].append(t)
-        return ok
+    # ------------------------------------------------------------------
+    # Display / introspection
+    # ------------------------------------------------------------------
 
     def show_tools(self):
-        """
-        显示当前已加载的工具，格式如：
-        file : read_file, write_file
-        dict : read, write
-        """
-        if not self._toolsets:
-            print("No tools loaded.")
+        """Display all tools grouped by category and tier."""
+        self._ensure_initialised()
+        categories = self._registry.build_categories()
+        stats = self._registry.stats()
+
+        print(f"\n总工具数: {stats['total_tools']} "
+              f"({stats['first_class']} 一等, {stats['second_class']} 二等)\n")
+
+        for cat_name, tool_names in sorted(categories.items()):
+            print(f"  {cat_name}:")
+            for name in tool_names:
+                spec = self._registry.get_tool(name)
+                if spec is None:
+                    continue
+                tier_mark = "★" if spec.tier == "first" else " "
+                read_mark = "R" if spec.is_read_only else "W"
+                print(f"    [{tier_mark}] [{read_mark}] {name}")
+                if spec.prompt:
+                    # Show first line of prompt as hint
+                    first_line = spec.prompt.split("\n")[0][:80]
+                    print(f"          {first_line}")
+
+    def show_list(self):
+        """List all tool categories."""
+        self._ensure_initialised()
+        cats = self._registry.build_categories()
+        if not cats:
+            print("No tools found.")
+            return
+        for cat_name, names in sorted(cats.items()):
+            first_count = sum(
+                1 for n in names
+                if self._registry.get_tool(n)
+                and self._registry.get_tool(n).tier == "first"
+            )
+            print(f"  {cat_name}: {len(names)} tools ({first_count} first-class)")
+
+    def show_toolset(self, toolset_name: Optional[str] = None):
+        """Show details for a category or all tools."""
+        self._ensure_initialised()
+
+        if toolset_name is None:
+            # Show all categories
+            self.show_list()
             return
 
-        for toolset_name, tools in self._toolsets.items():
-            tool_names = []
-            for tool in tools:
-                if tool.get('function') and tool['function'].get('name'):
-                    tool_names.append(tool['function']['name'])
+        # Show specific category tools
+        tools = self._registry.get_category_tools(toolset_name, include_first_class=True)
+        if not tools:
+            print(f"Category `{toolset_name}` not found.")
+            return
 
-            if tool_names:
-                print(f"  {toolset_name} : {', '.join(tool_names)}")
+        print(f"\n{toolset_name}:")
+        for t in tools:
+            fn = t.get("function", {})
+            name = fn.get("name", "?")
+            desc = fn.get("description", "").split("\n")[0][:100]
+            spec = self._registry.get_tool(name)
+            tier = spec.tier if spec else "?"
+            print(f"  [{tier}] {name}: {desc}")
 
-    def use_toolset(self, toolset_name: str) -> bool:
-        return self.use_tool(toolset_name)
+    def show_sandbox_home(self):
+        print(f"sandbox home:\n  {sandbox_home()}")
 
     def set_sandbox_home(self, new_path: str):
         try:
@@ -285,39 +370,35 @@ class ToolManager:
         except Exception as e:
             print(f"ERROR failed set sandbox home, error:{e}")
 
-    def show_sandbox_home(self):
-        print(f"sandbox home:\n  {sandbox_home()}")
-
-    # ---- Hook management ----
+    # ------------------------------------------------------------------
+    # Hook management
+    # ------------------------------------------------------------------
 
     def set_hook_manager(self, hook_manager: HookManager):
-        """Set the hook manager for pre/post tool hooks."""
         self._hook_manager = hook_manager
 
     def get_hook_manager(self) -> Optional[HookManager]:
-        """Get the current hook manager."""
         return self._hook_manager
 
     def load_hooks(self, config: dict, llm_fn=None):
-        """Load hooks from configuration dict.
-
-        Creates a HookManager if not already set, and loads hook config.
-
-        Args:
-            config: dict with "hooks" key containing hook definitions
-            llm_fn: optional callable for prompt-type hooks
-        """
         if self._hook_manager is None:
             self._hook_manager = HookManager(llm_fn=llm_fn)
         if llm_fn and self._hook_manager:
-            # Update the runner's LLM function
             from hooks import HookRunner
             self._hook_manager._runner._llm_fn = llm_fn
         self._hook_manager.load_from_dict(config)
 
     def show_hooks(self):
-        """Display configured hooks."""
         if self._hook_manager:
             print(self._hook_manager.summary())
         else:
             print("  (no hooks configured)")
+
+    # ------------------------------------------------------------------
+    # Registry access
+    # ------------------------------------------------------------------
+
+    @property
+    def registry(self) -> ToolRegistry:
+        self._ensure_initialised()
+        return self._registry

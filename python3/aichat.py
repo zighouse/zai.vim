@@ -21,7 +21,7 @@ from typing import Dict, List, Any, Union, Optional
 from config import AIAssistantManager, parse_number_from_readable
 from logger import Logger
 from session import SessionWriter, SessionLoader
-from tool import ToolManager
+from tool import ToolPool
 from tool_shell import invoke_shell_sandbox_info, invoke_shell_cleanup, invoke_execute_shell
 from client import Client
 from tokens import AITokenizer
@@ -57,7 +57,7 @@ class AIChat:
         self._session_loader = SessionLoader()
         self._aiconfig = AIAssistantManager()
         self._assistant = None
-        self._tool = ToolManager()
+        self._tool = ToolPool()
         self._system_prompt = ""
         self._history = [] # [{request:msg, response:[msg]}]
         self._cur_round = {"request":[], "response":[]}
@@ -329,6 +329,10 @@ class AIChat:
                 api_key_name=self._config.get('api_key_name', _DEFAULT_API_KEY_NAME),
                 base_url=self._config.get('base_url', _DEFAULT_BASE_URL)
             )
+            # Register LLM function with ToolPool for sub-agent dispatch
+            self._tool.set_llm_fn(self._run_sub_agent_llm)
+            # Compile category summaries via LLM (lazy, cached on disk)
+            self._tool.compile_categories(llm_fn=self._run_hook_llm)
 
     def _run_sub_llm_loop(self,
                           messages: List[Dict[str, Any]],
@@ -421,7 +425,6 @@ class AIChat:
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(long_content)
         self._has_archives = True
-        self._tool.use_tool('archive')
         #return f"‹archive id={archive_id} length={len(long_content)}›\n" + \
         #       f"{long_content[:100]}...{long_content[-100:]}\n" + \
         #       f"‹/archive›\n"
@@ -497,7 +500,6 @@ class AIChat:
         line_count = len(json_content.split('\n'))
 
         self._has_archives = True
-        self._tool.use_tool('archive')
         #return f"‹archive id={archive_id}›{summary_content}‹/archive›"
         return f"===========\n" + \
                f"[归档引用]\n" + \
@@ -1509,8 +1511,7 @@ class AIChat:
                         print(f"Open AI Client failed: base-url:{base_url}, model:{model_name}, api_key_name:{api_key_name}")
                 return True
             if opt.lower() == 'tool':
-                if self._tool.use_tool(list(argv[1:])):
-                    self._tool.show_tools()
+                self._tool.show_tools()
                 return True
             if opt.lower() == 'hooks':
                 if argc >= 3:
@@ -1663,6 +1664,56 @@ class AIChat:
             return response.choices[0].message.content or ""
         except Exception:
             return ""
+
+    def _run_sub_agent_llm(self, messages: list, tools: list,
+                           tool_choice: str = "auto") -> dict:
+        """Full LLM call for sub-agent dispatch (supports tool calling).
+
+        Returns a dict matching the OpenAI chat completion response format,
+        including proper finish_reason, index, role on success and on error.
+        """
+        from openai import BadRequestError, APIError, APIConnectionError, RateLimitError
+        try:
+            if not self._llm:
+                return {
+                    "choices": [{
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": "[ERROR] LLM not initialised",
+                        },
+                    }],
+                }
+            response = self._llm.chat.completions.create(
+                model=self._config.get("model", {}).get("name", "deepseek-chat"),
+                messages=messages,
+                tools=tools,
+                tool_choice=tool_choice,
+            )
+            return response.model_dump() if hasattr(response, "model_dump") else response
+        except (BadRequestError, APIError, APIConnectionError, RateLimitError) as e:
+            return {
+                "choices": [{
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": f"[ERROR] API error: {e}",
+                    },
+                }],
+            }
+        except Exception as e:
+            return {
+                "choices": [{
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": f"[ERROR] LLM call failed: {e}",
+                    },
+                }],
+            }
 
     def _on_start(self, *argv):
         if len(argv) == 1 and argv[0] == 'taskbox':

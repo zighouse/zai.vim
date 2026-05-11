@@ -1,6 +1,11 @@
 [
   {
     "type": "function",
+    "category": "file",
+    "is_read_only": true,
+    "is_concurrency_safe": true,
+    "max_result_size": 8000,
+    "prompt": "当需要列出目录内容、查看文件系统结构时使用",
     "function": {
       "name": "ls",
       "description": "列出指定目录下的文件和文件夹信息，包括类型、大小、修改时间和名称",
@@ -18,6 +23,11 @@
   },
   {
     "type": "function",
+    "category": "file",
+    "is_read_only": false,
+    "is_concurrency_safe": false,
+    "max_result_size": 2000,
+    "prompt": "当需要创建目录时使用",
     "function": {
       "name": "mkdir",
       "description": "创建多级目录",
@@ -35,6 +45,11 @@
   },
   {
     "type": "function",
+    "category": "file",
+    "is_read_only": false,
+    "is_concurrency_safe": false,
+    "max_result_size": 2000,
+    "prompt": "当需要复制文件或目录、或合并多个文件时使用",
     "function": {
       "name": "copy_file",
       "description": "复制文件或目录到指定路径，支持递归复制目录和合并多个文件",
@@ -67,6 +82,11 @@
   },
   {
     "type": "function",
+    "category": "file",
+    "is_read_only": true,
+    "is_concurrency_safe": true,
+    "max_result_size": 2000,
+    "prompt": "当需要确定文件类型和格式时使用",
     "function": {
       "name": "descript_file",
       "description": "描述文件类型和格式，使用 file 命令或 Python 内置方法返回文件描述信息",
@@ -84,6 +104,11 @@
   },
   {
     "type": "function",
+    "category": "file",
+    "is_read_only": false,
+    "is_concurrency_safe": false,
+    "max_result_size": 8000,
+    "prompt": "当需要对文本文件的局部内容进行精确替换时使用，优先于 write_file（避免重写整个文件）",
     "function": {
       "name": "substitute_file",
       "description": "对文本文件的局部内容进行替换，支持基于字符串匹配或正则表达式的替换操作",
@@ -117,6 +142,11 @@
   },
   {
     "type": "function",
+    "category": "file",
+    "is_read_only": true,
+    "is_concurrency_safe": true,
+    "max_result_size": 8000,
+    "prompt": "当需要在文件内容中搜索特定文本或模式时使用，比 grep 更轻量，适合单个文件搜索",
     "function": {
       "name": "search_in_file",
       "description": "在文件中搜索指定的文本或模式，支持字符串匹配和正则表达式，返回匹配结果的位置和上下文",
@@ -154,9 +184,14 @@
   },
   {
     "type": "function",
+    "category": "file",
+    "is_read_only": true,
+    "is_concurrency_safe": true,
+    "max_result_size": 16000,
+    "prompt": "这是读取文件内容的主要工具。支持文本文件、图片（PNG/JPG）、PDF 文件。读取过大的文件可能因最大输入 tokens 而受限，调用需要谨慎。",
     "function": {
       "name": "read_file",
-      "description": "读取文件 (读取尺寸过大的文件可能会因最大输入 tokens 而受限制，调用需要谨慎)",
+      "description": "读取文件（支持文本文件、图片文件、PDF 文件）。读取过大的文件可能因最大输入 tokens 而受限制，调用需要谨慎。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -171,9 +206,14 @@
   },
   {
     "type": "function",
+    "category": "file",
+    "is_read_only": false,
+    "is_concurrency_safe": false,
+    "max_result_size": 4000,
+    "prompt": "这是写入文件内容的主要工具。写入尺寸过大的内容可能会因为最大输出 tokens 而截断调用参数，调用需谨慎：写入内容不宜超过 12000 字符。过长时应分成多批以追加方式写入，或通过 substitute_file 进行局部替换。",
     "function": {
       "name": "write_file",
-      "description": "写入文件。(写入尺寸过大的内容可能会因为最大输出 tokens 而截断调用参数，调用需谨慎：写入内容不宜超过 12000 字符，过长可能因超出 AI-Chat 最大允许输出 tokens 长度而截断并导致工具调用错误。过长时应分成多批以追加方式写入，或者通过其它方式例如替换。",
+      "description": "写入文件。写入过大的内容可能因最大输出 tokens 而截断。写入内容不宜超过 12000 字符，过长时应分成多批或通过 substitute_file 方式。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -184,7 +224,7 @@
           "content": {
             "type": "string",
             "description": "写入内容"
-        },
+          },
           "mode": {
             "type": "string",
             "description": "写入模式: 'w'-覆盖, 'a'-追加, 缺省为 'w'",
@@ -197,6 +237,11 @@
   },
   {
     "type": "function",
+    "category": "file",
+    "is_read_only": true,
+    "is_concurrency_safe": true,
+    "max_result_size": 8000,
+    "prompt": "当需要比较两个文件的差异时使用，生成类似 diff 命令的输出",
     "function": {
       "name": "diff_file",
       "description": "比较两个文件的差异，生成类似 Linux diff 命令的差异输出",
@@ -229,6 +274,11 @@
   },
   {
     "type": "function",
+    "category": "file",
+    "is_read_only": false,
+    "is_concurrency_safe": false,
+    "max_result_size": 4000,
+    "prompt": "当需要将差异补丁应用到文件时使用，类似于 Linux patch 命令",
     "function": {
       "name": "patch_file",
       "description": "将差异补丁应用到文件，类似于 Linux patch 命令的功能",

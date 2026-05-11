@@ -1,6 +1,12 @@
 [
   {
     "type": "function",
+    "category": "shell",
+    "is_read_only": false,
+    "is_concurrency_safe": false,
+    "max_result_size": 16000,
+    "output_scale": "potentially_large",
+    "prompt": "在安全 Docker 容器中执行 shell 命令或 Python 代码。这是执行代码、运行脚本、安装软件包、构建项目等操作的唯一途径。注意：此工具可能运行较长时间，需要耐心等待结果。",
     "function": {
       "name": "execute_shell",
       "description": "在安全的 Docker 容器（taskbox，Ubuntu/Debian 环境，包含 Python 3.12、C/C++ 工具链和 ccache）中执行 shell 或 Python 命令。支持持久化容器以在多次调用之间保持状态。",
@@ -28,7 +34,7 @@
           },
           "language": {
             "type": "string",
-            "description": "语言环境。'shell' 表示 bash 命令，'python' 表示 Python 代码。其他语言可能会在以后添加。",
+            "description": "语言环境。'shell' 表示 bash 命令，'python' 表示 Python 代码。",
             "enum": ["shell", "python"],
             "default": "shell"
           },

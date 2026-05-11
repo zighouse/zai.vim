@@ -1,9 +1,14 @@
 [
   {
     "type": "function",
+    "category": "ai",
+    "is_read_only": false,
+    "is_concurrency_safe": true,
+    "max_result_size": 2000,
+    "prompt": "当用户明确要求使用 AI 生成图片时使用。这是一个专业工具，仅在用户明确需要图片生成时调用。",
     "function": {
       "name": "generate_image",
-      "description": "使用AI生成图片",
+      "description": "使用 AI 生成图片",
       "parameters": {
         "type": "object",
         "properties": {
@@ -17,7 +22,7 @@
           },
           "output_dir": {
             "type": "string",
-            "description": "输出目录（如果output_path未指定，则在此目录下生成图片）"
+            "description": "输出目录（如果 output_path 未指定，则在此目录下生成图片）"
           },
           "size": {
             "type": "string",

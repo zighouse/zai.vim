@@ -1,9 +1,14 @@
 [
   {
     "type": "function",
+    "category": "web",
+    "is_read_only": true,
+    "is_concurrency_safe": true,
+    "max_result_size": 8000,
+    "prompt": "当需要搜索互联网获取最新信息时使用，支持多搜索引擎（Google、Bing、DuckDuckGo 等）",
     "function": {
       "name": "web_search",
-      "description": "执行网络搜索（使用SearXNG元搜索引擎，支持多个搜索引擎）",
+      "description": "执行网络搜索（使用 SearXNG 元搜索引擎，支持多个搜索引擎）",
       "parameters": {
         "type": "object",
         "properties": {
@@ -13,12 +18,12 @@
           },
           "engine": {
             "type": "string",
-            "description": "指定搜索引擎（留空则自动选择）。可选值包括: 'bing', 'duckduckgo', 'google', 'brave', 'startpage', 'yandex', 'baidu', 'qwant' 等（取决于SearXNG配置）",
+            "description": "指定搜索引擎（留空则自动选择）。可选值包括: 'bing', 'duckduckgo', 'google', 'brave', 'startpage', 'yandex', 'baidu', 'qwant' 等",
             "default": ""
           },
           "category": {
             "type": "string",
-            "description": "搜索类别。可选值: 'general' (常规), 'images' (图片), 'videos' (视频), 'news' (新闻), 'map' (地图), 'music' (音乐), 'it' (IT), 'science' (科学) 等（取决于SearXNG配置）",
+            "description": "搜索类别。可选值: 'general' (常规), 'images' (图片), 'videos' (视频), 'news' (新闻), 'map' (地图), 'music' (音乐), 'it' (IT), 'science' (科学) 等",
             "default": "general",
             "enum": ["general", "images", "videos", "news", "map", "music", "it", "science", ""]
           },
@@ -52,34 +57,40 @@
   },
   {
     "type": "function",
+    "category": "web",
+    "is_read_only": true,
+    "is_concurrency_safe": true,
+    "max_result_size": 20000,
+    "output_scale": "potentially_large",
+    "prompt": "当需要获取指定 URL 的网页内容时使用，支持分页处理大网页",
     "function": {
       "name": "web_get_content",
-      "description": "获取指定URL的网页内容，支持分页功能以处理超大网页",
+      "description": "获取指定 URL 的网页内容，支持分页功能以处理超大网页",
       "parameters": {
         "type": "object",
         "properties": {
           "url": {
             "type": "string",
-            "description": "要获取内容的URL地址"
+            "description": "要获取内容的 URL 地址"
           },
           "return_format": {
             "type": "string",
-            "description": "返回内容的格式, 'clean_text' 返回纯文本, 'markdown' 返回markdown，'html' 返回原始HTML，'links' 返回解析后的链接列表",
+            "description": "返回内容的格式: 'clean_text' 返回纯文本, 'markdown' 返回 markdown，'html' 返回原始 HTML，'links' 返回解析后的链接列表",
             "enum": ["clean_text", "markdown", "html", "links"],
             "default": "clean_text"
           },
           "max_tokens": {
             "type": "integer",
-            "description": "最大返回token数（None=不限制）。当内容超过此数量时，会根据paginate参数决定分页或截断"
+            "description": "最大返回 token 数（None=不限制）。当内容超过此数量时，会根据 paginate 参数决定分页或截断"
           },
           "paginate": {
             "type": "boolean",
-            "description": "启用分页功能。当内容超过2页大小时自动缓存并分页显示",
+            "description": "启用分页功能。当内容超过 2 页大小时自动缓存并分页显示",
             "default": false
           },
           "page_size": {
             "type": "integer",
-            "description": "分页时每页的token数（默认2000）",
+            "description": "分页时每页的 token 数（默认 2000）",
             "default": 2000
           }
         },
@@ -89,15 +100,20 @@
   },
   {
     "type": "function",
+    "category": "web",
+    "is_read_only": false,
+    "is_concurrency_safe": true,
+    "max_result_size": 2000,
+    "prompt": "当需要从 URL 下载文件（图片、压缩包等）时使用",
     "function": {
       "name": "web_download_file",
-      "description": "从URL下载文件（用于llm不便直接消化但于用户有益的内容，如图片、压缩包等）",
+      "description": "从 URL 下载文件（用于 LLM 不便直接消化但于用户有益的内容，如图片、压缩包等）",
       "parameters": {
         "type": "object",
         "properties": {
           "url": {
             "type": "string",
-            "description": "要下载文件的URL地址"
+            "description": "要下载文件的 URL 地址"
           },
           "output_path": {
             "type": "string",
@@ -109,11 +125,11 @@
           },
           "filename": {
             "type": "string",
-            "description": "文件名，如果未指定则从URL中提取或使用时间戳"
+            "description": "文件名，如果未指定则从 URL 中提取或使用时间戳"
           },
           "timeout": {
             "type": "integer",
-            "description": "下载超时时间（秒），默认60秒",
+            "description": "下载超时时间（秒），默认 60 秒",
             "default": 60
           }
         },
@@ -123,6 +139,11 @@
   },
   {
     "type": "function",
+    "category": "web",
+    "is_read_only": true,
+    "is_concurrency_safe": false,
+    "max_result_size": 8000,
+    "prompt": "当需要查看缓存网页的下一页内容时使用（配合 web_get_content 的分页功能）",
     "function": {
       "name": "web_next_page",
       "description": "显示缓存网页内容的下一页",
@@ -140,6 +161,11 @@
   },
   {
     "type": "function",
+    "category": "web",
+    "is_read_only": true,
+    "is_concurrency_safe": false,
+    "max_result_size": 8000,
+    "prompt": "当需要查看缓存网页的上一页内容时使用",
     "function": {
       "name": "web_prev_page",
       "description": "显示缓存网页内容的上一页",
@@ -157,6 +183,11 @@
   },
   {
     "type": "function",
+    "category": "web",
+    "is_read_only": true,
+    "is_concurrency_safe": false,
+    "max_result_size": 8000,
+    "prompt": "当需要跳转到缓存网页的指定页时使用",
     "function": {
       "name": "web_goto_page",
       "description": "跳转到缓存网页内容的指定页",
@@ -169,7 +200,7 @@
           },
           "page_num": {
             "type": "integer",
-            "description": "页码（从1开始）"
+            "description": "页码（从 1 开始）"
           }
         },
         "required": ["cache_id", "page_num"]
@@ -178,6 +209,11 @@
   },
   {
     "type": "function",
+    "category": "web",
+    "is_read_only": true,
+    "is_concurrency_safe": false,
+    "max_result_size": 20000,
+    "prompt": "当需要查看缓存网页的全部内容时使用（可能很大）",
     "function": {
       "name": "web_show_all",
       "description": "显示缓存网页的全部内容（可能很大）",
@@ -195,6 +231,11 @@
   },
   {
     "type": "function",
+    "category": "web",
+    "is_read_only": true,
+    "is_concurrency_safe": true,
+    "max_result_size": 2000,
+    "prompt": "当需要查看缓存网页内容的信息（大小、页数等元数据）时使用",
     "function": {
       "name": "web_page_info",
       "description": "显示缓存网页内容的信息",
@@ -212,6 +253,11 @@
   },
   {
     "type": "function",
+    "category": "web",
+    "is_read_only": false,
+    "is_concurrency_safe": true,
+    "max_result_size": 2000,
+    "prompt": "当需要清理过期的网页缓存时使用",
     "function": {
       "name": "web_cleanup_cache",
       "description": "清理过期的网页缓存文件",
@@ -220,7 +266,7 @@
         "properties": {
           "max_age_hours": {
             "type": "integer",
-            "description": "缓存保留时间（小时），默认24小时",
+            "description": "缓存保留时间（小时），默认 24 小时",
             "default": 24
           }
         },

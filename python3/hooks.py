@@ -13,8 +13,6 @@ Provides pre/post tool execution hooks with:
 - Matcher-based filtering by tool name patterns
 - Timeout and blocking semantics
 - Configuration via YAML/JSON
-
-Adapted from Claude Code's hook architecture for zai.vim's Python backend.
 """
 
 import fnmatch

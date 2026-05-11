@@ -8,7 +8,7 @@
 Sub-agent system for zai.vim.
 
 Allows the main LLM to spawn autonomous sub-agents that run their own
-LLM loop with tool access. Inspired by Claude Code's AgentTool.
+LLM loop with tool access.
 
 Design:
   - SubAgent runs a bounded LLM loop (max_turns)

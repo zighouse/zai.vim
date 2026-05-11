@@ -1,25 +1,31 @@
 [
   {
     "type": "function",
+    "category": "agent",
+    "is_read_only": false,
+    "is_concurrency_safe": true,
+    "max_result_size": 16000,
+    "output_scale": "potentially_large",
+    "prompt": "当需要完成一个需要多步骤的复杂任务时使用。子代理会运行自己的 LLM 循环，可以访问所有已加载的工具。适用于：探索代码库、分析代码结构、生成实现方案、研究某个主题、或执行需要多次工具调用的复杂文件操作。子代理的结果作为工具返回值。",
     "function": {
       "name": "agent",
-      "description": "Spawn an autonomous sub-agent to complete a complex task. The sub-agent runs its own LLM loop with access to all currently-loaded tools (file operations, shell, web search, grep, etc.). Use this for multi-step tasks like: exploring a codebase to find specific patterns, analyzing code structure, generating implementation plans, researching a topic, or performing complex file operations that require multiple tool calls. The sub-agent's answer is returned as the tool result.",
+      "description": "生成一个自治的子代理来完成复杂任务。子代理运行自己的 LLM 循环，可以访问所有当前加载的工具（文件操作、shell、网页搜索、grep 等）。适用于：探索代码库寻找特定模式、分析代码结构、生成实现方案、研究某个主题、或执行需要多次工具调用的复杂文件操作。子代理的答案作为工具结果返回。",
       "parameters": {
         "type": "object",
         "properties": {
           "task": {
             "type": "string",
-            "description": "A clear, detailed description of the task for the sub-agent. Include all necessary context since the sub-agent starts with a fresh conversation. The sub-agent will not see the parent conversation history."
+            "description": "对子代理任务的清晰详细描述。包含所有必要的上下文，因为子代理从一个全新的对话开始。子代理不会看到父对话历史。"
           },
           "agent_type": {
             "type": "string",
-            "description": "Type of agent: 'general' for full autonomy with all tools, 'explore' for read-only investigation and analysis (will not modify files), 'plan' for producing structured implementation plans without modifications.",
+            "description": "代理类型：'general' 完全自治可访问所有工具，'explore' 只读调查和分析（不会修改文件），'plan' 生成结构化实现方案不做修改。",
             "enum": ["general", "explore", "plan"],
             "default": "general"
           },
           "max_turns": {
             "type": "integer",
-            "description": "Maximum number of tool-use turns the sub-agent may take (1-20). Default is 10. Use lower values for simple tasks, higher for complex multi-step tasks.",
+            "description": "子代理可执行的最大工具调用轮数（1-20）。默认 10。简单任务用较低值，复杂多步任务用较高值。",
             "default": 10
           }
         },
