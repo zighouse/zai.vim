@@ -193,7 +193,7 @@ SearXNG 元搜索引擎集成。
 
 用户配置: ~/.local/share/zai/assistants.yaml
 
-项目配置: zai.project/zai_project.yaml
+项目配置: .zai/zai_project.yaml
 
 详细说明: https://github.com/zighouse/zai.vim/blob/main/docs/configuration/
 

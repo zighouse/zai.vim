@@ -74,7 +74,7 @@ def set_sandbox_home(new_path: str):
 
 def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> Optional[Path]:
     """
-    从指定路径开始向上遍历目录树，查找 zai.project/zai_project.yaml 文件。
+    从指定路径开始向上遍历目录树，查找 .zai/zai_project.yaml 文件。
     为了兼容性，也支持旧格式的 zai_project.yaml 文件。
     
     Args:
@@ -93,15 +93,15 @@ def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> 
     
     # 向上遍历目录树
     while True:
-        # 优先检查新格式：zai.project/zai_project.yaml
-        new_format_file = current / "zai.project" / "zai_project.yaml"
+        # 优先检查新格式：.zai/zai_project.yaml
+        new_format_file = current / ".zai" / "zai_project.yaml"
         if new_format_file.is_file():
             return new_format_file
         
         # 为了兼容性，检查旧格式：zai_project.yaml
         old_format_file = current / "zai_project.yaml"
-        if old_format_file.is_file() and current.name != "zai.project":
-            print(f"警告: 使用旧格式配置文件 {old_format_file}，建议迁移到 zai.project/zai_project.yaml", file=sys.stderr)
+        if old_format_file.is_file() and current.name != ".zai":
+            print(f"警告: 使用旧格式配置文件 {old_format_file}，建议迁移到 .zai/zai_project.yaml", file=sys.stderr)
             return old_format_file
         
         # 到达根目录时停止

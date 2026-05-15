@@ -821,19 +821,19 @@ MCP 服务器提供以下工具：
 
 ## 项目配置
 
-Zai 支持通过项目目录中的 `zai.project/zai_project.yaml` 文件进行项目级配置。这允许您定义项目特定的设置，如沙盒目录和 `tool_shell` 工具的 Docker 容器配置。
+Zai 支持通过项目目录中的 `.zai/zai_project.yaml` 文件进行项目级配置。这允许您定义项目特定的设置，如沙盒目录和 `tool_shell` 工具的 Docker 容器配置。
 
 ### 配置文件位置
 
 从当前工作目录向上搜索配置文件：
-- `zai.project/zai_project.yaml`（新格式）
+- `.zai/zai_project.yaml`（新格式）
 - `zai_project.yaml`（旧格式，会显示警告）
 
 ### 配置结构
 
 配置文件应包含配置对象列表。第一个对象用于当前项目。
 
-示例 `zai.project/zai_project.yaml`：
+示例 `.zai/zai_project.yaml`：
 ```yaml
 - sandbox_home: /path/to/project/sandbox
   shell_container:

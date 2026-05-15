@@ -154,7 +154,7 @@ Source Code: [`python3/tool_file.py`](../../python3/tool_file.py)
 The `file` tool can be configured through:
 
 - **User Config**: `~/.local/share/zai/assistants.yaml`
-- **Project Config**: `zai.project/zai_project.yaml`
+- **Project Config**: `.zai/zai_project.yaml`
 
 ## Usage Examples
 

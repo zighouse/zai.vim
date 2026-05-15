@@ -193,7 +193,7 @@ CONFIGURATION                                            *zai-config*
 
 User config: ~/.local/share/zai/assistants.yaml
 
-Project config: zai.project/zai_project.yaml
+Project config: .zai/zai_project.yaml
 
 For details: https://github.com/zighouse/zai.vim/blob/main/docs/configuration/
 

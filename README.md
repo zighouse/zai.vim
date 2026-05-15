@@ -760,19 +760,19 @@ Change prefix example:
 
 ## Project Configuration
 
-Zai supports project-level configuration through a `zai.project/zai_project.yaml` file (or `zai_project.yaml` for backward compatibility) in your project directory. This allows you to define project-specific settings like sandbox directory and Docker container configuration for the `tool_shell` tool.
+Zai supports project-level configuration through a `.zai/zai_project.yaml` file (or `zai_project.yaml` for backward compatibility) in your project directory. This allows you to define project-specific settings like sandbox directory and Docker container configuration for the `tool_shell` tool.
 
 ### Configuration File Location
 
 The configuration file is searched upward from the current working directory:
-- `zai.project/zai_project.yaml` (new format)
+- `.zai/zai_project.yaml` (new format)
 - `zai_project.yaml` (legacy format, prints warning)
 
 ### Configuration Structure
 
 The configuration file should contain a list of configuration objects. The first one is used for the current project.
 
-Example `zai.project/zai_project.yaml`:
+Example `.zai/zai_project.yaml`:
 ```yaml
 - sandbox_home: /path/to/project/sandbox
   shell_container:

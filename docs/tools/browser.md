@@ -70,7 +70,7 @@ Source Code: [`python3/tool_browser.py`](../../python3/tool_browser.py)
 The `browser` tool can be configured through:
 
 - **User Config**: `~/.local/share/zai/assistants.yaml`
-- **Project Config**: `zai.project/zai_project.yaml`
+- **Project Config**: `.zai/zai_project.yaml`
 
 ## Usage Examples
 
