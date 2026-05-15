@@ -365,7 +365,8 @@ class AIAssistantManager:
             id = 0
             for provider in self._provider_list:
                 if 'name' in provider:
-                    print(f" {id} - {provider['name']}")
+                    mark = ">" if self._provider and self._provider.get('name') == provider['name'] else " "
+                    print(f"{mark}{id} - {provider['name']}")
                     id = id + 1
             # Show actual config file being used
             conf_dir = Path(user_data_dir("zai", "zighouse"))

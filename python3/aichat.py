@@ -369,6 +369,12 @@ class AIChat:
         # Apply model-specific params (temperature, etc.) but not tools or core keys
         safe_opts = {'temperature', 'top_p', 'max_tokens', 'presence_penalty', 'frequency_penalty'}
         model_params = self._config['model'].get('params', {})
+        if isinstance(model_params, list):
+            merged = {}
+            for item in model_params:
+                if isinstance(item, dict):
+                    merged.update(item)
+            model_params = merged
         params.update({k: v for k, v in model_params.items() if k in safe_opts})
 
         try:
@@ -750,7 +756,14 @@ class AIChat:
 
         # apply model configure settings
         params['model'] = self._config['model'].get('name','')
-        params.update(self._config['model'].get('params',{}))
+        params_model_params = self._config['model'].get('params', {})
+        if isinstance(params_model_params, list):
+            _merged = {}
+            for item in params_model_params:
+                if isinstance(item, dict):
+                    _merged.update(item)
+            params_model_params = _merged
+        params.update(params_model_params)
 
         # apply session settings
         if 'deepseek-r' in self._config['model'].get("name","").lower():
@@ -1484,11 +1497,10 @@ class AIChat:
                     changed = self._aiconfig.use_ai(name=argv[1], model=argv[3])
                 else:
                     changed = self._aiconfig.use_ai(name=argv[1])
-                provider = self._aiconfig.get_provider()
-                port = self._aiconfig.get_port()
-                model = self._aiconfig.get_model()
-                model_name = model.get("name", "")
                 if changed:
+                    provider = self._aiconfig.get_provider()
+                    model = self._aiconfig.get_model()
+                    model_name = model.get("name", "")
                     print(f"AI assistant `{provider['name']}` is applied, details:")
                     self._aiconfig.show_provider(provider, model)
                     try:
@@ -1509,6 +1521,8 @@ class AIChat:
                         print(f"Open AI Client: base-url:{base_url}, model:{model_name}, api_key_name:{api_key_name}")
                     except:
                         print(f"Open AI Client failed: base-url:{base_url}, model:{model_name}, api_key_name:{api_key_name}")
+                else:
+                    print(f"AI assistant `{argv[1]}` is not available or unchanged.")
                 return True
             if opt.lower() == 'tool':
                 self._tool.show_tools()
@@ -1533,7 +1547,7 @@ class AIChat:
                 value = self._logger.get_path()
             elif argv[0] == 'prefix':
                 value = self._cmd_prefix
-            elif argv[0] == 'ai' and self._assistant:
+            elif argv[0] == 'ai' and self._aiconfig.get_provider():
                 print("AI assistant is:")
                 provider = self._aiconfig.get_provider()
                 model = self._aiconfig.get_model()

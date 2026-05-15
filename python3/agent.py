@@ -200,6 +200,12 @@ class SubAgent:
             # Apply safe model params
             safe_opts = {'temperature', 'top_p', 'presence_penalty', 'frequency_penalty'}
             model_params = _parent_config.get('model', {}).get('params', {})
+            if isinstance(model_params, list):
+                merged = {}
+                for item in model_params:
+                    if isinstance(item, dict):
+                        merged.update(item)
+                model_params = merged
             params.update({k: v for k, v in model_params.items() if k in safe_opts})
 
             if tools:
