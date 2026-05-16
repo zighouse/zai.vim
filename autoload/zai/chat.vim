@@ -233,7 +233,7 @@ function! s:print_channel_data(chat, bufnr, channel_data) abort
         call setbufvar(a:bufnr, '&modifiable', 0)
     endif
 
-    "call s:move_cursor_last(a:bufnr)
+    call s:move_cursor_last(a:bufnr)
 endfunction
 
 " task response callback
