@@ -77,6 +77,7 @@
     "is_concurrency_safe": true,
     "max_result_size": 2000,
     "prompt": "",
+    "user_only": true,
     "function": {
       "name": "shell_allow_once",
       "description": "临时放行一个被策略引擎标记为 ask 的命令。使用后需重新调用 shell_execute。",
@@ -103,6 +104,7 @@
     "is_concurrency_safe": true,
     "max_result_size": 2000,
     "prompt": "",
+    "user_only": true,
     "function": {
       "name": "shell_deny_once",
       "description": "临时拒绝一个被策略引擎标记为 ask 的命令。命令将不会被再次执行直到策略变更。",

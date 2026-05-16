@@ -904,28 +904,48 @@ class AIChat:
 
         command = result.get('command', '')
         reason = result.get('reason', 'No matching rule')
+        session_id = arguments.get('session_id', '')
 
-        # In Vim mode (piped stdin), interactive prompts don't work —
-        # Vim treats stdout as chat content and has no way to show a
-        # confirmation dialog.  Return the ask result as-is so the LLM
-        # can report it to the user and the user responds through normal
-        # chat input (e.g. "yes, allow it").
-        if not sys.stdin.isatty():
-            return False
-
-        # CLI mode: use the input queue to avoid competing with
-        # _input_collector daemon thread for stdin.
+        # Show the permission prompt via stdout.  In CLI mode this goes
+        # to the terminal; in Vim mode it appears as text in the chat
+        # buffer — the user just types "y" as a normal chat message.
         print(f"\n  ⚠  Permission required: {command}")
         print(f"     Reason: {reason}")
+        print(f"     Type 'y' to allow, anything else to deny:")
+
+        # Read user approval from the input queue — the same queue
+        # that _input_collector feeds from stdin (both CLI and Vim
+        # pipe mode).  This avoids the stdin race condition with the
+        # daemon thread.
         try:
-            sys.stdout.write("     Allow? (y/N): ")
-            sys.stdout.flush()
-            raw = self._cli._input_queue.get(timeout=30)
+            raw = self._cli._input_queue.get(timeout=60)
             resp = raw.strip().lower()
         except queue.Empty:
             resp = 'n'
         except (EOFError, KeyboardInterrupt):
             resp = 'n'
+
+        if not session_id:
+            print("     (no session — cannot persist approval)")
+            return True
+
+        if resp in ('y', 'yes'):
+            from tool_shell import invoke_shell_allow_once
+            invoke_shell_allow_once(command=command, session_id=session_id)
+            tool_response["content"] = self._tool.call_tool(
+                function_name, arguments
+            )
+            return True
+
+        from tool_shell import invoke_shell_deny_once
+        invoke_shell_deny_once(command=command, session_id=session_id)
+        tool_response["content"] = json.dumps({
+            "success": False,
+            "decision": "deny",
+            "reason": f"Rejected by user: {reason}",
+            "command": command,
+        })
+        return True
 
         session_id = arguments.get('session_id', '')
 

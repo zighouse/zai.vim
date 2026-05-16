@@ -149,6 +149,7 @@ class ToolRegistry:
                     tier=self._determine_initial_tier(name),
                     is_read_only=raw.get("is_read_only", True),
                     is_concurrency_safe=raw.get("is_concurrency_safe", True),
+                    user_only=raw.get("user_only", False),
                     max_result_size=raw.get("max_result_size", 8000),
                 )
 
@@ -403,10 +404,14 @@ class ToolRegistry:
         return self._invokers.get(name)
 
     def get_first_class_tools(self) -> List[Dict[str, Any]]:
-        """Return OpenAI tool definitions for all first-class tools."""
+        """Return OpenAI tool definitions for all first-class tools.
+
+        Tools marked user_only are excluded — they should never be
+        visible to the LLM (e.g. shell_allow_once, shell_deny_once).
+        """
         result = []
         for name, spec in sorted(self._tools.items()):
-            if spec.tier == "first":
+            if spec.tier == "first" and not spec.user_only:
                 result.append(spec.to_openai_tool_with_prompt())
         return result
 
@@ -445,7 +450,7 @@ class ToolRegistry:
         result = []
         for name in summary.tool_names:
             spec = self._tools.get(name)
-            if spec and (include_first_class or spec.tier != "first"):
+            if spec and not spec.user_only and (include_first_class or spec.tier != "first"):
                 result.append(spec.to_openai_tool_with_prompt())
         return result
 

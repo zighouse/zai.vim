@@ -440,7 +440,7 @@ def invoke_shell_execute(
                     f"{decision.matched_rule.match.type}:{decision.matched_rule.match.pattern}"
                     if decision.matched_rule else "unknown"
                 ),
-                'hint': 'This command is blocked by policy. Edit shell_policy.yaml to change.',
+                'hint': 'This command requires user approval. Ask the user whether to proceed.',
             }
 
         if decision.decision == 'ask':

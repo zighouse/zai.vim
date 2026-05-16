@@ -32,8 +32,6 @@ DEFAULT_FIRST_CLASS_TOOLS = {
     "grep",            # grep
     "shell_execute",   # shell (direct host execution)
     "shell_abort",     # shell (abort running command)
-    "shell_allow_once",  # shell (temporary allow)
-    "shell_deny_once",   # shell (temporary deny)
     "web_search",      # web
     "web_get_content", # web
 }
@@ -64,6 +62,7 @@ class ToolSpec:
     # Execution declarations
     is_read_only: bool = True
     is_concurrency_safe: bool = True
+    user_only: bool = False              # excluded from LLM tool list
     max_result_size: int = 8000          # chars before truncation
 
     # Runtime statistics (persisted only in memory, not in cache)
