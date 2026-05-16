@@ -904,11 +904,16 @@ class AIChat:
         command = result.get('command', '')
         reason = result.get('reason', 'No matching rule')
 
-        print(f"\n  ⚠  Permission required: {command}", flush=True)
-        print(f"     Reason: {reason}", flush=True)
+        print(f"\n  ⚠  Permission required: {command}")
+        print(f"     Reason: {reason}")
 
+        # Use explicit write/flush/readline instead of input() to avoid
+        # terminal buffering issues where the prompt doesn't appear
+        # until the user presses a key.
         try:
-            resp = input("     Allow? (y/N): ").strip().lower()
+            sys.stdout.write("     Allow? (y/N): ")
+            sys.stdout.flush()
+            resp = sys.stdin.readline().strip().lower()
         except (EOFError, KeyboardInterrupt):
             resp = 'n'
 
