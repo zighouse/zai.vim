@@ -851,7 +851,9 @@ class AIChat:
                     }
                 try:
                     function_args = json.loads(function['arguments']) if function['arguments'] else {}
+                    self._ensure_tool_session(function_name, function_args)
                     tool_response["content"] = self._tool.call_tool(function_name, function_args)
+                    self._handle_permission_ask(tool_response, function_name, function_args)
                 except Exception as call_ex:
                     print(f"tool_call `{function_name}` error {call_ex}")
                     self._logger.append_error(call_ex)
@@ -859,6 +861,83 @@ class AIChat:
                 finally:
                     tool_returns.append(tool_response)
         return tool_returns
+
+    def _ensure_tool_session(self, function_name: str, arguments: dict):
+        """Inject session_id into tool call arguments if missing.
+
+        The LLM may omit optional parameters like session_id.  Without a
+        session_id, the permission engine's allow_once/deny_once are no-ops,
+        making interactive approval impossible.
+        """
+        if 'session_id' not in arguments or not arguments.get('session_id'):
+            sid = self._session.get_session_id() or ''
+            arguments['session_id'] = sid
+
+    def _handle_permission_ask(self, tool_response: dict,
+                                function_name: str,
+                                arguments: dict) -> bool:
+        """Intercept 'ask' decisions from tool calls and prompt the user.
+
+        When the permission engine returns decision='ask' for a shell command,
+        this method:
+          1. Displays the command and reason to the user
+          2. Asks for approval (y/N)
+          3. On approval: calls shell_allow_once and re-executes the command
+          4. On denial: calls shell_deny_once and returns a deny message
+
+        Returns True if an ask decision was handled, False otherwise.
+        Modifies *tool_response* in-place with the final result.
+        """
+        content = tool_response.get("content", "")
+        if not isinstance(content, str):
+            return False
+
+        try:
+            result = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            return False
+
+        if not isinstance(result, dict) or result.get('decision') != 'ask':
+            return False
+
+        command = result.get('command', '')
+        reason = result.get('reason', 'No matching rule')
+
+        print(f"\n  ⚠  Permission required: {command}")
+        print(f"     Reason: {reason}")
+
+        try:
+            resp = input("     Allow? (y/N): ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            resp = 'n'
+
+        session_id = arguments.get('session_id', '')
+
+        if not session_id:
+            # No session — can't use allow_once/deny_once.  Fall back to
+            # a simple print so the user at least sees what was blocked.
+            print("     (no session — cannot persist approval)")
+            return True
+
+        if resp in ('y', 'yes'):
+            from tool_shell import invoke_shell_allow_once
+            invoke_shell_allow_once(command=command, session_id=session_id)
+            # Re-execute — the allow_once rule now covers this command
+            tool_response["content"] = self._tool.call_tool(
+                function_name, arguments
+            )
+            return True
+
+        # User denied
+        from tool_shell import invoke_shell_deny_once
+        invoke_shell_deny_once(command=command, session_id=session_id)
+        tool_response["content"] = json.dumps({
+            "success": False,
+            "decision": "deny",
+            "reason": f"Rejected by user: {reason}",
+            "command": command,
+        })
+        return True
 
     def _generate_response(self, current_round) -> Dict[str,Any]:
         """Generate and process assistant response"""
