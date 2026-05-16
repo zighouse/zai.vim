@@ -865,10 +865,11 @@ class AIChat:
     def _ensure_tool_session(self, function_name: str, arguments: dict):
         """Inject session_id into tool call arguments if missing.
 
-        The LLM may omit optional parameters like session_id.  Without a
-        session_id, the permission engine's allow_once/deny_once are no-ops,
-        making interactive approval impossible.
+        Only applies to shell tools — other tools (ls, file, grep) do not
+        accept session_id and would error on unexpected keyword args.
         """
+        if not function_name.startswith('shell_'):
+            return
         if 'session_id' not in arguments or not arguments.get('session_id'):
             sid = self._session.get_session_id() or ''
             arguments['session_id'] = sid
@@ -903,8 +904,8 @@ class AIChat:
         command = result.get('command', '')
         reason = result.get('reason', 'No matching rule')
 
-        print(f"\n  ⚠  Permission required: {command}")
-        print(f"     Reason: {reason}")
+        print(f"\n  ⚠  Permission required: {command}", flush=True)
+        print(f"     Reason: {reason}", flush=True)
 
         try:
             resp = input("     Allow? (y/N): ").strip().lower()

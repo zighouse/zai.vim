@@ -443,6 +443,15 @@ class PermissionEngine:
 
         # For compound commands, check each sub-command independently
         if len(commands) > 1:
+            # First, try matching the full command string against rules.
+            # This allows allow_once "pwd && ls" to match the compound
+            # string directly instead of being split into sub-commands
+            # where the full-string wildcard pattern won't match.
+            full_check = self._check_single(
+                command_string, session_id, {}, command_string)
+            if full_check.decision != 'ask':
+                return full_check
+
             decisions = []
             for cmd_node in commands:
                 effective_cmd = _effective_command(cmd_node)
