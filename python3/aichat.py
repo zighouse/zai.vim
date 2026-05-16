@@ -905,12 +905,18 @@ class AIChat:
         command = result.get('command', '')
         reason = result.get('reason', 'No matching rule')
 
+        # In Vim mode (piped stdin), interactive prompts don't work —
+        # Vim treats stdout as chat content and has no way to show a
+        # confirmation dialog.  Return the ask result as-is so the LLM
+        # can report it to the user and the user responds through normal
+        # chat input (e.g. "yes, allow it").
+        if not sys.stdin.isatty():
+            return False
+
+        # CLI mode: use the input queue to avoid competing with
+        # _input_collector daemon thread for stdin.
         print(f"\n  ⚠  Permission required: {command}")
         print(f"     Reason: {reason}")
-
-        # Read user approval via the input queue (same queue that
-        # _input_collector feeds) to avoid a stdin race condition.
-        # Directly reading sys.stdin would compete with the daemon thread.
         try:
             sys.stdout.write("     Allow? (y/N): ")
             sys.stdout.flush()
@@ -924,21 +930,17 @@ class AIChat:
         session_id = arguments.get('session_id', '')
 
         if not session_id:
-            # No session — can't use allow_once/deny_once.  Fall back to
-            # a simple print so the user at least sees what was blocked.
             print("     (no session — cannot persist approval)")
             return True
 
         if resp in ('y', 'yes'):
             from tool_shell import invoke_shell_allow_once
             invoke_shell_allow_once(command=command, session_id=session_id)
-            # Re-execute — the allow_once rule now covers this command
             tool_response["content"] = self._tool.call_tool(
                 function_name, arguments
             )
             return True
 
-        # User denied
         from tool_shell import invoke_shell_deny_once
         invoke_shell_deny_once(command=command, session_id=session_id)
         tool_response["content"] = json.dumps({
