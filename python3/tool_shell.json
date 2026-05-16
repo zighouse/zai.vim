@@ -6,52 +6,136 @@
     "is_concurrency_safe": false,
     "max_result_size": 16000,
     "output_scale": "potentially_large",
-    "prompt": "在安全 Docker 容器中执行 shell 命令或 Python 代码。这是执行代码、运行脚本、安装软件包、构建项目等操作的唯一途径。注意：此工具可能运行较长时间，需要耐心等待结果。",
+    "prompt": "执行 shell 命令。这是运行代码、安装软件包、构建项目、执行脚本等操作的主要途径。命令在宿主机直接执行（非 Docker）。默认超时 300 秒。",
     "function": {
-      "name": "execute_shell",
-      "description": "在安全的 Docker 容器（taskbox，Ubuntu/Debian 环境，包含 Python 3.12、C/C++ 工具链和 ccache）中执行 shell 或 Python 命令。支持持久化容器以在多次调用之间保持状态。",
+      "name": "shell_execute",
+      "description": "在宿主机上直接执行 shell 命令。支持任何 bash 命令。默认 300 秒超时，可通过 timeout 参数调整。命令执行前会经过权限策略引擎检查。",
       "parameters": {
         "type": "object",
         "properties": {
           "command": {
             "type": "string",
-            "description": "要执行的命令。对于 shell：任何 bash 命令。对于 Python：Python 代码（可以是多行）。多个命令可以使用分号或换行分隔。"
+            "description": "要执行的 shell 命令。可以是任何 bash 命令，支持管道、重定向、逻辑操作符等。多个命令可以用 && 或 ; 连接。"
           },
           "timeout": {
             "type": "integer",
-            "description": "最大执行时间（秒）。默认为 60 秒。",
-            "default": 60
+            "description": "最大执行时间（秒）。默认为 300 秒。超时后先发 SIGTERM，3 秒后若未退出则 SIGKILL。",
+            "default": 300
           },
           "working_dir": {
             "type": "string",
-            "description": "容器内的工作目录（映射到主机沙箱）。默认为 /sandbox。",
-            "default": "/sandbox"
+            "description": "工作目录。默认为当前进程的工作目录。"
           },
-          "enable_network": {
-            "type": "boolean",
-            "description": "允许外部网络访问。默认为 false。",
-            "default": false
-          },
-          "language": {
+          "description": {
             "type": "string",
-            "description": "语言环境。'shell' 表示 bash 命令，'python' 表示 Python 代码。",
-            "enum": ["shell", "python"],
-            "default": "shell"
+            "description": "命令用途的简短描述，用于审计和日志记录。"
           },
-          "libraries": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "执行前要安装的库/软件包列表。对于 shell：apt 软件包（例如 ['curl', 'jq']）。对于 Python：pip 软件包（例如 ['numpy', 'pandas']）。"
+          "session_id": {
+            "type": "string",
+            "description": "当前会话 ID，用于权限检查和进程隔离。"
           },
-          "persistent": {
-            "type": "boolean",
-            "description": "是否使用持久化容器，在多次调用之间保持状态（已安装的软件包、文件等）。默认为 true。如果为 false，则每个命令使用新的临时容器。如果 enable_network 为 false，则不使用持久化容器。",
-            "default": true
+          "max_output_bytes": {
+            "type": "integer",
+            "description": "最大输出大小（字节）。默认 102400 (100KB)。超出部分会被截断并标记。",
+            "default": 102400
           }
         },
         "required": ["command"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "category": "shell",
+    "is_read_only": false,
+    "is_concurrency_safe": true,
+    "max_result_size": 2000,
+    "prompt": "",
+    "function": {
+      "name": "shell_abort",
+      "description": "中止正在运行的 shell 命令。使用 shell_execute 返回的 execution_id 来终止特定进程。会话隔离：只能中止自己会话的进程。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "execution_id": {
+            "type": "string",
+            "description": "要中止的执行的唯一 ID（由 shell_execute 返回）。"
+          },
+          "session_id": {
+            "type": "string",
+            "description": "当前会话 ID。用于会话隔离验证。"
+          }
+        },
+        "required": ["execution_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "category": "shell",
+    "is_read_only": false,
+    "is_concurrency_safe": true,
+    "max_result_size": 2000,
+    "prompt": "",
+    "function": {
+      "name": "shell_allow_once",
+      "description": "临时放行一个被策略引擎标记为 ask 的命令。使用后需重新调用 shell_execute。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "要临时放行的命令字符串。"
+          },
+          "session_id": {
+            "type": "string",
+            "description": "当前会话 ID。"
+          }
+        },
+        "required": ["command"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "category": "shell",
+    "is_read_only": false,
+    "is_concurrency_safe": true,
+    "max_result_size": 2000,
+    "prompt": "",
+    "function": {
+      "name": "shell_deny_once",
+      "description": "临时拒绝一个被策略引擎标记为 ask 的命令。命令将不会被再次执行直到策略变更。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "要临时拒绝的命令字符串。"
+          },
+          "session_id": {
+            "type": "string",
+            "description": "当前会话 ID。"
+          }
+        },
+        "required": ["command"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "category": "shell",
+    "is_read_only": true,
+    "is_concurrency_safe": true,
+    "max_result_size": 2000,
+    "prompt": "",
+    "function": {
+      "name": "shell_version",
+      "description": "获取 shell 版本信息和工作目录。",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
       }
     }
   }

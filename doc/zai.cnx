@@ -77,7 +77,8 @@ Zai.Vim 通过工具集为 AI 提供系统操作能力。
 可用工具集: >
     file      - 文件操作
     web       - 网络操作
-    shell     - Shell 执行
+    shell     - Shell 执行（宿主机直连）
+    shell_contained - Shell 执行（Docker）
     grep      - 文件搜索
     ai        - AI 能力
     archive   - 会话存档
@@ -91,6 +92,7 @@ Zai.Vim 通过工具集为 AI 提供系统操作能力。
     :help zai-tool-file|      *zai-tool-file*
     :help zai-tool-web|       *zai-tool-web*
     :help zai-tool-shell|     *zai-tool-shell*
+    :help zai-tool-shell_contained|     *zai-tool-shell_contained*
     :help zai-tool-grep|      *zai-tool-grep*
     :help zai-tool-ai|        *zai-tool-ai*
     :help zai-tool-archive|   *zai-tool-archive*
@@ -128,12 +130,36 @@ Zai.Vim 通过工具集为 AI 提供系统操作能力。
 工具: SHELL                                             *zai-tool-shell*
 ==============================================================================
 
-Docker 中的 Shell 执行。
+通过子进程在宿主机上直接执行 shell 命令。
+
+权限策略引擎（allow/deny/ask）在执行前检查每条命令。默认拒绝规则
+阻止破坏性命令（rm -rf /、dd、mkfs 等）。安全包装器（sudo、timeout、
+nice、nohup 等）被透明处理——包装后的命令仍能匹配策略规则。
 
 功能: >
-    invoke_execute_shell    安全执行命令
+    shell_execute            执行命令（含权限检查）
+    shell_abort              按 execution_id 中止运行中的命令
+    shell_allow_once         临时放行被 ask 拦截的命令
+    shell_deny_once          临时拒绝被 ask 拦截的命令
+    shell_version            显示 shell 版本和工作目录
+
+Docker 隔离执行：|zai-tool-shell_contained|
 
 文档: https://github.com/zighouse/zai.vim/blob/main/docs/tools/shell.md
+
+==============================================================================
+工具: SHELL_CONTAINED                             *zai-tool-shell_contained*
+==============================================================================
+
+在安全的 Docker 容器（taskbox）中执行 shell 命令。
+
+为运行不受信任或危险的命令提供完全隔离。容器可跨调用持久化（保留
+已安装的软件包、文件及状态）。同时支持 shell 和 Python 执行。
+
+功能: >
+    shell_contained_execute    在 Docker 容器中执行命令
+    shell_contained_info       获取容器环境信息
+    shell_contained_cleanup    清理持久化容器
 
 ==============================================================================
 工具: GREP                                              *zai-tool-grep*
@@ -203,7 +229,8 @@ SearXNG 元搜索引擎集成。
 
 常见问题: >
     API 错误          → 检查 API key
-    Docker 错误        → 确保 Docker 运行
+    Docker 错误        → 确保 Docker 运行（仅 shell_contained 需要；
+                         直接 shell 无需 Docker）
     工具不可用        → 运行 :AI tool status
 
 故障排除指南: >

@@ -22,7 +22,11 @@ from config import AIAssistantManager, parse_number_from_readable
 from logger import Logger
 from session import SessionWriter, SessionLoader
 from tool import ToolPool
-from tool_shell import invoke_shell_sandbox_info, invoke_shell_cleanup, invoke_execute_shell
+from tool_contained_shell import (
+    invoke_shell_contained_info,
+    invoke_shell_contained_cleanup,
+    invoke_shell_contained_execute,
+)
 from client import Client
 from tokens import AITokenizer
 
@@ -1567,8 +1571,8 @@ class AIChat:
                 return True
             elif argv[0] == 'taskbox':
                 try:
-                    from tool_shell import invoke_shell_sandbox_info
-                    info = invoke_shell_sandbox_info()
+                    from tool_contained_shell import invoke_shell_contained_info
+                    info = invoke_shell_contained_info()
                     print(json.dumps(info, indent=2))
                 except Exception as e:
                     print(f"Error showing taskbox info: {e}")
@@ -1732,8 +1736,8 @@ class AIChat:
     def _on_start(self, *argv):
         if len(argv) == 1 and argv[0] == 'taskbox':
             try:
-                from tool_shell import invoke_execute_shell
-                result = invoke_execute_shell(command="echo 'Starting taskbox container...'", timeout=2, persistent=True)
+                from tool_contained_shell import invoke_shell_contained_execute
+                result = invoke_shell_contained_execute(command="echo 'Starting taskbox container...'", timeout=2, persistent=True)
                 if result.get('success'):
                     print('Taskbox container started.')
                 else:
@@ -1746,8 +1750,8 @@ class AIChat:
     def _on_stop(self, *argv):
         if len(argv) == 1 and argv[0] == 'taskbox':
             try:
-                from tool_shell import invoke_shell_cleanup
-                result = invoke_shell_cleanup()
+                from tool_contained_shell import invoke_shell_contained_cleanup
+                result = invoke_shell_contained_cleanup()
                 if result.get('success'):
                     print('Taskbox container stopped.')
                 else:

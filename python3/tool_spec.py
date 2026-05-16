@@ -30,7 +30,10 @@ DEFAULT_FIRST_CLASS_TOOLS = {
     "ls",              # file
     "search_in_file",  # file
     "grep",            # grep
-    "execute_shell",   # shell
+    "shell_execute",   # shell (direct host execution)
+    "shell_abort",     # shell (abort running command)
+    "shell_allow_once",  # shell (temporary allow)
+    "shell_deny_once",   # shell (temporary deny)
     "web_search",      # web
     "web_get_content", # web
 }

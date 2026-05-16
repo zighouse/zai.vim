@@ -77,7 +77,8 @@ Zai.Vim provides AI tools through toolsets.
 Available toolsets: >
     file      - File operations
     web       - Web operations
-    shell     - Shell execution
+    shell     - Shell execution (direct host)
+    shell_contained - Shell execution (Docker)
     grep      - File search
     ai        - AI capabilities
     archive   - Session archiving
@@ -91,6 +92,7 @@ For tool-specific help: >
     :help zai-tool-file|      *zai-tool-file*
     :help zai-tool-web|       *zai-tool-web*
     :help zai-tool-shell|     *zai-tool-shell*
+    :help zai-tool-shell_contained|     *zai-tool-shell_contained*
     :help zai-tool-grep|      *zai-tool-grep*
     :help zai-tool-ai|        *zai-tool-ai*
     :help zai-tool-archive|   *zai-tool-archive*
@@ -128,12 +130,38 @@ Docs: https://github.com/zighouse/zai.vim/blob/main/docs/tools/web.md
 TOOL: SHELL                                               *zai-tool-shell*
 ==============================================================================
 
-Shell execution in Docker.
+Shell execution directly on the host via subprocess.
+
+Permission policy engine (allow/deny/ask) checks every command before
+execution. Default-deny rules block destructive commands (rm -rf /, dd,
+mkfs, etc.). Safe wrappers (sudo, timeout, nice, nohup, etc.) are
+transparently handled — wrapped commands still match policy rules.
 
 Functions: >
-    invoke_execute_shell    Execute commands securely
+    shell_execute            Execute command (with permission check)
+    shell_abort              Abort running command by execution_id
+    shell_allow_once         Temporarily allow an ask-blocked command
+    shell_deny_once          Temporarily deny an ask-blocked command
+    shell_version            Show shell version and working directory
+
+For Docker-isolated execution: |zai-tool-shell_contained|
 
 Docs: https://github.com/zighouse/zai.vim/blob/main/docs/tools/shell.md
+
+==============================================================================
+TOOL: SHELL_CONTAINED                               *zai-tool-shell_contained*
+==============================================================================
+
+Shell execution inside a secure Docker container (taskbox).
+
+Provides full isolation for running untrusted or dangerous commands.
+Container can be persistent across calls (preserves installed packages,
+files, and state). Supports both shell and Python execution.
+
+Functions: >
+    shell_contained_execute    Execute command in Docker container
+    shell_contained_info       Get container environment info
+    shell_contained_cleanup    Clean up persistent container
 
 ==============================================================================
 TOOL: GREP                                                *zai-tool-grep*
@@ -203,7 +231,8 @@ TROUBLESHOOTING                                         *zai-trouble*
 
 Common issues: >
     API errors          → Check API key
-    Docker errors        → Ensure Docker running
+    Docker errors        → Ensure Docker running (only needed for
+                           shell_contained; direct shell works without Docker)
     Tool not found       → Run :AI tool status
 
 For troubleshooting guide: >

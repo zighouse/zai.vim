@@ -1,0 +1,92 @@
+[
+  {
+    "type": "function",
+    "category": "shell_contained",
+    "is_read_only": false,
+    "is_concurrency_safe": false,
+    "max_result_size": 16000,
+    "output_scale": "potentially_large",
+    "prompt": "在安全 Docker 容器中执行 shell 命令或 Python 代码。这是需要隔离执行时的安全选项。使用 Docker taskbox 容器提供完全隔离的执行环境。",
+    "function": {
+      "name": "shell_contained_execute",
+      "description": "在安全的 Docker 容器（taskbox，Ubuntu/Debian 环境，包含 Python 3.12、C/C++ 工具链和 ccache）中执行 shell 或 Python 命令。支持持久化容器以在多次调用之间保持状态。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "要执行的命令。对于 shell：任何 bash 命令。对于 Python：Python 代码（可以是多行）。多个命令可以使用分号或换行分隔。"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "最大执行时间（秒）。默认为 60 秒。",
+            "default": 60
+          },
+          "working_dir": {
+            "type": "string",
+            "description": "容器内的工作目录（映射到主机沙箱）。默认为 /sandbox。",
+            "default": "/sandbox"
+          },
+          "enable_network": {
+            "type": "boolean",
+            "description": "允许外部网络访问。默认为 false。",
+            "default": false
+          },
+          "language": {
+            "type": "string",
+            "description": "语言环境。'shell' 表示 bash 命令，'python' 表示 Python 代码。",
+            "enum": ["shell", "python"],
+            "default": "shell"
+          },
+          "libraries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "执行前要安装的库/软件包列表。对于 shell：apt 软件包（例如 ['curl', 'jq']）。对于 Python：pip 软件包（例如 ['numpy', 'pandas']）。"
+          },
+          "persistent": {
+            "type": "boolean",
+            "description": "是否使用持久化容器，在多次调用之间保持状态（已安装的软件包、文件等）。默认为 true。如果为 false，则每个命令使用新的临时容器。如果 enable_network 为 false，则不使用持久化容器。",
+            "default": true
+          }
+        },
+        "required": ["command"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "category": "shell_contained",
+    "is_read_only": true,
+    "is_concurrency_safe": true,
+    "max_result_size": 4000,
+    "prompt": "",
+    "function": {
+      "name": "shell_contained_info",
+      "description": "Get information about the Docker sandbox environment, including Docker status, image details, and security settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "category": "shell_contained",
+    "is_read_only": false,
+    "is_concurrency_safe": false,
+    "max_result_size": 2000,
+    "prompt": "",
+    "function": {
+      "name": "shell_contained_cleanup",
+      "description": "Clean up the persistent container (if exists). Use this to free resources or reset the environment.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  }
+]
