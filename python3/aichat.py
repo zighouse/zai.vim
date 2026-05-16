@@ -8,6 +8,7 @@ import chardet
 import hashlib
 import json
 import os
+import queue
 import random
 import re
 import sys
@@ -907,13 +908,16 @@ class AIChat:
         print(f"\n  ⚠  Permission required: {command}")
         print(f"     Reason: {reason}")
 
-        # Use explicit write/flush/readline instead of input() to avoid
-        # terminal buffering issues where the prompt doesn't appear
-        # until the user presses a key.
+        # Read user approval via the input queue (same queue that
+        # _input_collector feeds) to avoid a stdin race condition.
+        # Directly reading sys.stdin would compete with the daemon thread.
         try:
             sys.stdout.write("     Allow? (y/N): ")
             sys.stdout.flush()
-            resp = sys.stdin.readline().strip().lower()
+            raw = self._cli._input_queue.get(timeout=30)
+            resp = raw.strip().lower()
+        except queue.Empty:
+            resp = 'n'
         except (EOFError, KeyboardInterrupt):
             resp = 'n'
 
