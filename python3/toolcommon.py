@@ -245,8 +245,21 @@ def sandbox_home(cwd: Optional[Union[str, Path]] = None) -> Path:
             return sandbox_path
     except Exception as e:
         print(f"警告：无法从项目配置获取沙盒目录：{e}", file=sys.stderr)
-    
-    # 否则使用默认路径
+
+    # 找到项目根目录作为默认 sandbox。
+    # 新格式 .zai/zai_project.yaml → parent.parent = 项目根
+    # 旧格式 zai_project.yaml → parent = 项目根
+    config_file = _find_project_config_file(cwd)
+    if config_file is not None:
+        project_root = config_file.parent
+        if project_root.name == '.zai':
+            project_root = project_root.parent
+        if not _sandbox_home_printed:
+            print(f"使用项目根目录：{project_root}", file=sys.stderr)
+            _sandbox_home_printed = True
+        return project_root
+
+    # 没有项目配置时使用默认路径
     zai_home = Path(user_data_dir("zai", "zighouse"))
     try:
         zai_home.mkdir(parents=True, exist_ok=True)
