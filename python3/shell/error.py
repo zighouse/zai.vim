@@ -15,15 +15,17 @@ from dataclasses import dataclass
 
 # Valid safety layer names. P2/P3 layers are reserved for future use.
 VALID_LAYERS: frozenset[str] = frozenset({
-    "L1_parser",
-    "L2_policy",
-    "L3_sandbox",
+    "L1_classifier",    # P1 安全分类助手
+    "L2_policy",        # P0 权限引擎
+    "L2.5_dataflow",    # P1 数据流检测
+    "L3_sandbox",       # P1 OS 沙箱
     # P2 reserved layers
-    "L4_network",
-    "L5_audit",
+    "L2.5_injection",   # P2: 注入检测增强
+    "L4_trash",         # P2: 垃圾站 + 回滚
     # P3 reserved layers
-    "L6_dataflow",
-    "L7_classifier",
+    "L3_gate",          # P3: S级门控确认
+    "L3_watchdog",      # P3: 看门狗实时监控
+    "L5_audit",         # P1 审计闭环
 })
 
 
