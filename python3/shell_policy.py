@@ -640,6 +640,136 @@ class PermissionEngine:
         for k in expired:
             self._pending_commands.pop(k, None)
 
+    # ------------------------------------------------------------------
+    # Deny message formatting and policy export (Story 4.1)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def format_deny_message(decision: 'PolicyDecision') -> str:
+        """Format a human-readable deny message for user display.
+
+        Produces a single-line message with source prefix and match info.
+        Does NOT include an outer [shell] prefix — callers add it.
+        Message is truncated to 80 chars for Vim echo compatibility.
+
+        Args:
+            decision: A PolicyDecision with decision="deny".
+
+        Returns:
+            A ≤ 80 char message string.
+        """
+        if decision.decision != "deny":
+            return f"denied: unexpected decision '{decision.decision}'"
+
+        if decision.matched_rule is None:
+            return "denied: no matching allow rule (default deny)"
+
+        rule = decision.matched_rule
+        src = f"[{rule.source}] " if rule.source else ""
+        info = f"{rule.match.type}:{rule.match.pattern}"
+        msg = f"{src}denied: matched rule '{info}' (behavior: {rule.behavior})"
+
+        if rule.description:
+            # Truncate to fit 80-char Vim echo limit (3 for " - ", 1 for "…")
+            max_desc = 80 - len(msg) - 4
+            if max_desc >= 1:
+                desc = rule.description if len(rule.description) <= max_desc else rule.description[:max_desc] + "…"
+                msg += f" - {desc}"
+
+        return msg
+
+    def export_policy(self) -> Tuple[Optional[str], Optional['SafetyError']]:
+        """Export all active policy rules as YAML with source annotations.
+
+        Returns (yaml_str, None) on success or (None, SafetyError)
+        per MUST-1 contract.
+
+        Returns:
+            (yaml_string, None) on success; (None, SafetyError) on failure.
+        """
+        if not HAVE_YAML:
+            from shell.error import SafetyError as _SE
+            return (None, _SE(
+                layer="L2_policy",
+                code="YAML_UNAVAILABLE",
+                message="PyYAML is required for policy export",
+            ))
+
+        def _rule_to_export_dict(rule: 'PolicyRule') -> dict:
+            rd: dict = {
+                'behavior': rule.behavior,
+                'match': {
+                    'type': rule.match.type,
+                    'pattern': rule.match.pattern,
+                },
+            }
+            if rule.description:
+                rd['description'] = rule.description
+            return rd
+
+        try:
+            # Group rules by source preserving order
+            by_source: Dict[str, list[PolicyRule]] = {}
+            for rule in self._rules:
+                by_source.setdefault(rule.source, []).append(rule)
+
+            source_order = ["built-in", "user", "project", "session"]
+            seen: set[str] = set()
+
+            # Build parallel rule list and source labels
+            export_rules: list[dict] = []
+            source_labels: list[str] = []
+
+            for src in source_order:
+                rules = by_source.get(src)
+                if not rules:
+                    continue
+                seen.add(src)
+                for rule in rules:
+                    export_rules.append(_rule_to_export_dict(rule))
+                    source_labels.append(src)
+
+            # Remaining sources not in source_order
+            for src in by_source:
+                if src in seen:
+                    continue
+                seen.add(src)
+                for rule in by_source[src]:
+                    export_rules.append(_rule_to_export_dict(rule))
+                    source_labels.append(src)
+
+            data: dict = {'rules': export_rules}
+            raw = yaml.dump(data, default_flow_style=False,
+                            allow_unicode=True, sort_keys=False)
+
+            # Insert source comments and header
+            from datetime import datetime as _dt
+            header = (
+                "# Exported from zai.vim shell security policy\n"
+                f"# Generated: {_dt.now().isoformat()}\n"
+                "# Each rule's source is annotated inline.\n\n"
+            )
+
+            lines = raw.split('\n')
+            out: list[str] = []
+            ri = 0
+            for line in lines:
+                if line.strip().startswith('- behavior:') and ri < len(source_labels):
+                    out.append(f"  # source: {source_labels[ri]}")
+                    ri += 1
+                out.append(line)
+
+            return (header + '\n'.join(out), None)
+
+        except Exception as e:
+            from shell.error import SafetyError as _SE
+            msg = str(e)[:60]
+            return (None, _SE(
+                layer="L2_policy",
+                code="EXPORT_FAILED",
+                message=f"Policy export failed: {msg}",
+            ))
+
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -711,6 +711,7 @@ class PolicyLayer(SafetyLayer):
     def __init__(self, engine=None) -> None:
         self._engine = engine
         self._enabled: bool = True
+        self.last_decision: Optional['PolicyDecision'] = None
 
     @property
     def name(self) -> str:
@@ -748,6 +749,7 @@ class PolicyLayer(SafetyLayer):
                 context={'cwd': ctx.working_dir},
             )
             latency = int((time.time() - t0) * 1000)
+            self.last_decision = decision
 
             detail = (
                 f"matched: {decision.matched_rule.match.type}:{decision.matched_rule.match.pattern}"
@@ -1485,6 +1487,7 @@ def invoke_shell_execute(
         pass
 
     # For compound commands, check each sub-command independently
+    sub_decisions: list = []
     if parsed and len(parsed.commands) > 1:
         try:
             from shell_policy import get_permission_engine
@@ -1539,17 +1542,33 @@ def invoke_shell_execute(
 
     # 4. Handle deny
     if l2_decision == "deny":
-        deny_detail = ""
-        for entry in ctx.trace:
-            if entry.layer == "L2_policy" and entry.decision == "deny":
-                deny_detail = entry.detail
-                break
+        # Get PolicyDecision for structured message formatting
+        deny_decision = None
+        if sub_decisions:
+            for d in sub_decisions:
+                if d.decision == "deny":
+                    deny_decision = d
+                    break
+        elif l2.last_decision is not None:
+            deny_decision = l2.last_decision
+
+        if deny_decision is not None:
+            from shell_policy import get_permission_engine
+            deny_msg = get_permission_engine().format_deny_message(deny_decision)
+        else:
+            # Fallback: extract detail from trace
+            deny_msg = ""
+            for entry in ctx.trace:
+                if entry.layer == "L2_policy" and entry.decision == "deny":
+                    deny_msg = entry.detail
+                    break
+
         return {
             'command': command,
             'success': False,
             'decision': 'deny',
-            'reason': deny_detail,
-            'matched_rule': deny_detail,
+            'reason': deny_msg,
+            'matched_rule': deny_msg,
             'hint': 'This command is blocked by security policy.',
             'trace': _serialize_trace(ctx.trace),
         }
