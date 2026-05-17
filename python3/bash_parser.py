@@ -15,6 +15,7 @@ Key design: shlex for tokenization (audit layer), /bin/sh -c for execution (exec
 The two layers are intentionally separate.
 """
 
+import re
 import shlex
 import shutil
 from dataclasses import dataclass, field
@@ -42,6 +43,19 @@ class CommandNode:
     is_pipe_input: bool         # receives stdin from previous pipe
     is_pipe_output: bool        # sends stdout to next pipe
     raw: str                    # original text of this command segment
+    input_source: str = "none"              # "pipe" | "stdin" | "file" | "none" — stdin not set by current inference
+    output_dest: str = "none"               # "pipe" | "stdout" | "file" | "none" — stdout not set by current inference
+    is_substitution: bool = False           # embedded in $() or <()
+    substitution_source: str = ""           # original text of the substitution
+
+    _INPUT_SOURCES = frozenset({'pipe', 'stdin', 'file', 'none'})
+    _OUTPUT_DESTS = frozenset({'pipe', 'stdout', 'file', 'none'})
+
+    def __post_init__(self):
+        if self.input_source not in self._INPUT_SOURCES:
+            raise ValueError(f"input_source must be one of {self._INPUT_SOURCES}, got {self.input_source!r}")
+        if self.output_dest not in self._OUTPUT_DESTS:
+            raise ValueError(f"output_dest must be one of {self._OUTPUT_DESTS}, got {self.output_dest!r}")
 
 
 @dataclass
@@ -76,6 +90,11 @@ _UNSUPPORTED_PATTERNS = [
 # Default dangerous redirect targets
 _DANGEROUS_REDIRECT_TARGETS = {'/dev/sda', '/dev/sdb', '/dev/sdc', '/dev/sdd',
                                 '/dev/hda', '/dev/hdb', '/dev/nvme0', '/dev/mmcblk0'}
+
+# Substitution extraction patterns (best-effort, outermost only)
+_CMD_SUBST_PATTERN = re.compile(r'\$\(([^)]+)\)')
+_BACKTICK_PATTERN = re.compile(r'`([^`]+)`')
+_PROC_SUBST_PATTERN = re.compile(r'[<>]\(([^)]+)\)')
 
 # Safe wrappers that can be stripped to reveal the real command
 SAFE_WRAPPERS = frozenset({
@@ -138,6 +157,10 @@ class BashParser:
             )
             commands.append(cmd)
 
+        # Post-process: extract substitution metadata (Task 2)
+        for cmd in commands:
+            self._enrich_substitution_metadata(cmd)
+
         return CommandSemantics(
             commands=commands,
             operators=operators,
@@ -152,6 +175,24 @@ class BashParser:
         """
         result = self.parse(cmd_string)
         return [c.command for c in result.commands if c.command]
+
+    # ------------------------------------------------------------------
+    # Internal: substitution extraction
+    # ------------------------------------------------------------------
+
+    def _enrich_substitution_metadata(self, cmd: CommandNode) -> None:
+        """Extract substitution metadata from command raw text."""
+        raw = cmd.raw
+        sources: List[str] = []
+        for m in _CMD_SUBST_PATTERN.finditer(raw):
+            sources.append(m.group(1).strip())
+        for m in _BACKTICK_PATTERN.finditer(raw):
+            sources.append(m.group(1).strip())
+        for m in _PROC_SUBST_PATTERN.finditer(raw):
+            sources.append(m.group(1).strip())
+        if sources:
+            cmd.is_substitution = True
+            cmd.substitution_source = "; ".join(sources)
 
     # ------------------------------------------------------------------
     # Internal: token splitting
@@ -293,6 +334,23 @@ class BashParser:
             i += 1
 
         raw = ' '.join(tokens)
+
+        # Infer input_source (Task 3)
+        input_source = "none"
+        if is_pipe_input:
+            input_source = "pipe"
+        elif any(r.type in ('<', '<>') for r in redirects):
+            input_source = "file"
+
+        # Infer output_dest (Task 3)
+        # Only stdout redirects set output_dest; stderr-only redirects (2>, 2>>) do not.
+        output_dest = "none"
+        _STDOUT_REDIRECTS = ('>', '>>', '&>', '&>>')
+        if is_pipe_output:
+            output_dest = "pipe"
+        elif any(r.type in _STDOUT_REDIRECTS or r.type.startswith('1>') for r in redirects):
+            output_dest = "file"
+
         return CommandNode(
             command=command,
             args=args,
@@ -301,6 +359,8 @@ class BashParser:
             is_pipe_input=is_pipe_input,
             is_pipe_output=is_pipe_output,
             raw=raw,
+            input_source=input_source,
+            output_dest=output_dest,
         )
 
     def _match_redirect(self, tokens: List[str], idx: int) -> Optional[Tuple[Redirect, int]]:
