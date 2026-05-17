@@ -24,10 +24,12 @@ PolicyLayer and SandboxLayer are read-only after construction.
 
 from __future__ import annotations
 
+import atexit
 import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
@@ -120,6 +122,249 @@ class SafetyContext:
     timeout: int = 120
     trace: list[LayerDecision] = field(default_factory=list)
     sandbox_config: Any = None  # SandboxConfig from shell.sandbox
+
+
+@dataclass
+class BackgroundTask:
+    """A background task managed by BackgroundTaskRegistry.
+
+    THREAD_SAFE: SINGLE_WRITER — BackgroundTaskRegistry is the only writer
+    for task status updates after creation.
+    """
+    task_id: str
+    command: str
+    status: str                 # "starting" | "running" | "completed" | "timeout" | "failed"
+    start_time: float
+    exit_code: int | None = None
+    stdout: str = ""
+    stderr: str = ""
+    process: subprocess.Popen | None = None
+
+
+class BackgroundTaskRegistry:
+    """Thread-safe registry for managing background shell tasks.
+
+    Provides thread-safe task management with MUST-1 binary return convention.
+    Tasks run in daemon threads and are tracked until completion or timeout.
+
+    THREAD_SAFE: SINGLE_WRITER — all public methods use class-level _lock
+    for _tasks dict access. _execute_task runs in thread but only modifies
+    its own task entry.
+    """
+
+    _tasks: dict[str, BackgroundTask] = {}
+    _lock = threading.Lock()
+
+    @classmethod
+    def start(
+        cls,
+        command: str,
+        timeout: int,
+        cwd: str,
+        env: dict | None,
+        sandbox_config: Any,
+    ) -> tuple[str, None] | tuple[None, Any]:  # Returns SafetyError on failure
+        """Start command in background thread, return (task_id, None) or (None, SafetyError).
+
+        Following MUST-1 binary return convention. Registers task before creating thread
+        to prevent race condition.
+        """
+        from shell.error import SafetyError
+
+        if not command or not command.strip():
+            return (None, SafetyError(
+                layer="L3_sandbox",
+                code="EMPTY_COMMAND",
+                message="Command cannot be empty"
+            ))
+
+        task_id = uuid.uuid4().hex[:12]
+
+        # Register task first (status="starting") to prevent race condition
+        with cls._lock:
+            cls._tasks[task_id] = BackgroundTask(
+                task_id=task_id,
+                command=command,
+                status="starting",
+                start_time=time.time()
+            )
+
+        # Create and start background thread
+        def thread_target():
+            cls._execute_task(task_id, command, timeout, cwd, env, sandbox_config)
+
+        thread = threading.Thread(target=thread_target, daemon=True)
+        thread.start()
+
+        return (task_id, None)
+
+    @classmethod
+    def _execute_task(
+        cls,
+        task_id: str,
+        command: str,
+        timeout: int,
+        cwd: str,
+        env: dict | None,
+        sandbox_config: Any,
+    ) -> None:
+        """Execute a background task and update its status.
+
+        Runs in a daemon thread. Updates task status from "starting" → "running"
+        → "completed"/"timeout"/"failed".
+        """
+        from shell.error import SafetyError
+
+        # Transition to running
+        with cls._lock:
+            if task_id in cls._tasks:
+                cls._tasks[task_id].status = "running"
+
+        filtered_env = env if env is not None else _build_execution_env(None)
+
+        proc = None
+        try:
+            # Build bwrap command if sandbox config available and valid
+            cmd_to_run = ['/bin/sh', '-c', command]  # Default: direct execution
+
+            if (sandbox_config and hasattr(sandbox_config, 'bwrap_args') and
+                sandbox_config.bwrap_args):
+                # Validate bwrap binary path
+                bwrap_bin = sandbox_config.bwrap_args[0]
+                if bwrap_bin in ('bwrap', '/usr/bin/bwrap', '/usr/local/bin/bwrap'):
+                    # Valid bwrap binary - build sandbox command
+                    bwrap_args_safe = list(sandbox_config.bwrap_args)
+                    # Remove --share-net if present (safety check)
+                    bwrap_args_safe = [a for a in bwrap_args_safe if a != '--share-net']
+                    cmd_to_run = bwrap_args_safe + ['/bin/sh', '-c', command]
+                # Else: invalid bwrap config, fall back to direct execution
+
+            proc = subprocess.Popen(
+                cmd_to_run,
+                cwd=cwd,
+                env=filtered_env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+
+            # Store process handle for potential abort
+            with cls._lock:
+                if task_id in cls._tasks:
+                    cls._tasks[task_id].process = proc
+
+            stdout, stderr = proc.communicate(timeout=timeout)
+
+            with cls._lock:
+                if task_id in cls._tasks:
+                    cls._tasks[task_id].status = "completed"
+                    cls._tasks[task_id].exit_code = proc.returncode
+                    cls._tasks[task_id].stdout = stdout
+                    cls._tasks[task_id].stderr = stderr
+
+        except subprocess.TimeoutExpired:
+            # Timeout: SIGTERM → wait 5s → SIGKILL
+            if proc:
+                _kill_process_group(proc, signal.SIGTERM)
+                try:
+                    stdout, stderr = proc.communicate(timeout=5)
+                    with cls._lock:
+                        if task_id in cls._tasks:
+                            cls._tasks[task_id].status = "timeout"
+                            cls._tasks[task_id].exit_code = proc.returncode
+                            cls._tasks[task_id].stdout = stdout
+                            cls._tasks[task_id].stderr = stderr
+                except subprocess.TimeoutExpired:
+                    _kill_process_group(proc, signal.SIGKILL)
+                    stdout, stderr = proc.communicate()
+                    with cls._lock:
+                        if task_id in cls._tasks:
+                            cls._tasks[task_id].status = "timeout"
+                            cls._tasks[task_id].exit_code = -9
+                            cls._tasks[task_id].stdout = stdout
+                            cls._tasks[task_id].stderr = stderr
+            else:
+                with cls._lock:
+                    if task_id in cls._tasks:
+                        cls._tasks[task_id].status = "timeout"
+
+        except Exception as e:
+            with cls._lock:
+                if task_id in cls._tasks:
+                    cls._tasks[task_id].status = "failed"
+                    cls._tasks[task_id].stderr = f"Execution error: {e}"
+
+        finally:
+            if proc is not None and proc.poll() is None:
+                try:
+                    _kill_process_group(proc, signal.SIGKILL)
+                    proc.wait(timeout=2)
+                except Exception:
+                    pass
+
+    @classmethod
+    def get(cls, task_id: str) -> tuple[BackgroundTask, None] | tuple[None, Any]:
+        """Get task status and output. Following MUST-1 binary return convention."""
+        from shell.error import SafetyError
+
+        with cls._lock:
+            if task_id not in cls._tasks:
+                return (None, SafetyError(
+                    layer="L3_sandbox",
+                    code="TASK_NOT_FOUND",
+                    message=f"Task {task_id} not found"
+                ))
+            # Return a copy to prevent external modification
+            task = cls._tasks[task_id]
+            return (BackgroundTask(
+                task_id=task.task_id,
+                command=task.command,
+                status=task.status,
+                start_time=task.start_time,
+                exit_code=task.exit_code,
+                stdout=task.stdout,
+                stderr=task.stderr,
+                process=None  # Never expose process handle
+            ), None)
+
+    @classmethod
+    def list(cls) -> tuple[list[BackgroundTask], None] | tuple[None, Any]:
+        """List all tasks. Following MUST-1 binary return convention."""
+        with cls._lock:
+            return ([
+                BackgroundTask(
+                    task_id=t.task_id,
+                    command=t.command,
+                    status=t.status,
+                    start_time=t.start_time,
+                    exit_code=t.exit_code,
+                    stdout=t.stdout,
+                    stderr=t.stderr,
+                    process=None
+                )
+                for t in cls._tasks.values()
+            ], None)
+
+    @classmethod
+    def _terminate_all(cls) -> None:
+        """Terminate all running tasks (called by atexit handler)."""
+        with cls._lock:
+            for task_id, task in list(cls._tasks.items()):
+                if task.status in ("starting", "running") and task.process:
+                    try:
+                        _kill_process_group(task.process, signal.SIGTERM)
+                        task.process.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        _kill_process_group(task.process, signal.SIGKILL)
+                        task.process.wait()
+                    except Exception:
+                        pass
+                    task.status = "timeout"
+
+
+# Register atexit handler to clean up background tasks on Vim exit
+atexit.register(BackgroundTaskRegistry._terminate_all)
 
 
 class SafetyLayer(ABC):
@@ -608,6 +853,276 @@ class SandboxLayer(SafetyLayer):
         return ctx
 
 
+class ClassifierLayer(SafetyLayer):
+    """L1 — AI-powered safety classifier.
+
+    Runs AFTER L2 policy check. If L2 returned "allow", L1 is bypassed
+    (deterministic rules take priority over AI judgment). If L2 returned
+    "ask", L1 classifies the command via async LLM callback.
+
+    Thread safety: Uses instance-level state lock to prevent callback race
+    conditions. Each ClassifierLayer instance has its own lock; ensure
+    separate instances per concurrent invocation if needed.
+    """
+
+    def __init__(self) -> None:
+        self._enabled: bool = True
+        self._callback_lock = threading.Lock()  # Instance-level for callback state
+
+    @property
+    def name(self) -> str:
+        return "L1_classifier"
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    @enabled.setter
+    def enabled(self, value: bool) -> None:
+        self._enabled = value
+
+    def process(self, ctx: SafetyContext) -> SafetyContext:
+        """Process L1 classification with async callback handling."""
+        from shell.classifier import ClassifierClient
+        from shell.error import SafetyError
+
+        if not self._enabled:
+            ctx.trace.append(LayerDecision(
+                layer="L1_classifier",
+                decision="bypassed",
+                detail="layer disabled (test mode)",
+                latency_ms=0,
+            ))
+            return ctx
+
+        start_time = time.perf_counter()
+
+        # Check if L2 already allowed — deterministic rules take priority (AC #6, AC #9)
+        l2_decision = _last_trace_decision(ctx, "L2_policy")
+        if l2_decision == "allow":
+            latency = int((time.perf_counter() - start_time) * 1000)
+            ctx.trace.append(LayerDecision(
+                layer="L1_classifier",
+                decision="bypassed",
+                detail="policy already allowed",
+                latency_ms=latency,
+            ))
+            return ctx
+
+        # Check if classifier is available
+        if not ClassifierClient.available():
+            latency = int((time.perf_counter() - start_time) * 1000)
+            ctx.trace.append(LayerDecision(
+                layer="L1_classifier",
+                decision="bypassed",
+                detail="classifier unavailable",
+                latency_ms=latency,
+            ))
+            return ctx
+
+        # L2 returned "ask" — proceed with classification (AC #1)
+        # Setup callback state with race condition prevention
+        callback_state = {
+            'received': False,
+            'result': None,
+        }
+        callback_event = threading.Event()
+
+        def callback(result):
+            """Handle classifier callback with race condition prevention."""
+            with self._callback_lock:
+                if not callback_state['received']:
+                    callback_state['received'] = True
+                    callback_state['result'] = result
+                    callback_event.set()
+
+        try:
+            # Call async classifier
+            ClassifierClient.classify_async(
+                ctx.command,
+                ctx.parsed,
+                ctx.session_id,
+                callback
+            )
+
+            # Wait for callback with timeout (AC #5: 30s or command timeout, whichever shorter)
+            timeout = min(30, ctx.timeout)
+            if not callback_event.wait(timeout=timeout):
+                # Timeout: mark as received to prevent late callback (AC #5, AC #12)
+                with self._callback_lock:
+                    callback_state['received'] = True
+
+                latency = int((time.perf_counter() - start_time) * 1000)
+                ctx.trace.append(LayerDecision(
+                    layer="L1_classifier",
+                    decision="ask",
+                    detail=f"callback timeout ({timeout}s)",
+                    latency_ms=latency,
+                ))
+                return ctx
+
+            # Process callback result
+            result = callback_state['result']
+            if result is None:
+                latency = int((time.perf_counter() - start_time) * 1000)
+                ctx.trace.append(LayerDecision(
+                    layer="L1_classifier",
+                    decision="ask",
+                    detail="no callback result",
+                    latency_ms=latency,
+                ))
+                return ctx
+
+            # Handle degraded classifier (AC #5)
+            if result.degraded:
+                latency = int((time.perf_counter() - start_time) * 1000)
+                ctx.trace.append(LayerDecision(
+                    layer="L1_classifier",
+                    decision="ask",
+                    detail=f"degraded: {result.degraded_reason or 'unknown'}",
+                    latency_ms=latency,
+                ))
+                return ctx
+
+            # Handle malformed decision (edge case: treat as "ask")
+            if result.decision not in ("allow", "deny", "ask"):
+                latency = int((time.perf_counter() - start_time) * 1000)
+                ctx.trace.append(LayerDecision(
+                    layer="L1_classifier",
+                    decision="ask",
+                    detail=f"malformed decision: {result.decision}",
+                    latency_ms=latency,
+                ))
+                return ctx
+
+            # Record classification result (AC #16)
+            latency = int((time.perf_counter() - start_time) * 1000)
+            detail = f"score={result.score:.2f}, {result.reason[:50]}" if result.reason else f"score={result.score:.2f}"
+            ctx.trace.append(LayerDecision(
+                layer="L1_classifier",
+                decision=result.decision,
+                detail=detail,
+                latency_ms=latency,
+            ))
+
+        except Exception as e:
+            latency = int((time.perf_counter() - start_time) * 1000)
+            ctx.trace.append(LayerDecision(
+                layer="L1_classifier",
+                decision="ask",
+                detail=f"error: {str(e)[:50]}",
+                latency_ms=latency,
+            ))
+
+        return ctx
+
+
+class DataflowLayer(SafetyLayer):
+    """L2.5 — Dataflow danger detection.
+
+    Runs AFTER L1 classification. Has veto power — can trigger ask even
+    if L1 and L2 both returned "allow". Detects dangerous data flow patterns
+    like network sources piped to interpreters.
+
+    Thread safety: READ_ONLY — DataflowDetector.analyze is a pure function.
+    """
+
+    def __init__(self) -> None:
+        self._enabled: bool = True
+
+    @property
+    def name(self) -> str:
+        return "L2.5_dataflow"
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    @enabled.setter
+    def enabled(self, value: bool) -> None:
+        self._enabled = value
+
+    def process(self, ctx: SafetyContext) -> SafetyContext:
+        """Process dataflow danger detection."""
+        from shell.dataflow import DataflowDetector
+        from shell.error import SafetyError
+
+        if not self._enabled:
+            ctx.trace.append(LayerDecision(
+                layer="L2.5_dataflow",
+                decision="bypassed",
+                detail="layer disabled (test mode)",
+                latency_ms=0,
+            ))
+            return ctx
+
+        start_time = time.perf_counter()
+
+        # Check if we have parsed command
+        if ctx.parsed is None:
+            latency = int((time.perf_counter() - start_time) * 1000)
+            ctx.trace.append(LayerDecision(
+                layer="L2.5_dataflow",
+                decision="bypassed",
+                detail="no parsed command",
+                latency_ms=latency,
+            ))
+            return ctx
+
+        try:
+            # Call dataflow analyzer (MUST-1 return)
+            decision, err = DataflowDetector.analyze(ctx.parsed)
+
+            if err is not None:
+                # Error: fallback to ask (AC #8, edge case handling)
+                latency = int((time.perf_counter() - start_time) * 1000)
+                ctx.trace.append(LayerDecision(
+                    layer="L2.5_dataflow",
+                    decision="ask",
+                    detail=f"analysis error: {err.message[:50]}",
+                    latency_ms=latency,
+                ))
+                return ctx
+
+            if decision is None:
+                latency = int((time.perf_counter() - start_time) * 1000)
+                ctx.trace.append(LayerDecision(
+                    layer="L2.5_dataflow",
+                    decision="ask",
+                    detail="no decision returned",
+                    latency_ms=latency,
+                ))
+                return ctx
+
+            # Record dataflow decision (AC #16)
+            latency = int((time.perf_counter() - start_time) * 1000)
+            if decision.risk:
+                # Risk detected — veto power (AC #7)
+                detail = f"{decision.pattern} ({decision.harm_level}级风险)"
+                if decision.detail:
+                    detail = f"{detail}: {decision.detail[:30]}"
+            else:
+                detail = decision.pattern or "no risk"
+
+            ctx.trace.append(LayerDecision(
+                layer="L2.5_dataflow",
+                decision="deny" if decision.risk else "allow",
+                detail=detail,
+                latency_ms=latency,
+            ))
+
+        except Exception as e:
+            latency = int((time.perf_counter() - start_time) * 1000)
+            ctx.trace.append(LayerDecision(
+                layer="L2.5_dataflow",
+                decision="ask",
+                detail=f"error: {str(e)[:50]}",
+                latency_ms=latency,
+            ))
+
+        return ctx
+
+
 # ---------------------------------------------------------------------------
 # Tool entry points
 # ---------------------------------------------------------------------------
@@ -847,7 +1362,7 @@ def invoke_shell_execute(
 ) -> Dict[str, Any]:
     """Execute a shell command through the safety chain.
 
-    Chain: L2_policy → user interaction (ask) → L3_sandbox → execution
+    Chain: L2_policy → L1_classifier → L2.5_dataflow → L3_sandbox → execution
 
     P0 backward-compatible: when called with only command+timeout+working_dir
     (no allow_network, no session_id, no background), the return dict shape
@@ -949,18 +1464,55 @@ def invoke_shell_execute(
             'trace': _serialize_trace(ctx.trace),
         }
 
-    # 5. L3 sandbox check (before ask, to detect degraded mode)
+    # 5. L1 classifier (runs after L2, only if L2 returned "ask") (AC #6)
+    l1 = ClassifierLayer()
+    if _test_mode:
+        pass  # Can be disabled by external code
+    ctx = l1.process(ctx)
+
+    # Check if L1 denied
+    l1_decision = _last_trace_decision(ctx, "L1_classifier")
+    if l1_decision == "deny":
+        deny_detail = ""
+        for entry in ctx.trace:
+            if entry.layer == "L1_classifier" and entry.decision == "deny":
+                deny_detail = entry.detail
+                break
+        return {
+            'command': command,
+            'success': False,
+            'decision': 'deny',
+            'reason': f'Classifier denied: {deny_detail}',
+            'matched_rule': deny_detail,
+            'hint': 'Command blocked by AI safety classifier.',
+            'trace': _serialize_trace(ctx.trace),
+        }
+
+    # 6. L2.5 dataflow detection (always runs, has veto power) (AC #7)
+    dataflow = DataflowLayer()
+    if _test_mode:
+        pass  # Can be disabled by external code
+    ctx = dataflow.process(ctx)
+
+    # Check if L2.5 detected risk (veto power)
+    l25_decision = _last_trace_decision(ctx, "L2.5_dataflow")
+    dataflow_risk = l25_decision == "deny"
+
+    # 7. L3 sandbox check (before ask, to detect degraded mode)
     l3 = SandboxLayer()
     ctx = l3.process(ctx)
     degraded = _check_degraded_mode(ctx)
 
-    # 6. Handle ask — either from L2 or forced by degraded mode
-    # Degraded mode (AC #6): when bwrap is unavailable, ALL commands
-    # require user confirmation as a safety fallback.  This includes
-    # commands previously allowed via allow_once — without bwrap
-    # protection, even "known safe" commands pose elevated risk.
-    force_ask_degraded = degraded
-    if l2_decision == "ask" or force_ask_degraded:
+    # 8. Handle ask — from L1, L2.5, L2, or degraded mode
+    # Determine if any layer requires user confirmation
+    requires_ask = (
+        l2_decision == "ask" or  # L2 asked
+        l1_decision == "ask" or  # L1 asked (score 0.3-0.7)
+        dataflow_risk or         # L2.5 detected risk
+        degraded                 # Degraded sandbox mode
+    )
+
+    if requires_ask:
         executor = _get_executor()
         execution_id = uuid.uuid4().hex[:12]
         executor.stash_ask_command(session_id, execution_id, {
@@ -972,48 +1524,93 @@ def invoke_shell_execute(
             'allow_network': allow_network,
         })
 
-        hint = 'Use shell_allow_once or shell_deny_once to respond'
+        # Build enhanced prompt with L1 score and L2.5 risk info (AC #4, AC #7)
+        prompt_parts = []
         if degraded:
-            hint = ('[shell] bwrap 未安装，已降级为 seccomp 模式 — '
-                    '所有命令需用户确认') + ' | ' + hint
+            prompt_parts.append('[shell] bwrap 未安装，已降级为 seccomp 模式')
+        if l1_decision == "ask":
+            # Find L1 detail with score
+            for entry in ctx.trace:
+                if entry.layer == "L1_classifier" and entry.decision == "ask":
+                    score_match = ""
+                    if "score=" in entry.detail:
+                        score_match = f"评分: {entry.detail.split('score=')[1].split(',')[0]} "
+                    prompt_parts.append(f'[shell] {score_match}(询问)')
+                    break
+        if dataflow_risk:
+            # Find L2.5 detail with risk pattern
+            for entry in ctx.trace:
+                if entry.layer == "L2.5_dataflow" and entry.decision == "deny":
+                    prompt_parts.append(f'[shell] {entry.detail[:60]}')
+                    break
+
+        hint = 'Use shell_allow_once or shell_deny_once to respond'
+        if prompt_parts:
+            hint = ' '.join(prompt_parts) + ' | ' + hint
 
         return {
             'execution_id': execution_id,
             'command': command,
             'success': False,
             'decision': 'ask',
-            'reason': 'degraded mode: all commands require confirmation' if degraded
-                      else 'Command requires user approval',
+            'reason': 'Command requires user approval',
             'hint': hint,
             'parsed_commands': [c.command for c in parsed.commands] if parsed and parsed.commands else [],
             'trace': _serialize_trace(ctx.trace),
         }
 
-    # 7. L3 sandbox execution
-    result = _execute_sandboxed(command, ctx, max_output_bytes=max_output_bytes)
+    # 9. L3 sandbox execution (or background task)
+    if background:
+        # Background task path (AC #10)
+        task_id, err = BackgroundTaskRegistry.start(
+            command=command,
+            timeout=timeout,
+            cwd=ctx.working_dir,
+            env=None,
+            sandbox_config=ctx.sandbox_config,
+        )
+        if err:
+            return {
+                'command': command,
+                'success': False,
+                'decision': 'error',
+                'reason': err.message,
+                'trace': _serialize_trace(ctx.trace),
+            }
+        return {
+            'command': command,
+            'success': True,
+            'decision': 'background',
+            'task_id': task_id,
+            'message': f'Command started in background (task_id: {task_id})',
+            'trace': _serialize_trace(ctx.trace),
+        }
+    else:
+        # Direct execution path
+        result = _execute_sandboxed(command, ctx, max_output_bytes=max_output_bytes)
 
-    # 8. Build output
-    output = {
-        'command': command,
-        'exit_code': result['exit_code'],
-        'success': result['success'],
-        'execution_id': result['execution_id'],
-        'cwd': result['cwd'],
-        'stdout': result['stdout'],
-        'stderr': result['stderr'],
-        'trace': _serialize_trace(ctx.trace),
-    }
-    if result.get('timed_out'):
-        output['timed_out'] = True
-        output['message'] = f"Command timed out after {timeout}s"
-        if result.get('force_killed'):
-            output['message'] += ' (force-killed after SIGTERM grace period)'
-    if result.get('output_truncated'):
-        output['output_truncated'] = True
-    if result.get('stderr_truncated'):
-        output['stderr_truncated'] = True
+        # 10. Build output
+        output = {
+            'command': command,
+            'exit_code': result['exit_code'],
+            'success': result['success'],
+            'execution_id': result['execution_id'],
+            'cwd': result['cwd'],
+            'stdout': result['stdout'],
+            'stderr': result['stderr'],
+            'trace': _serialize_trace(ctx.trace),
+        }
+        if result.get('timed_out'):
+            output['timed_out'] = True
+            output['message'] = f"Command timed out after {timeout}s"
+            if result.get('force_killed'):
+                output['message'] += ' (force-killed after SIGTERM grace period)'
+        if result.get('output_truncated'):
+            output['output_truncated'] = True
+        if result.get('stderr_truncated'):
+            output['stderr_truncated'] = True
 
-    return output
+        return output
 
 
 def _last_trace_decision(ctx: SafetyContext, layer: str) -> str | None:
