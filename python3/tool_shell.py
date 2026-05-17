@@ -34,6 +34,7 @@ import time
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -139,6 +140,8 @@ class BackgroundTask:
     stdout: str = ""
     stderr: str = ""
     process: subprocess.Popen | None = None
+    safety_ctx: SafetyContext | None = None  # for L5 audit logging at completion
+    _audit_logged: bool = False
 
 
 class BackgroundTaskRegistry:
@@ -163,11 +166,13 @@ class BackgroundTaskRegistry:
         cwd: str,
         env: dict | None,
         sandbox_config: Any,
+        safety_ctx: SafetyContext | None = None,
     ) -> tuple[str, None] | tuple[None, Any]:  # Returns SafetyError on failure
         """Start command in background thread, return (task_id, None) or (None, SafetyError).
 
         Following MUST-1 binary return convention. Registers task before creating thread
-        to prevent race condition.
+        to prevent race condition.  If *safety_ctx* is provided, an L5 audit entry is
+        logged when the task completes (not at submission time).
         """
         from shell.error import SafetyError
 
@@ -186,7 +191,8 @@ class BackgroundTaskRegistry:
                 task_id=task_id,
                 command=command,
                 status="starting",
-                start_time=time.time()
+                start_time=time.time(),
+                safety_ctx=safety_ctx,
             )
 
         # Create and start background thread
@@ -302,6 +308,22 @@ class BackgroundTaskRegistry:
                     proc.wait(timeout=2)
                 except Exception:
                     pass
+
+        # L5 audit at task completion (not submission time — HIGH-2 fix)
+        task = cls._tasks.get(task_id)
+        if task and task.safety_ctx and not task._audit_logged:
+            task._audit_logged = True
+            try:
+                _log_audit_entry(task.safety_ctx, {
+                    'execution_id': task_id,
+                    'exit_code': task.exit_code,
+                    'success': task.status == 'completed',
+                    'stdout': task.stdout or '',
+                    'stderr': task.stderr or '',
+                    'duration_ms': int((time.time() - task.start_time) * 1000),
+                }, background=True)
+            except Exception:
+                pass  # NFR3: audit failure is non-fatal
 
     @classmethod
     def get(cls, task_id: str) -> tuple[BackgroundTask, None] | tuple[None, Any]:
@@ -1140,13 +1162,16 @@ def _execute_sandboxed(
     if config is None or not config.bwrap_args:
         # No sandbox — fall back to direct execution
         executor = _get_executor()
-        return executor.execute(
+        _exec_t0 = time.monotonic()
+        fallback_result = executor.execute(
             command=command,
             timeout=ctx.timeout,
             working_dir=ctx.working_dir,
             session_id=ctx.session_id,
             max_output_bytes=max_output_bytes,
         )
+        fallback_result['duration_ms'] = int((time.monotonic() - _exec_t0) * 1000)
+        return fallback_result
 
     # Validate bwrap executable path
     bwrap_bin = config.bwrap_args[0]
@@ -1198,6 +1223,7 @@ def _execute_sandboxed(
 
     executor = _get_executor()
     proc = None
+    _exec_t0 = time.monotonic()
     try:
         proc = subprocess.Popen(
             bwrap_cmd,
@@ -1212,18 +1238,21 @@ def _execute_sandboxed(
 
         try:
             stdout, stderr = proc.communicate(timeout=ctx.timeout)
+            result['duration_ms'] = int((time.monotonic() - _exec_t0) * 1000)
             result['exit_code'] = proc.returncode
             result['success'] = proc.returncode == 0
         except subprocess.TimeoutExpired:
             _kill_process_group(proc, signal.SIGTERM)
             try:
                 stdout, stderr = proc.communicate(timeout=SIGTERM_GRACE_SECONDS)
+                result['duration_ms'] = int((time.monotonic() - _exec_t0) * 1000)
                 result['exit_code'] = proc.returncode
                 result['success'] = False
                 result['timed_out'] = True
             except subprocess.TimeoutExpired:
                 _kill_process_group(proc, signal.SIGKILL)
                 stdout, stderr = proc.communicate()
+                result['duration_ms'] = int((time.monotonic() - _exec_t0) * 1000)
                 result['exit_code'] = -9
                 result['success'] = False
                 result['timed_out'] = True
@@ -1259,6 +1288,7 @@ def _execute_sandboxed(
 
     except FileNotFoundError:
         # bwrap binary disappeared after cache check — fall back to direct
+        result['duration_ms'] = int((time.monotonic() - _exec_t0) * 1000)
         result['stderr'] = (
             "[shell] bwrap 未安装，已降级为 seccomp 模式; "
             f"execution error: bwrap not found"
@@ -1266,6 +1296,7 @@ def _execute_sandboxed(
         result['success'] = False
         # Retry with direct execution
         executor = _get_executor()
+        _exec_t0 = time.monotonic()
         fallback = executor.execute(
             command=command,
             timeout=ctx.timeout,
@@ -1273,6 +1304,7 @@ def _execute_sandboxed(
             session_id=ctx.session_id,
             max_output_bytes=max_output_bytes,
         )
+        fallback['duration_ms'] = int((time.monotonic() - _exec_t0) * 1000)
         fallback['stderr'] = result['stderr'] + '\n' + fallback.get('stderr', '')
         return fallback
     except Exception as e:
@@ -1348,6 +1380,63 @@ def _check_degraded_mode(ctx: SafetyContext) -> bool:
 #     }
 #   }
 # },
+def _log_audit_entry(ctx: SafetyContext, result: dict[str, Any], background: bool = False) -> None:
+    """L5 audit: fire-and-forget log of a command execution (Task 4).
+
+    Constructs an AuditEntry from SafetyContext and execution result,
+    then queues it via AuditLogger.log() for background disk write.
+    Failure is non-fatal (NFR3).
+    """
+    try:
+        from shell.audit import AuditEntry, AuditLogger
+
+        entry = AuditEntry(
+            timestamp=datetime.now().isoformat(),
+            session_id=ctx.session_id,
+            execution_id=result.get("execution_id", uuid.uuid4().hex[:12]),
+            command={
+                "sanitized": AuditLogger.sanitize(ctx.command),
+                "parsed": (
+                    [{"command": c.command, "args": c.args}
+                     for c in ctx.parsed.commands]
+                    if ctx.parsed and hasattr(ctx.parsed, "commands")
+                    else []
+                ),
+            },
+            harm_level="A",  # Default: A-level audit context
+            working_dir=ctx.working_dir,
+            safety_trace=[
+                {"layer": d.layer, "decision": d.decision,
+                 "detail": d.detail, "latency_ms": d.latency_ms}
+                for d in ctx.trace
+            ],
+            sandbox_config=(
+                {"effective_sandbox": getattr(ctx.sandbox_config, "effective_sandbox", "unknown"),
+                 "network_mode": "none" if not ctx.allow_network else "full",
+                 "degraded": getattr(ctx.sandbox_config, "degraded", False)}
+                if ctx.sandbox_config
+                else {"effective_sandbox": "direct", "network_mode": "none", "degraded": False}
+            ),
+            execution={
+                "exit_code": result.get("exit_code", -1),
+                "success": result.get("success", False),
+                "duration_ms": result.get("duration_ms", 0),
+                "total_latency_ms": result.get("total_latency_ms", 0),
+                "stdout_summary": AuditLogger.sanitize(
+                    (result.get("stdout", "") or "")[:500]
+                ),
+                "stderr_summary": AuditLogger.sanitize(
+                    (result.get("stderr", "") or "")[:500]
+                ),
+            },
+            user_decision="background" if background else "allow_once",
+            background=background,
+        )
+        AuditLogger().log(entry)
+    except Exception:
+        pass  # NFR3: audit failure is non-fatal
+
+
 def invoke_shell_execute(
     command: str,
     timeout: int = DEFAULT_TIMEOUT,
@@ -1369,6 +1458,7 @@ def invoke_shell_execute(
     is identical to P0.
     """
     cwd = working_dir or os.getcwd()
+    _chain_start = time.monotonic()
 
     # 1. Parse command for semantic analysis
     try:
@@ -1561,13 +1651,17 @@ def invoke_shell_execute(
 
     # 9. L3 sandbox execution (or background task)
     if background:
-        # Background task path (AC #10)
+        # Background task path (AC #10).
+        # L5 audit is logged at task completion inside _execute_task,
+        # not at submission time — the safety_ctx is passed through
+        # so the entry records real execution results.
         task_id, err = BackgroundTaskRegistry.start(
             command=command,
             timeout=timeout,
             cwd=ctx.working_dir,
             env=None,
             sandbox_config=ctx.sandbox_config,
+            safety_ctx=ctx,
         )
         if err:
             return {
@@ -1588,6 +1682,10 @@ def invoke_shell_execute(
     else:
         # Direct execution path
         result = _execute_sandboxed(command, ctx, max_output_bytes=max_output_bytes)
+        result['total_latency_ms'] = int((time.monotonic() - _chain_start) * 1000)
+
+        # L5 audit (Task 4, Subtask 4.1): fire-and-forget execution logging
+        _log_audit_entry(ctx, result)
 
         # 10. Build output
         output = {

@@ -18,6 +18,7 @@ from __future__ import annotations
 # stdlib imports
 import atexit
 import json
+import os
 import queue
 import re
 import sys
@@ -155,6 +156,13 @@ class AuditLogger:
             return
         self._initialized = True
         self._write_queue: queue.Queue[AuditEntry | None] = queue.Queue()
+
+        # Rotation state (Task 1: Subtask 1.1) — set BEFORE thread starts
+        self._daily_count: int = 0
+        self._current_date: str = ""
+        self._rotate_lock = threading.Lock()
+        self._write_counter: int = 0
+
         self._flush_thread = threading.Thread(
             target=self._background_flush, daemon=True,
         )
@@ -220,14 +228,54 @@ class AuditLogger:
                         file=sys.stderr,
                     )
 
+    def _get_log_path(self, date_str: str, sequence: int = 0) -> Path:
+        """Get log file path. sequence=0 means base file, N means .(N+1).jsonl.
+
+        Task 1, Subtask 1.2: 基础文件无序号，超限文件加 .N.jsonl
+        """
+        if sequence == 0:
+            return AUDIT_DIR / f"audit-{date_str}.jsonl"
+        return AUDIT_DIR / f"audit-{date_str}.{sequence + 1}.jsonl"
+
     def _write_to_disk(self, entry: AuditEntry) -> None:
-        """Write a single audit entry to the daily JSONL file."""
+        """Write a single audit entry with rotation support (Task 1, Subtask 1.3)."""
         AUDIT_DIR.mkdir(parents=True, exist_ok=True)
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        log_file = AUDIT_DIR / f"audit-{date_str}.jsonl"
-        line = json.dumps(asdict(entry), ensure_ascii=False)
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
+
+        with self._rotate_lock:
+            today = datetime.now().strftime("%Y-%m-%d")
+
+            # Reset counter on day change (AC: 新日切换)
+            # Count existing lines in today's base file to support
+            # multi-instance rotation (NFR16).  Without this, a second
+            # Vim instance starting after 9 500 entries already exist
+            # would never rotate — its per-instance counter starts at 0.
+            if today != self._current_date:
+                self._current_date = today
+                base_path = self._get_log_path(today, 0)
+                if base_path.exists():
+                    try:
+                        with open(base_path, "r") as f:
+                            self._daily_count = sum(
+                                1 for line in f if line.strip()
+                            )
+                    except OSError:
+                        self._daily_count = 0
+                else:
+                    self._daily_count = 0
+
+            sequence = self._daily_count // 10000  # 0 for first 10k, 1 for next, etc.
+            log_path = self._get_log_path(today, sequence)
+
+            line = json.dumps(asdict(entry), ensure_ascii=False)
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+
+            self._daily_count += 1
+
+        # Periodic cleanup trigger: run every 100 writes
+        self._write_counter += 1
+        if self._write_counter % 100 == 0:
+            self._cleanup(retention_days=30)
 
     def _flush(self) -> None:
         """Flush remaining entries before Vim exits (risk I4 mitigation)."""
@@ -240,6 +288,104 @@ class AuditLogger:
                 break
             except Exception:
                 pass  # Non-fatal
+
+    def query(
+        self,
+        session_id: str | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ) -> tuple[list[dict], SafetyError | None]:
+        """Query audit log entries with optional filters (Task 2, MUST-1).
+
+        Args:
+            session_id: Filter by exact session ID match.
+            start_time: ISO 8601 datetime range start (inclusive).
+            end_time: ISO 8601 datetime range end (inclusive).
+
+        Returns:
+            (list[dict], None) sorted by timestamp ascending.
+            ([], SafetyError) on read error — never raises (MUST-3).
+        """
+        try:
+            results: list[dict] = []
+            for log_file in sorted(AUDIT_DIR.glob("audit-*.jsonl")):
+                if not log_file.is_file():
+                    continue
+                try:
+                    with open(log_file, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                entry = json.loads(line)
+                            except json.JSONDecodeError:
+                                continue  # Skip corrupt lines
+                            if self._matches(entry, session_id, start_time, end_time):
+                                results.append(entry)
+                except (OSError, IOError):
+                    continue  # Skip unreadable files, keep going
+
+            results.sort(key=lambda e: e.get("timestamp", ""))
+            return (results, None)
+
+        except (OSError, IOError) as e:
+            return ([], SafetyError(
+                layer="L5_audit",
+                code="QUERY_FAILED",
+                message=f"audit query failed: {e}",
+                degraded=False,
+            ))
+
+    @staticmethod
+    def _matches(
+        entry: dict,
+        session_id: str | None,
+        start_time: str | None,
+        end_time: str | None,
+    ) -> bool:
+        """AND logic filter for query matching (Task 2, Subtask 2.3)."""
+        if session_id is not None and entry.get("session_id") != session_id:
+            return False
+        ts = entry.get("timestamp", "")
+        if start_time is not None and ts < start_time:
+            return False
+        if end_time is not None and ts > end_time:
+            return False
+        return True
+
+    def _cleanup(self, retention_days: int = 30) -> tuple[None, SafetyError | None]:
+        """Delete log files older than retention_days (Task 3, FR26).
+
+        Args:
+            retention_days: 0 disables cleanup. Default 30.
+
+        Returns:
+            (None, None) on success, (None, SafetyError) on failure.
+        """
+        if retention_days <= 0:
+            return (None, None)
+
+        try:
+            cutoff = datetime.now().timestamp() - retention_days * 86400
+            for log_file in AUDIT_DIR.glob("audit-*.jsonl"):
+                try:
+                    if log_file.stat().st_mtime < cutoff:
+                        log_file.unlink()
+                except (OSError, IOError):
+                    continue  # Skip individual file errors
+            return (None, None)
+        except (OSError, IOError) as e:
+            print(
+                f"[shell][WARN] audit cleanup failed: {e}",
+                file=sys.stderr,
+            )
+            return (None, SafetyError(
+                layer="L5_audit",
+                code="CLEANUP_FAILED",
+                message=f"audit cleanup failed: {e}",
+                degraded=False,
+            ))
 
     @classmethod
     def reset(cls) -> None:
