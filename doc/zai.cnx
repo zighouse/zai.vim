@@ -41,6 +41,30 @@ ZAI.VIM 参 考 手 册                                              *zai-ref*  
     :help zai-command-details|
 
 ==============================================================================
+安全命令                                                 *zai-security*
+==============================================================================
+
+:AI {组} {子命令} [参数]                          *zai-AI*
+
+安全与系统状态命令。
+
+Shell 命令：                                         *zai-AI-shell*
+    :AI shell status           显示沙箱与安全状态
+                              展示 L1-L5 层状态、降级模式警告
+                              和有效隔离级别
+
+审计命令：                                          *zai-AI-audit*
+    :AI audit [会话ID]          查询审计日志
+                              无会话ID：显示最近条目
+                              有会话ID：按会话过滤
+
+策略命令：                                          *zai-AI-policy*
+    :AI policy                 显示活跃权限规则
+                              展示各来源的 allow/deny/ask 规则
+
+Shell 工具详情：|zai-tool-shell|
+
+==============================================================================
 上下文管理                                             *zai-context-management*
 ==============================================================================
 
@@ -84,6 +108,7 @@ Zai.Vim 通过工具集为 AI 提供系统操作能力。
     archive   - 会话存档
     browser   - 浏览器自动化
     searxng   - 网络搜索引擎
+    audit     - 安全审计日志（自动）
 
 加载工具: >
     :use tool web
@@ -130,19 +155,42 @@ Zai.Vim 通过工具集为 AI 提供系统操作能力。
 工具: SHELL                                             *zai-tool-shell*
 ==============================================================================
 
-通过子进程在宿主机上直接执行 shell 命令。
+带多层安全保护的 shell 命令执行。
 
-权限策略引擎（allow/deny/ask）在执行前检查每条命令。默认拒绝规则
-阻止破坏性命令（rm -rf /、dd、mkfs 等）。安全包装器（sudo、timeout、
-nice、nohup 等）被透明处理——包装后的命令仍能匹配策略规则。
+安全链 (SECURITY CHAIN)                                  *zai-shell-security*
+
+每条命令在执行前都通过安全链检查：
+
+    L1: 安全分类器             分析命令危害等级
+    L2: 策略引擎              allow/deny/ask 规则 + 用户提示
+    L3: 沙箱隔离              bwrap+seccomp 隔离（可用时）
+    L4: 数据流分析            检测危险管道模式
+    L5: 审计日志              记录所有执行尝试
+
+降级模式下（bwrap 不可用），命令需要通过 ask 提示明确获得用户确认。
+
+沙箱模式 (SANDBOX MODES)                                  *zai-sandbox*
+
+    bwrap+seccomp             完全隔离（网络、文件系统、系统调用）
+    seccomp-only              仅系统调用过滤（无 bwrap）
+    none                       无隔离（降级）
+
+特性: >
+    权限策略引擎              默认拒绝破坏性命令
+                                （rm -rf /、dd、mkfs 等）
+    Ask 提示                  危险命令需交互确认
+    安全包装器处理           sudo、timeout、nice 透明支持
+    SSH 凭据隔离             ~/.ssh/ 在沙箱中受保护
+    复合命令解析              每个子命令独立分析
 
 功能: >
-    shell_execute            执行命令（含权限检查）
-    shell_abort              按 execution_id 中止运行中的命令
-    shell_allow_once         临时放行被 ask 拦截的命令
-    shell_deny_once          临时拒绝被 ask 拦截的命令
-    shell_version            显示 shell 版本和工作目录
+    shell_execute              执行命令（完整安全链）
+    shell_abort                按 execution_id 中止运行中的命令
+    shell_allow_once           临时放行被 ask 拦截的命令
+    shell_deny_once            临时拒绝被 ask 拦截的命令
+    shell_version              显示 shell 版本和工作目录
 
+查看状态：|zai-AI-shell-status|
 Docker 隔离执行：|zai-tool-shell_contained|
 
 文档: https://github.com/zighouse/zai.vim/blob/main/docs/tools/shell.md
@@ -160,6 +208,46 @@ Docker 隔离执行：|zai-tool-shell_contained|
     shell_contained_execute    在 Docker 容器中执行命令
     shell_contained_info       获取容器环境信息
     shell_contained_cleanup    清理持久化容器
+
+==============================================================================
+审计日志                                                *zai-audit*
+==============================================================================
+
+所有 shell 命令执行都会被记录用于安全审计。
+
+日志格式 (LOG FORMAT)                                  *zai-audit-format*
+
+JSONL 格式，凭据已脱敏。每个条目包含：>
+    timestamp                  ISO 8601 时间戳
+    session_id                 聊天会话标识符
+    execution_id               唯一执行标识符
+    command.sanitized          已脱敏命令
+    command.parsed             解析的子命令（复合命令）
+    harm_level                 安全分类器结果
+    working_dir                当前目录
+    safety_trace               所有安全层的决策链
+    sandbox_config             有效沙箱配置
+    execution.exit_code        进程退出码
+    execution.duration_ms      执行时间
+    execution.stdout_summary   前 500 字符（已脱敏）
+    execution.stderr_summary   前 500 字符（已脱敏）
+    user_decision              allow/deny/ask 响应
+
+日志位置 (LOG LOCATION)                                *zai-audit-location*
+
+    ~/.local/share/zai/audit/audit-YYYY-MM-DD.jsonl
+
+文件按日期轮转，每 10,000 条后创建新文件。保留期：30 天
+（可配置）。通过 |zai-AI-audit| 命令查询。
+
+凭据脱敏 (CREDENTIAL SANITIZATION)                      *zai-audit-sanitize*
+
+以下模式在日志中会被脱敏：>
+    API 密钥                  --key=XXXXX, -k XXXXX
+    Token                     Bearer XXXXX, token=XXXXX
+    密码                      --password=XXXXX
+    SSH 密钥                  ~/.ssh/ 文件内容
+    URL                       查询参数和路径被剥离
 
 ==============================================================================
 工具: GREP                                              *zai-tool-grep*

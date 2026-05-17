@@ -13,6 +13,7 @@ Zai.Vim is a Vim plugin that integrates AI assistants directly into your Vim edi
 - **Multiple session support**: Handle multiple chat sessions concurrently
 - **Session logging**: Save, load, and preview conversation history
 - **Voice input support**: Real-time speech recognition using zasr-server for hands-free text input
+- **Multi-layer security**: AI shell commands protected by safety chain with sandbox, policy engine, and audit logging
 
 ## Installation
 
@@ -416,6 +417,9 @@ Also, a 0-based index in the list of assistants config can be used as same as th
 | `:ZaiLoad`             | Load Zai log as context              | -             |
 | `<leader>zl`           | Load Zai log as context              | -             |
 | `:ZaiConfig`           | Edit AI assistants configuration     | -             |
+| `:AI shell status`      | Show sandbox and security status      | -             |
+| `:AI audit [id]`       | Query audit log entries               | -             |
+| `:AI policy`           | Display active permission rules       | -             |
 
 ### Voice Input (ASR)
 
@@ -545,9 +549,20 @@ Zai provides several tool sets that AI can call to interact with the system:
    - `web_search` - Search the web using SearXNG metasearch engine (supports multiple engines: DuckDuckGo, Google, Bing, Brave, Baidu, etc.)
    - `web_download_file` - Download files from URLs
 
-3. **shell** - Secure shell execution
-   - `execute_shell` - Execute commands in Docker container (taskbox)
-   - Supports Python and shell commands with isolation
+3. **shell** - Secure shell execution with multi-layer protection
+   - `execute_shell` - Execute commands with full security chain
+   - `shell_abort` - Abort running command by execution_id
+   - `shell_allow_once` - Temporarily allow a blocked command
+   - `shell_deny_once` - Temporarily deny a blocked command
+   - `shell_version` - Show shell version and working directory
+   - **Security Chain**:
+     - L1: Safety classifier (analyzes command harm level)
+     - L2: Policy engine (allow/deny/ask with user prompts)
+     - L3: Sandbox containment (bwrap+seccomp isolation)
+     - L4: Dataflow analysis (detects dangerous pipe patterns)
+     - L5: Audit logging (records all execution attempts)
+   - **Sandbox modes**: bwrap+seccomp (full), seccomp-only, none (degraded)
+   - Supports Docker container (taskbox) for isolated execution
 
 4. **grep** - File searching
    - `grep` - Search for patterns in files (like Unix grep)
@@ -940,6 +955,29 @@ Please list files in the current directory.
 ```
 
 The tool automatically uses project configuration if available, otherwise uses defaults.
+
+### Audit Logging
+
+All shell command executions are automatically logged for security auditing.
+
+**Log location**: `~/.local/share/zai/audit/audit-YYYY-MM-DD.jsonl`
+
+**Features**:
+- JSONL format with sanitized credentials
+- Files rotate daily and after 10,000 entries
+- 30-day retention (configurable)
+- Query logs via `:AI audit [session_id]` command
+
+**What gets logged**:
+- Command with credentials removed (API keys, tokens, passwords, SSH keys)
+- Safety classifier result and harm level
+- Full security chain decision trace (L1-L5)
+- Sandbox configuration and execution result
+- User decision (allow/deny)
+
+**View logs**:
+- Recent entries: `:AI audit`
+- By session: `:AI audit <session-id>`
 
 ### Sandbox Directory
 

@@ -11,6 +11,7 @@ Zai.Vim 是一款将 AI 助手直接集成到 Vim 编辑器的插件，管理着
 - **多会话支持**：允许同时进行多个聊天会话
 - **会话日志**：保存对话历史记录、可以加载日志并继续历史的会话，可以在浏览器中预览
 - **语音输入支持**：使用 zasr-server 实现实时语音识别，解放双手进行文本输入
+- **多层安全保护**：AI shell 命令经过安全链保护，包含沙箱隔离、策略引擎和审计日志
 
 ## 安装指南
 
@@ -432,6 +433,9 @@ DEEPSEEK_API_KEY=sk-********************************
 | `:ZaiLoad`          | 加载 Zai 日志作为新的上下文   | -          |
 | `<leader>zl`        | 加载 Zai 日志作为新的上下文   | -          |
 | `:ZaiConfig`        | 编辑 AI 配置                  | -          |
+| `:AI shell status`  | 显示沙箱与安全状态            | -          |
+| `:AI audit [id]`    | 查询审计日志                  | -          |
+| `:AI policy`        | 显示活跃权限规则              | -          |
 
 ### 语音输入（ASR）
 
@@ -571,9 +575,20 @@ Zai 提供了多个工具集供 AI 调用以与系统交互：
    - `web_search` - 网络搜索（使用 SearXNG 元搜索引擎，支持 DuckDuckGo、Google、Bing、Brave、百度等多个搜索引擎）
    - `web_download_file` - 从 URL 下载文件
 
-3. **shell** - 安全 shell 执行
-   - `execute_shell` - 在 Docker 容器（taskbox）中执行命令
-   - 支持 Python 和 shell 命令，提供隔离环境
+3. **shell** - 安全 shell 执行（多层安全防护）
+   - `execute_shell` - 执行命令（完整安全链）
+   - `shell_abort` - 按 execution_id 中止运行中的命令
+   - `shell_allow_once` - 临时放行被拦截的命令
+   - `shell_deny_once` - 临时拒绝被拦截的命令
+   - `shell_version` - 显示 shell 版本和工作目录
+   - **安全链**：
+     - L1: 安全分类器（分析命令危害等级）
+     - L2: 策略引擎（allow/deny/ask + 用户提示）
+     - L3: 沙箱隔离（bwrap+seccomp 隔离）
+     - L4: 数据流分析（检测危险管道模式）
+     - L5: 审计日志（记录所有执行尝试）
+   - **沙箱模式**：bwrap+seccomp（完全）、seccomp-only、none（降级）
+   - 支持 Docker 容器（taskbox）隔离执行
 
 4. **grep** - 文件搜索
    - `grep` - 在文件中搜索模式（类似 Unix grep）
@@ -1001,6 +1016,29 @@ Zai 现在支持在 Docker 容器启动时自动安装软件包。您可以在 `
 ```
 
 如果可用，该工具自动使用项目配置，否则使用默认值。
+
+### 审计日志
+
+所有 shell 命令执行都会自动记录用于安全审计。
+
+**日志位置**：`~/.local/share/zai/audit/audit-YYYY-MM-DD.jsonl`
+
+**功能**：
+- JSONL 格式，凭据已脱敏
+- 文件按日期轮转，每 10,000 条后创建新文件
+- 30 天保留期（可配置）
+- 通过 `:AI audit [会话ID]` 命令查询
+
+**记录内容**：
+- 已脱敏命令（API 密钥、token、密码、SSH 密钥已移除）
+- 安全分类器结果和危害等级
+- 完整安全链决策跟踪（L1-L5）
+- 沙箱配置和执行结果
+- 用户决策（allow/deny）
+
+**查看日志**：
+- 最近条目：`:AI audit`
+- 按会话过滤：`:AI audit <会话ID>`
 
 ### 沙盒目录
 

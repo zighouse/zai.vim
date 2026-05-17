@@ -41,6 +41,30 @@ For detailed command reference: >
     :help zai-command-details|
 
 ==============================================================================
+SECURITY COMMANDS                                        *zai-security*
+==============================================================================
+
+:AI {group} {subcommand} [args]                    *zai-AI*
+
+Security and system status commands.
+
+Shell Commands:                                      *zai-AI-shell*
+    :AI shell status           Show sandbox and security status
+                              Displays L1-L5 layer status, degraded mode
+                              warnings, and effective containment level
+
+Audit Commands:                                      *zai-AI-audit*
+    :AI audit [session_id]     Query audit log entries
+                              Without session_id: show recent entries
+                              With session_id: filter by session
+
+Policy Commands:                                     *zai-AI-policy*
+    :AI policy                 Display active permission rules
+                              Shows allow/deny/ask rules by source
+
+For shell tool details: |zai-tool-shell|
+
+==============================================================================
 CONTEXT MANAGEMENT                                  *zai-context-management*
 ==============================================================================
 
@@ -84,6 +108,7 @@ Available toolsets: >
     archive   - Session archiving
     browser   - Browser automation
     searxng   - Web search engine
+    audit     - Security audit logging (automatic)
 
 Load tools: >
     :use tool web
@@ -130,20 +155,43 @@ Docs: https://github.com/zighouse/zai.vim/blob/main/docs/tools/web.md
 TOOL: SHELL                                               *zai-tool-shell*
 ==============================================================================
 
-Shell execution directly on the host via subprocess.
+Shell execution with multi-layer security protection.
 
-Permission policy engine (allow/deny/ask) checks every command before
-execution. Default-deny rules block destructive commands (rm -rf /, dd,
-mkfs, etc.). Safe wrappers (sudo, timeout, nice, nohup, etc.) are
-transparently handled — wrapped commands still match policy rules.
+SECURITY CHAIN                                             *zai-shell-security*
+
+Every command passes through a security chain before execution:
+
+    L1: Safety Classifier       - Analyzes command harm level
+    L2: Policy Engine          - Allow/deny/ask rules with user prompts
+    L3: Sandbox Containment    - bwrap+seccomp isolation (when available)
+    L4: Dataflow Analysis      - Detects dangerous pipe patterns
+    L5: Audit Logging          - Records all execution attempts
+
+In degraded mode (bwrap unavailable), commands require explicit
+user confirmation via ask prompts.
+
+SANDBOX MODES                                              *zai-sandbox*
+
+    bwrap+seccomp             Full isolation (network, filesystem, syscalls)
+    seccomp-only              Syscall filtering without bwrap
+    none                       No containment (degraded)
+
+Features: >
+    Permission policy engine    Default-deny rules for destructive commands
+                                (rm -rf /, dd, mkfs, etc.)
+    Ask prompts                Interactive confirmation for risky commands
+    Safe wrapper handling      sudo, timeout, nice transparently supported
+    SSH credential isolation   ~/.ssh/ protected in sandbox
+    Compound command parsing   Each sub-command analyzed independently
 
 Functions: >
-    shell_execute            Execute command (with permission check)
-    shell_abort              Abort running command by execution_id
-    shell_allow_once         Temporarily allow an ask-blocked command
-    shell_deny_once          Temporarily deny an ask-blocked command
-    shell_version            Show shell version and working directory
+    shell_execute              Execute command (with full security chain)
+    shell_abort                Abort running command by execution_id
+    shell_allow_once           Temporarily allow an ask-blocked command
+    shell_deny_once            Temporarily deny an ask-blocked command
+    shell_version              Show shell version and working directory
 
+For status: |zai-AI-shell-status|
 For Docker-isolated execution: |zai-tool-shell_contained|
 
 Docs: https://github.com/zighouse/zai.vim/blob/main/docs/tools/shell.md
@@ -162,6 +210,46 @@ Functions: >
     shell_contained_execute    Execute command in Docker container
     shell_contained_info       Get container environment info
     shell_contained_cleanup    Clean up persistent container
+
+==============================================================================
+AUDIT LOGGING                                            *zai-audit*
+==============================================================================
+
+All shell command executions are logged for security auditing.
+
+LOG FORMAT                                                 *zai-audit-format*
+
+JSONL format with sanitized credentials. Each entry contains: >
+    timestamp                  ISO 8601 timestamp
+    session_id                 Chat session identifier
+    execution_id               Unique execution identifier
+    command.sanitized          Command with credentials removed
+    command.parsed             Parsed sub-commands (for compound commands)
+    harm_level                 Safety classifier result
+    working_dir                Current directory
+    safety_trace               Decision chain from all security layers
+    sandbox_config             Effective sandbox configuration
+    execution.exit_code        Process exit code
+    execution.duration_ms      Execution time
+    execution.stdout_summary   First 500 chars (sanitized)
+    execution.stderr_summary   First 500 chars (sanitized)
+    user_decision              Allow/deny/ask response
+
+LOG LOCATION                                              *zai-audit-location*
+
+    ~/.local/share/zai/audit/audit-YYYY-MM-DD.jsonl
+
+Files rotate daily and after 10,000 entries. Retention: 30 days
+(configurable). Query via |zai-AI-audit| command.
+
+CREDENTIAL SANITIZATION                                    *zai-audit-sanitize*
+
+The following patterns are redacted from logs: >
+    API keys                   --key=XXXXX, -k XXXXX
+    Tokens                     Bearer XXXXX, token=XXXXX
+    Passwords                  --password=XXXXX
+    SSH keys                   Content of ~/.ssh/ files
+    URLs                       Query parameters and paths stripped
 
 ==============================================================================
 TOOL: GREP                                                *zai-tool-grep*
