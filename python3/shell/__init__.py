@@ -15,12 +15,16 @@ Public API (MUST-8):
     ClassificationResult — immutable classification outcome
 """
 
+from .audit import AuditEntry, AuditLogger, sanitize as sanitize
 from .classifier import ClassifierClient, ClassificationResult
 from .dataflow import DataflowDecision, DataflowDetector
 from .error import SafetyError, VALID_LAYERS
 from .sandbox import SandboxBuilder, SandboxConfig
 
 __all__ = [
+    "AuditEntry",
+    "AuditLogger",
+    "sanitize",
     "ClassificationResult",
     "ClassifierClient",
     "DataflowDecision",
