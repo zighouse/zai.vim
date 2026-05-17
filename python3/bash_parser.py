@@ -246,20 +246,25 @@ class BashParser:
         """Split token list into segments at shell operators (|, &&, ||, ;, &).
 
         Also handles tokens with trailing ; or & without spaces (e.g. 'a;').
+        Redirect tokens (>>, 2>, >&, etc.) are kept in segments for _match_redirect().
         """
         tokens = self._expand_embedded_operators(tokens)
         segments: List[List[str]] = []
         operators: List[str] = []
         current: List[str] = []
 
-        TWO_CHAR_OPS = {'&&', '||', '|&', '2>', '1>', '>>', '<<', '<>', '>&', '&>', '&>>'}
+        # Only shell list/pipe operators — NOT redirect tokens
+        _SHELL_LIST_OPS = {'&&', '||', '|&'}
+
+        # Redirect-like tokens that must NOT be split as operators
+        _REDIRECT_TOKENS = frozenset({'2>', '1>', '>>', '<<', '<>', '>&', '&>', '&>>'})
 
         i = 0
         while i < len(tokens):
             tok = tokens[i]
 
-            # Check 2-char operators first (before trailing-char split)
-            if tok in TWO_CHAR_OPS:
+            # Check 2-char shell operators first
+            if tok in _SHELL_LIST_OPS:
                 if current:
                     segments.append(current)
                     current = []
@@ -275,8 +280,8 @@ class BashParser:
                     current = []
                 operators.append(tok)
             # Handle tokens with trailing ; or & without spaces (e.g. 'a;', 'cmd&')
-            # but only when they are NOT already known operators
-            elif len(tok) > 1 and tok[-1] in (';', '&'):
+            # but skip redirect tokens like >&, &> to keep them in segments
+            elif len(tok) > 1 and tok[-1] in (';', '&') and tok not in _REDIRECT_TOKENS:
                 if tok[-1] == '&' and len(tok) > 2 and tok[-2] == '&':
                     # 'cmd&&' → split 'cmd' + '&&'
                     current.append(tok[:-2])
