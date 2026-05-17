@@ -34,18 +34,28 @@ from appdirs import user_data_dir
 _DEFAULT_MAX_CONTENT_SIZE = 10 * 1024 * 1024  # 10MB
 
 
+def _get_working_dir() -> str:
+    """
+    获取当前工作目录，优先使用 Vim 传递的目录。
+
+    Returns:
+        当前工作目录路径（优先使用 ZAI_VIM_CWD 环境变量，否则使用 os.getcwd()）
+    """
+    return os.getenv('ZAI_VIM_CWD') or os.getcwd()
+
+
 def get_sessions_dir(project_path: Optional[str] = None) -> Path:
     """
     返回会话存储目录
 
     Args:
         project_path: 项目根路径，用于按项目隔离。
-                      如果为 None，使用 os.getcwd()。
+                      如果为 None，使用 _get_working_dir()。
 
     Returns:
         ~/.local/share/zai/sessions/<sanitized-project-path>/
     """
-    path = project_path or os.getcwd()
+    path = project_path or _get_working_dir()
     base_dir = Path(user_data_dir("zai", "zighouse")) / "sessions"
     project_dir_name = sanitize_path(path)
     session_dir = base_dir / project_dir_name
@@ -115,13 +125,13 @@ class SessionWriter:
 
         Args:
             project_path: 项目根路径，用于按项目隔离会话文件。
-                          如果为 None，使用 os.getcwd()。
+                          如果为 None，使用 _get_working_dir()。
             max_content_size: 单个消息内容的最大字节数，超过将被截断。
         """
         self._session_id: str = ""
         self._session_path: Optional[Path] = None
         self._file = None
-        self._project_path: str = project_path or os.getcwd()
+        self._project_path: str = project_path or _get_working_dir()
         self._max_content_size = max_content_size
         self._last_user_uuid: str = ""  # 用于构建 parentUuid 链
         self._write_failures: int = 0   # 写入失败计数
@@ -459,9 +469,9 @@ class SessionLoader:
 
         Args:
             project_path: 项目根路径，用于定位会话目录。
-                          如果为 None，使用 os.getcwd()。
+                          如果为 None，使用 _get_working_dir()。
         """
-        self._project_path: str = project_path or os.getcwd()
+        self._project_path: str = project_path or _get_working_dir()
 
     def _get_sessions_dir(self, project_path: Optional[str] = None) -> Path:
         """

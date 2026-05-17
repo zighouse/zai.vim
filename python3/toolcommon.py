@@ -76,15 +76,16 @@ def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> 
     """
     从指定路径开始向上遍历目录树，查找 .zai/zai_project.yaml 文件。
     为了兼容性，也支持旧格式的 zai_project.yaml 文件。
-    
+
     Args:
         start_path: 起始路径（默认为当前工作目录）
-    
+
     Returns:
         找到的配置文件路径，如果未找到则返回 None
     """
     if start_path is None:
-        start_path = os.getcwd()
+        # 优先使用 Vim 传递的工作目录，否则使用 Python 进程的工作目录
+        start_path = os.getenv('ZAI_VIM_CWD') or os.getcwd()
     current = Path(start_path).resolve()
     
     # 如果 start_path 是文件，则从其所在目录开始查找
@@ -113,18 +114,19 @@ def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> 
     return None
 
 
-def load_project_config(config_file: Optional[Union[str, Path]] = None) -> Optional[List[Dict[str, Any]]]:
+def load_project_config(config_file: Optional[Union[str, Path]] = None, cwd: Optional[Union[str, Path]] = None) -> Optional[List[Dict[str, Any]]]:
     """
     加载项目配置文件（仅支持 YAML 格式）。
-    
+
     Args:
         config_file: 配置文件路径。如果为 None，则从当前工作目录向上查找。
-    
+        cwd: 当前工作目录，用于查找项目配置。如果为 None，则使用 os.getenv('ZAI_VIM_CWD') or os.getcwd()。
+
     Returns:
         配置对象列表，如果未找到或解析失败则返回 None
     """
     if config_file is None:
-        config_file = _find_project_config_file()
+        config_file = _find_project_config_file(cwd)
         if config_file is None:
             return None
     else:
@@ -198,14 +200,14 @@ def load_project_config(config_file: Optional[Union[str, Path]] = None) -> Optio
 def get_project_config(cwd: Optional[Union[str, Path]] = None) -> Optional[Dict[str, Any]]:
     """
     获取当前工作目录对应的项目配置（返回第一个配置项）。
-    
+
     Args:
-        cwd: 当前工作目录。如果为 None，则使用 os.getcwd()。
-    
+        cwd: 当前工作目录。如果为 None，则使用 os.getenv('ZAI_VIM_CWD') or os.getcwd()。
+
     Returns:
         第一个配置项字典，如果未找到配置则返回 None。
     """
-    config_list = load_project_config()
+    config_list = load_project_config(cwd=cwd)
     if not config_list:
         return None
     # 返回第一个配置项
@@ -214,12 +216,12 @@ def get_project_config(cwd: Optional[Union[str, Path]] = None) -> Optional[Dict[
 def sandbox_home(cwd: Optional[Union[str, Path]] = None) -> Path:
     """
     获取当前沙盒根目录。
-    
-    优先使用项目配置中的 sandbox_home，否则使用自定义设置或默认路径。
-    
+
+    优先使用项目配置中的 sandbox_home，否则使用自定义设置或当前工作目录。
+
     Args:
-        cwd: 当前工作目录，用于查找项目配置。如果为 None，则使用 os.getcwd()。
-    
+        cwd: 当前工作目录，用于查找项目配置。如果为 None，则使用 os.getenv('ZAI_VIM_CWD') or os.getcwd()。
+
     Returns:
         沙盒根目录路径
     """
@@ -259,23 +261,22 @@ def sandbox_home(cwd: Optional[Union[str, Path]] = None) -> Path:
             _sandbox_home_printed = True
         return project_root
 
-    # 没有项目配置时使用默认路径
-    zai_home = Path(user_data_dir("zai", "zighouse"))
-    try:
-        zai_home.mkdir(parents=True, exist_ok=True)
-        return zai_home / "sandbox"
-    except:
-        return Path("sandbox")
+    # 没有项目配置时使用当前工作目录
+    working_dir = Path(os.getenv('ZAI_VIM_CWD') or os.getcwd()).resolve()
+    if not _sandbox_home_printed:
+        print(f"使用当前工作目录：{working_dir}", file=sys.stderr)
+        _sandbox_home_printed = True
+    return working_dir
 
 
 def sanitize_path(user_path: str = "", cwd: Optional[Union[str, Path]] = None):
     """
     将用户路径转换为沙盒内的安全路径。
-    
+
     Args:
         user_path: 用户提供的路径（相对或绝对）
-        cwd: 当前工作目录，用于沙盒目录查找。如果为 None，则使用 os.getcwd()。
-    
+        cwd: 当前工作目录，用于沙盒目录查找。如果为 None，则使用 os.getenv('ZAI_VIM_CWD') or os.getcwd()。
+
     Returns:
         沙盒内的绝对路径
     """

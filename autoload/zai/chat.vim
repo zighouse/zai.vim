@@ -281,7 +281,7 @@ function! s:task_start() abort
     let l:chat = s:current_chat()
     if empty(l:chat.job)
         let l:shell = has('win32') ? ['cmd', '/c'] : ['/bin/sh', '-c']
-        let l:env = { 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1' }
+        let l:env = { 'PYTHONIOENCODING': 'utf-8', 'PYTHONUTF8': '1', 'ZAI_VIM_CWD': getcwd() }
         if exists('g:zai_lang')
             let l:env['LANG'] = g:zai_lang
         endif
