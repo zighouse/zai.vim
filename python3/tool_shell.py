@@ -1335,6 +1335,93 @@ def _check_degraded_mode(ctx: SafetyContext) -> bool:
     return False
 
 
+def get_safety_status(session_id: str = "") -> tuple[dict | None, SafetyError | None]:
+    """Aggregate structured safety status from all security modules (AC 1-3).
+
+    Gathers sandbox availability, policy rule counts, classifier health,
+    and audit status into a single dict.  Per MUST-1 returns (dict, None)
+    on success or (None, SafetyError) on failure.
+
+    Args:
+        session_id: Optional session identifier for context.
+
+    Returns:
+        (safety_dict, None) on success; (None, SafetyError) on failure.
+    """
+    from shell.sandbox import SandboxBuilder
+    from shell.classifier import ClassifierClient
+    from shell.audit import AUDIT_DIR
+    from shell_policy import get_permission_engine
+
+    result: dict[str, Any] = {}
+
+    # 1. Sandbox status (AC 2: degraded detection)
+    try:
+        available, avail_err = SandboxBuilder.available()
+        if available:
+            result["sandbox"] = {
+                "effective": "bwrap+seccomp",
+                "degraded": False,
+            }
+        else:
+            reason = avail_err.message if avail_err else "bwrap not installed"
+            result["sandbox"] = {
+                "effective": "seccomp-only",
+                "degraded": True,
+                "degraded_reason": reason,
+            }
+    except Exception as e:
+        result["sandbox"] = {
+            "effective": "unknown",
+            "degraded": True,
+            "degraded_reason": str(e)[:60],
+        }
+
+    # 2. Policy status
+    try:
+        engine = get_permission_engine()
+        counts = engine.get_rules_count()
+        result["policy"] = {
+            "user_rules": counts["user_rules"],
+            "project_rules": counts["project_rules"],
+            "hot_reload": True,
+        }
+    except Exception:
+        result["policy"] = {
+            "user_rules": 0,
+            "project_rules": 0,
+            "hot_reload": False,
+        }
+
+    # 3. Classifier status (AC 3: unavailable detection)
+    try:
+        avail = ClassifierClient.available()
+        result["classifier"] = {
+            "available": avail,
+            "model": ClassifierClient.model_name() if avail else "",
+        }
+    except Exception:
+        result["classifier"] = {
+            "available": False,
+            "model": "",
+        }
+
+    # 4. Audit status
+    try:
+        audit_dir = AUDIT_DIR
+        result["audit"] = {
+            "enabled": audit_dir.exists(),
+            "log_dir": str(audit_dir),
+        }
+    except Exception:
+        result["audit"] = {
+            "enabled": False,
+            "log_dir": "",
+        }
+
+    return (result, None)
+
+
 # {
 #   "type": "function",
 #   "function": {

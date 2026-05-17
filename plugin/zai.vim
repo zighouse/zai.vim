@@ -78,6 +78,23 @@ nmap <silent> <leader>zl <Plug>ZaiLoad
 nmap <silent> <leader>zd <Plug>ZaiDownloadURL
 nmap <silent> <leader>zv <Plug>ZaiOpenPath
 
+" :AI command group — shell status, audit query, policy display
+function! s:AICommand(cmd, ...) abort
+    if a:cmd ==# 'shell' && a:0 >= 1 && a:1 ==# 'status'
+        call zai#shell#Status()
+    elseif a:cmd ==# 'audit'
+        call call('zai#shell#Audit', a:000[1:])
+    elseif a:cmd ==# 'policy'
+        call zai#shell#Policy()
+    else
+        echohl WarningMsg
+        echomsg 'Usage: :AI shell status | :AI audit [session_id] | :AI policy'
+        echohl None
+    endif
+endfunction
+
+command! -nargs=* AI call s:AICommand(<f-args>)
+
 " ASR (Automatic Speech Recognition) setup
 if !exists('g:zai_auto_enable_asr')
     let g:zai_auto_enable_asr = 0

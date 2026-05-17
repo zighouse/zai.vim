@@ -294,6 +294,7 @@ class AuditLogger:
         session_id: str | None = None,
         start_time: str | None = None,
         end_time: str | None = None,
+        limit: int = 0,
     ) -> tuple[list[dict], SafetyError | None]:
         """Query audit log entries with optional filters (Task 2, MUST-1).
 
@@ -301,6 +302,7 @@ class AuditLogger:
             session_id: Filter by exact session ID match.
             start_time: ISO 8601 datetime range start (inclusive).
             end_time: ISO 8601 datetime range end (inclusive).
+            limit: Max entries to return (0 = unlimited).
 
         Returns:
             (list[dict], None) sorted by timestamp ascending.
@@ -327,6 +329,8 @@ class AuditLogger:
                     continue  # Skip unreadable files, keep going
 
             results.sort(key=lambda e: e.get("timestamp", ""))
+            if limit > 0:
+                results = results[-limit:]
             return (results, None)
 
         except (OSError, IOError) as e:

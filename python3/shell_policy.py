@@ -678,6 +678,38 @@ class PermissionEngine:
 
         return msg
 
+    def get_rules_count(self) -> dict[str, int]:
+        """Count active policy rules by source.
+
+        Returns:
+            {"user_rules": N, "project_rules": M, "built_in_rules": B, "total": T}
+        """
+        user = sum(1 for r in self._rules if r.source == "user")
+        project = sum(1 for r in self._rules if r.source == "project")
+        built_in = sum(1 for r in self._rules if r.source == "built-in")
+        return {
+            "user_rules": user,
+            "project_rules": project,
+            "built_in_rules": built_in,
+            "total": len(self._rules),
+        }
+
+    def get_rules_list(self) -> list[dict[str, str]]:
+        """Return all active rules as serializable dicts.
+
+        Returns a list of dicts with behavior, match type, match pattern,
+        and source for each rule. Safe for JSON serialization.
+        """
+        return [
+            {
+                "behavior": r.behavior,
+                "type": r.match.type,
+                "pattern": r.match.pattern,
+                "source": r.source,
+            }
+            for r in self._rules
+        ]
+
     def export_policy(self) -> Tuple[Optional[str], Optional['SafetyError']]:
         """Export all active policy rules as YAML with source annotations.
 

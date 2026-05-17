@@ -104,6 +104,15 @@ class ClassifierClient:
         return True
 
     @classmethod
+    def model_name(cls) -> str:
+        """Return the configured classifier model name, or 'unknown'."""
+        try:
+            cc = _parent_config.get("shell_classifier", {}) if _parent_config else {}
+            return cc.get("model", cc.get("name", "unknown"))
+        except Exception:
+            return "unknown"
+
+    @classmethod
     def classify_async(
         cls,
         command: str,
