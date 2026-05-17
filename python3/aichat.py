@@ -2006,7 +2006,7 @@ if __name__ == "__main__":
         model_name = model.get("name", _DEFAULT_MODEL)
         aichat.set_config("base_url", port.get('base_url', _DEFAULT_BASE_URL))
         aichat.set_config("api_key_name", port.get('api_key_name', _DEFAULT_API_KEY_NAME))
-        aichat.set_config("model", model_name)
+        aichat._config["model"] = model
         print(f"Using AI assistant: {port.get('name', 'Unknown')} on model: {aichat.get_config('model')['name']}")
         if 'prompt' in port:
             aichat.set_config("prompt", port['prompt'])
