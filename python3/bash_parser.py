@@ -131,9 +131,12 @@ class BashParser:
                 if label not in unsupported:
                     unsupported.append(label)
 
+        # Normalize operator spacing outside quotes so shlex splits them
+        normalized = self._normalize_operator_spacing(original)
+
         # Tokenize with shlex (handles quoting correctly)
         try:
-            tokens = shlex.split(original, posix=True)
+            tokens = shlex.split(normalized, posix=True)
         except ValueError:
             # shlex failed (e.g. unbalanced quotes) — best-effort fallback
             tokens = self._fallback_split(original)
@@ -198,49 +201,85 @@ class BashParser:
     # Internal: token splitting
     # ------------------------------------------------------------------
 
-    def _expand_embedded_operators(self, tokens: List[str]) -> List[str]:
-        """Pre-process tokens, splitting those with embedded operators.
+    def _normalize_operator_spacing(self, original: str) -> str:
+        """Insert spaces around unquoted, unescaped shell operators.
 
-        shlex doesn't split on shell metacharacters without surrounding
-        whitespace.  This pass catches the common cases:
-        'echo hello;ls'  -> ['echo', 'hello', ';', 'ls']
-        'cmd1&&cmd2'     -> ['cmd1', '&&', 'cmd2']
-        'cmd1||cmd2'     -> ['cmd1', '||', 'cmd2']
+        Ensures shlex.split() correctly tokenizes ``;``, ``&&``, ``||``
+        even without surrounding whitespace, while preserving operators
+        inside quotes as literal text.
         """
         result: List[str] = []
-        for tok in tokens:
-            result.extend(self._split_embedded_operator(tok))
-        return result
-
-    def _split_embedded_operator(self, tok: str) -> List[str]:
-        """Split one token on embedded ``;``, ``&&``, ``||``."""
-        if len(tok) <= 1:
-            return [tok]
-
-        parts: List[str] = []
-        buf: List[str] = []
         i = 0
-        while i < len(tok):
-            if i + 1 < len(tok) and tok[i:i+2] in ('&&', '||'):
-                if buf:
-                    parts.append(''.join(buf))
-                    buf = []
-                parts.append(tok[i:i+2])
+        in_single = False
+        in_double = False
+        escaped = False
+
+        while i < len(original):
+            ch = original[i]
+
+            if escaped:
+                escaped = False
+                result.append(ch)
+                i += 1
+                continue
+
+            # Backslash escaping
+            if ch == '\\' and not in_single:
+                if in_double:
+                    # In double quotes, backslash only escapes: $ ` " \\ newline
+                    if i + 1 < len(original) and original[i + 1] in '$`"\\\n':
+                        escaped = True
+                else:
+                    # Unquoted: backslash escapes next character
+                    escaped = True
+                result.append(ch)
+                i += 1
+                continue
+
+            # Quote state transitions
+            if ch == "'" and not in_double:
+                in_single = not in_single
+                result.append(ch)
+                i += 1
+                continue
+
+            if ch == '"' and not in_single:
+                in_double = not in_double
+                result.append(ch)
+                i += 1
+                continue
+
+            # Inside quotes — everything is literal
+            if in_single or in_double:
+                result.append(ch)
+                i += 1
+                continue
+
+            # Unquoted: check for && or ||
+            if i + 1 < len(original) and original[i:i + 2] in ('&&', '||'):
+                op = original[i:i + 2]
+                if result and result[-1] != ' ':
+                    result.append(' ')
+                result.append(op)
                 i += 2
-            elif tok[i] == ';':
-                if buf:
-                    parts.append(''.join(buf))
-                    buf = []
-                parts.append(tok[i])
-                i += 1
-            else:
-                buf.append(tok[i])
-                i += 1
+                if i < len(original) and original[i] not in (' ', '\t', '\n'):
+                    result.append(' ')
+                continue
 
-        if buf:
-            parts.append(''.join(buf))
+            # Unquoted: check for ;
+            if ch == ';':
+                if result and result[-1] != ' ':
+                    result.append(' ')
+                result.append(ch)
+                i += 1
+                if i < len(original) and original[i] not in (' ', '\t', '\n'):
+                    result.append(' ')
+                continue
 
-        return parts if len(parts) > 1 else [tok]
+            result.append(ch)
+            i += 1
+
+        return ''.join(result)
 
     def _split_by_operators(self, tokens: List[str]) -> Tuple[List[List[str]], List[str]]:
         """Split token list into segments at shell operators (|, &&, ||, ;, &).
@@ -248,7 +287,6 @@ class BashParser:
         Also handles tokens with trailing ; or & without spaces (e.g. 'a;').
         Redirect tokens (>>, 2>, >&, etc.) are kept in segments for _match_redirect().
         """
-        tokens = self._expand_embedded_operators(tokens)
         segments: List[List[str]] = []
         operators: List[str] = []
         current: List[str] = []
