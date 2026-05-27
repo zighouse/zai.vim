@@ -165,8 +165,8 @@ class SkillRegistry:
 
     def register(self, meta: SkillMetadata) -> None:
         """Register a skill. Atomic: rolls back on failure."""
-        if not meta.name or not meta.path:
-            raise SkillRegistryError("Cannot register skill without name or path")
+        if not meta.name:
+            raise SkillRegistryError("Cannot register skill without name")
         backup_skill = self._skills.get(meta.name)
         backup_path = self._paths.get(meta.name)
         try:
