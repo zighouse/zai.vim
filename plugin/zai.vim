@@ -95,6 +95,13 @@ endfunction
 
 command! -nargs=* AI call s:AICommand(<f-args>)
 
+" Skill system commands
+command! -nargs=? -complete=customlist,zai#skill#CompleteNames ZaiSkillList call zai#skill#List(<f-args>)
+command! -nargs=1 -complete=customlist,zai#skill#CompleteNames ZaiSkillInfo call zai#skill#Info(<f-args>)
+command! -nargs=1 -complete=customlist,zai#skill#CompleteNames ZaiSkillEnable call zai#skill#Enable(<f-args>)
+command! -nargs=1 -complete=customlist,zai#skill#CompleteNames ZaiSkillDisable call zai#skill#Disable(<f-args>)
+command! -nargs=1 -complete=customlist,zai#skill#CompleteNames ZaiSkillUninstall call zai#skill#Uninstall(<f-args>)
+
 " ASR (Automatic Speech Recognition) setup
 if !exists('g:zai_auto_enable_asr')
     let g:zai_auto_enable_asr = 0
