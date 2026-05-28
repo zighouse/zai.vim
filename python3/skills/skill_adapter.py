@@ -14,6 +14,7 @@ from typing import Any, Callable
 
 from .skill_registry import SkillRegistry
 from .skill_types import (
+    ErrorCode,
     InvocationResult,
     SecurityDomain,
     SkillMetadata,
@@ -88,7 +89,6 @@ def adapt_legacy_tools(registry: SkillRegistry, tool_pool) -> int:
             adapted_count += 1
         except Exception as e:
             logger.warning("Failed to adapt tool %s: %s", func_name, e)
-            logger.warning("Failed to adapt tool %s: %s", func_name, e)
 
     return adapted_count
 
@@ -104,14 +104,14 @@ def invoke_adapted(registry: SkillRegistry, skill_name: str,
         return InvocationResult(
             success=False,
             error=f"Not an adapted skill: {skill_name}",
-            error_code="SKILL_NOT_FOUND",
+            error_code=ErrorCode.SKILL_NOT_FOUND,
         )
 
     if meta.status == SkillStatus.DISABLED:
         return InvocationResult(
             success=False,
             error=f"Skill is disabled: {skill_name}",
-            error_code="SKILL_DISABLED",
+            error_code=ErrorCode.SKILL_DISABLED,
         )
 
     # Find the original function
@@ -130,7 +130,7 @@ def invoke_adapted(registry: SkillRegistry, skill_name: str,
         return InvocationResult(
             success=False,
             error=f"Original tool function not found: {func_name}",
-            error_code="SKILL_NOT_FOUND",
+            error_code=ErrorCode.SKILL_NOT_FOUND,
         )
 
     try:
@@ -147,7 +147,7 @@ def invoke_adapted(registry: SkillRegistry, skill_name: str,
         return InvocationResult(
             success=False,
             error=str(e),
-            error_code="SKILL_EXECUTION_ERROR",
+            error_code=ErrorCode.SKILL_EXECUTION_ERROR,
             recoverable=True,
         )
 
