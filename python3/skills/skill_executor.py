@@ -19,6 +19,7 @@ from typing import Any, Callable, Optional
 from .skill_adapter import invoke_adapted
 from .skill_audit import SkillAuditLogger
 from .skill_registry import SkillRegistry
+from .skill_security import IntentVerifier
 from .skill_types import (
     ErrorCode,
     InvocationResult,
@@ -42,15 +43,16 @@ class SkillExecutor:
         tool_pool: Any = None,
         max_workers: int = _DEFAULT_MAX_WORKERS,
         audit_logger: Optional[SkillAuditLogger] = None,
+        l0_verifier: Optional[IntentVerifier] = None,
     ):
         self._registry = registry
         self._tool_pool = tool_pool
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
-        self._l0_verifier: Optional[Callable] = None
         self._audit = audit_logger
+        self._l0_verifier = l0_verifier or IntentVerifier()
 
-    def set_l0_verifier(self, verifier: Callable) -> None:
-        """Set the L0 intent verifier (plugged in by Story 2.3)."""
+    def set_l0_verifier(self, verifier: IntentVerifier) -> None:
+        """Set or replace the L0 intent verifier."""
         self._l0_verifier = verifier
 
     def invoke(
@@ -214,28 +216,12 @@ class SkillExecutor:
     # ------------------------------------------------------------------
 
     def _security_check(self, meta: SkillMetadata, context: Any) -> bool:
-        """Run L0 verification or fallback deny-cross-domain policy."""
-        if self._l0_verifier is not None:
-            try:
-                return self._l0_verifier(meta, context)
-            except Exception as exc:
-                logger.warning("L0 verifier error for %s: %s", meta.name, exc)
-                return False  # fail-closed
-
-        # Fallback: deny cross-domain when L0 not ready
-        if context is None:
-            return True  # no context → same-domain assumption
-
-        # context may be IntentContext or similar duck-typed object
-        allow_cross = getattr(context, "allow_cross_domain", False)
-        if allow_cross:
-            return True
-
-        ctx_domain = getattr(context, "security_domain", None)
-        if ctx_domain is not None and str(ctx_domain) != str(meta.security_domain):
-            return False  # deny cross-domain
-
-        return True
+        """Run L0 verification via IntentVerifier."""
+        try:
+            return self._l0_verifier.verify(meta, context)
+        except Exception as exc:
+            logger.warning("L0 verifier error for %s: %s", meta.name, exc)
+            return False  # fail-closed
 
     # ------------------------------------------------------------------
     # Execution with timeout
