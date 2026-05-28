@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Callable, Optional
 
 from .skill_adapter import invoke_adapted
+from .skill_audit import SkillAuditLogger
 from .skill_registry import SkillRegistry
 from .skill_types import (
     ErrorCode,
@@ -39,11 +41,13 @@ class SkillExecutor:
         registry: SkillRegistry,
         tool_pool: Any = None,
         max_workers: int = _DEFAULT_MAX_WORKERS,
+        audit_logger: Optional[SkillAuditLogger] = None,
     ):
         self._registry = registry
         self._tool_pool = tool_pool
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._l0_verifier: Optional[Callable] = None
+        self._audit = audit_logger
 
     def set_l0_verifier(self, verifier: Callable) -> None:
         """Set the L0 intent verifier (plugged in by Story 2.3)."""
@@ -70,6 +74,7 @@ class SkillExecutor:
         # --- Registry lookup ---
         meta = self._registry.get(name)
         if meta is None:
+            self._audit_reject(name, "not_found", ErrorCode.SKILL_NOT_FOUND)
             return InvocationResult(
                 success=False,
                 error=f"Skill not found: {name}",
@@ -78,12 +83,16 @@ class SkillExecutor:
 
         # --- Status check ---
         if meta.status == SkillStatus.DISABLED:
+            self._audit_reject(name, "disabled", ErrorCode.SKILL_DISABLED,
+                               meta=meta)
             return InvocationResult(
                 success=False,
                 error=f"Skill is disabled: {name}",
                 error_code=ErrorCode.SKILL_DISABLED,
             )
         if meta.status in (SkillStatus.MISSING, SkillStatus.UNAVAILABLE):
+            self._audit_reject(name, f"status_{meta.status.value}",
+                               ErrorCode.SKILL_UNAVAILABLE, meta=meta)
             return InvocationResult(
                 success=False,
                 error=f"Skill is {meta.status.value}: {name}",
@@ -103,7 +112,15 @@ class SkillExecutor:
             timeout = _DEFAULT_TIMEOUT
 
         # --- L0 security check (fallback when verifier not ready) ---
+        verify_decision = "fallback_allow"
         if not self._security_check(meta, context):
+            verify_decision = "denied_cross_domain"
+            self._audit_log(
+                meta, verify_decision=verify_decision,
+                execution_time_ms=0, result_summary="cross-domain denied",
+                error_code=ErrorCode.SECURITY_DOMAIN_VIOLATION,
+                context=context,
+            )
             return InvocationResult(
                 success=False,
                 error=f"Security check failed for {name}: cross-domain denied",
@@ -111,8 +128,86 @@ class SkillExecutor:
                 recoverable=False,
             )
 
-        # --- Execute with timeout ---
-        return self._execute_with_timeout(name, meta, timeout, **kwargs)
+        # --- Execute with timeout + audit ---
+        start = time.monotonic()
+        result = self._execute_with_timeout(name, meta, timeout, **kwargs)
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+
+        self._audit_log(
+            meta, verify_decision="allowed",
+            execution_time_ms=elapsed_ms,
+            result_summary="ok" if result.success else (result.error or "failed"),
+            error_code=result.error_code,
+            context=context,
+        )
+
+        return result
+
+    # ------------------------------------------------------------------
+    # Audit helper
+    # ------------------------------------------------------------------
+
+    def _audit_log(
+        self,
+        meta: SkillMetadata,
+        *,
+        verify_decision: str = "",
+        execution_time_ms: int = 0,
+        result_summary: str = "",
+        error_code: Optional[str] = None,
+        context: Any = None,
+    ) -> None:
+        if self._audit is None:
+            return
+        self._audit.log_invocation(
+            skill_name=meta.name,
+            session_id=self._extract_session_id(context),
+            call_chain=self._extract_call_chain(context, meta.name),
+            security_domain=str(meta.security_domain),
+            trust_level=str(meta.trust_level),
+            verify_decision=verify_decision,
+            execution_time_ms=execution_time_ms,
+            result_summary=result_summary[:500] if result_summary else "",
+            error_code=error_code,
+            origin=str(meta.origin),
+        )
+
+    def _audit_reject(
+        self,
+        name: str,
+        reason: str,
+        error_code: str,
+        *,
+        meta: Optional[SkillMetadata] = None,
+        context: Any = None,
+    ) -> None:
+        if self._audit is None:
+            return
+        self._audit.log_invocation(
+            skill_name=name,
+            session_id=self._extract_session_id(context),
+            call_chain=self._extract_call_chain(context, name),
+            security_domain=str(meta.security_domain) if meta else "",
+            trust_level=str(meta.trust_level) if meta else "",
+            verify_decision=f"rejected:{reason}",
+            execution_time_ms=0,
+            result_summary=reason,
+            error_code=error_code,
+            origin=str(meta.origin) if meta else "",
+        )
+
+    @staticmethod
+    def _extract_session_id(context: Any) -> str:
+        if context is None:
+            return ""
+        return getattr(context, "session_id", "") or ""
+
+    @staticmethod
+    def _extract_call_chain(context: Any, skill_name: str) -> list[str]:
+        if context is None:
+            return [skill_name]
+        chain = getattr(context, "call_chain", None) or []
+        return chain + [skill_name]
 
     # ------------------------------------------------------------------
     # Security fallback
