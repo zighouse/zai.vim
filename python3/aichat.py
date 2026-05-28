@@ -95,6 +95,27 @@ class AIChat:
             config=self._config,
         )
 
+        # Skill system initialization (lazy — only if skills module available)
+        self._skill_executor = None
+        try:
+            from skills.skill_registry import SkillRegistry
+            from skills.skill_executor import SkillExecutor
+            from skills.skill_audit import SkillAuditLogger
+            from skills.skill_adapter import adapt_legacy_tools
+            _skill_registry = SkillRegistry()
+            _skill_registry.scan()
+            adapt_legacy_tools(_skill_registry, self._tool)
+            _audit = SkillAuditLogger()
+            self._skill_executor = SkillExecutor(
+                registry=_skill_registry,
+                tool_pool=self._tool,
+                audit_logger=_audit,
+            )
+        except Exception as _skill_init_ex:
+            # Skill system is optional — graceful degradation
+            print(f"[skill] Skill system init skipped: {_skill_init_ex}",
+                  file=sys.stderr)
+
         # Load hooks from project config
         self._load_project_hooks()
         if 'zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', ''):
@@ -853,7 +874,15 @@ class AIChat:
                 try:
                     function_args = json.loads(function['arguments']) if function['arguments'] else {}
                     self._ensure_tool_session(function_name, function_args)
-                    tool_response["content"] = self._tool.call_tool(function_name, function_args)
+
+                    # Route through SkillExecutor if available
+                    result = self._try_skill_executor(function_name, function_args)
+                    if result is not None:
+                        tool_response["content"] = result
+                    else:
+                        # Legacy fallback
+                        tool_response["content"] = self._tool.call_tool(function_name, function_args)
+
                     self._handle_permission_ask(tool_response, function_name, function_args)
                 except Exception as call_ex:
                     print(f"tool_call `{function_name}` error {call_ex}")
@@ -862,6 +891,37 @@ class AIChat:
                 finally:
                     tool_returns.append(tool_response)
         return tool_returns
+
+    def _try_skill_executor(self, function_name: str, function_args: dict) -> Optional[str]:
+        """Try routing tool call through SkillExecutor.
+
+        Returns serialized result string if routed, None if should fallback.
+        """
+        executor = getattr(self, '_skill_executor', None)
+        if executor is None:
+            return None
+
+        # Convert function_name to kebab-case skill name
+        skill_name = function_name.replace("_", "-")
+
+        result = executor.invoke(skill_name, **function_args)
+        if result.success:
+            data = result.data
+            if isinstance(data, dict):
+                return json.dumps(data, indent=2, ensure_ascii=False)
+            if isinstance(data, str):
+                return data
+            return str(data) if data else ""
+        else:
+            # Check if this was a known skill failure or "not found"
+            if result.error_code == "SKILL_NOT_FOUND":
+                return None  # Fallback to legacy path
+            # Other errors: return the error as the tool response
+            return json.dumps({
+                "error": result.error,
+                "error_code": result.error_code,
+                "recoverable": result.recoverable,
+            }, ensure_ascii=False)
 
     def _ensure_tool_session(self, function_name: str, arguments: dict):
         """Inject session_id into tool call arguments if missing.
