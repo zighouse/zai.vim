@@ -101,6 +101,7 @@ command! -nargs=1 -complete=customlist,zai#skill#CompleteNames ZaiSkillInfo call
 command! -nargs=1 -complete=customlist,zai#skill#CompleteNames ZaiSkillEnable call zai#skill#Enable(<f-args>)
 command! -nargs=1 -complete=customlist,zai#skill#CompleteNames ZaiSkillDisable call zai#skill#Disable(<f-args>)
 command! -nargs=1 -complete=customlist,zai#skill#CompleteNames ZaiSkillUninstall call zai#skill#Uninstall(<f-args>)
+command! -nargs=+ ZaiSkillInstall call zai#skill#Install(<f-args>)
 
 " ASR (Automatic Speech Recognition) setup
 if !exists('g:zai_auto_enable_asr')

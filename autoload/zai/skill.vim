@@ -1,6 +1,6 @@
 " zai/skill.vim — Skill system Vim commands
 " Provides :ZaiSkillList, :ZaiSkillInfo, :ZaiSkillEnable, :ZaiSkillDisable,
-"           :ZaiSkillUninstall
+"           :ZaiSkillUninstall, :ZaiSkillInstall
 
 let s:script = expand('<sfile>:h:h:h') . '/python3/skills/skill_vim.py'
 let s:py = executable('python3') ? 'python3' : 'python'
@@ -87,7 +87,33 @@ function! zai#skill#Uninstall(name) abort
 endfunction
 
 " ---------------------------------------------------------------------------
-" Completion for skill names
+" :ZaiSkillInstall <url> [checksum]
+" ---------------------------------------------------------------------------
+function! zai#skill#Install(url, ...) abort
+    " If no checksum provided, warn and require confirmation (AC #7, NFR10)
+    if a:0 == 0 || empty(a:1)
+        echohl WarningMsg
+        let l:confirm = input('No integrity checksum provided. Install at your own risk? [y/n] ')
+        echohl None
+        if l:confirm !~? '^y\%[es]$'
+            echohl WarningMsg
+            echom 'Install cancelled.'
+            echohl None
+            return
+        endif
+    endif
+    let l:args = 'install ' . shellescape(a:url)
+    if a:0 > 0 && !empty(a:1)
+        let l:args .= ' ' . shellescape(a:1)
+    endif
+    let l:out = s:sys_call(l:args)
+    if empty(l:out)
+        return
+    endif
+    echohl MoreMsg
+    echom l:out
+    echohl None
+endfunction
 " ---------------------------------------------------------------------------
 function! zai#skill#CompleteNames(arglead, cmdline, cursorpos) abort
     let l:out = s:sys_call('list')

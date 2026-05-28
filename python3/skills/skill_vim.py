@@ -14,6 +14,7 @@ from pathlib import Path
 # Ensure skills package is importable
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from skills.skill_installer import SkillInstaller
 from skills.skill_registry import SkillRegistry
 from skills.skill_types import SkillStatus
 
@@ -124,6 +125,17 @@ def cmd_skill_uninstall(name: str) -> str:
         return f"Uninstall failed: {e}"
 
 
+def cmd_skill_install(url: str, checksum: str = "") -> str:
+    """Install a skill from a URL."""
+    reg = _get_registry()
+    installer = SkillInstaller(registry=reg)
+    result = installer.install_from_url(url, checksum=checksum or None)
+    if result.success:
+        name = result.data.get("name", "unknown")
+        return f"Skill '{name}' installed successfully."
+    return f"Install failed: {result.error}"
+
+
 # ---------------------------------------------------------------------------
 # CLI entry point for system() calls from Vim
 # ---------------------------------------------------------------------------
@@ -159,6 +171,12 @@ def main():
             print("Usage: skill_vim.py uninstall <name>")
             sys.exit(1)
         print(cmd_skill_uninstall(args[0]))
+    elif cmd == "install":
+        if not args:
+            print("Usage: skill_vim.py install <url> [checksum]")
+            sys.exit(1)
+        checksum = args[1] if len(args) > 1 else ""
+        print(cmd_skill_install(args[0], checksum))
     else:
         print(f"Unknown command: {cmd}")
         sys.exit(1)
