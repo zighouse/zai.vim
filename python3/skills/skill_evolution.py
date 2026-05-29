@@ -118,12 +118,16 @@ class TrustEvolution:
         self,
         skill_name: str,
         cross_domain: bool = False,
+        is_mcp: bool = False,
+        schema_changed: bool = False,
     ) -> bool:
         """Check if a skill invocation requires human confirmation.
 
         HITL triggers:
         - First cross-domain call (any trust level)
         - L1 skill (always requires confirmation)
+        - MCP adapted skill: first call (any trust level)
+        - MCP adapted skill: inputSchema changed after reconnect
         """
         state = self.get_state(skill_name)
 
@@ -133,6 +137,14 @@ class TrustEvolution:
 
         # L1 always requires confirmation
         if state.trust_level == TrustLevel.L1:
+            return True
+
+        # MCP enhanced HITL: first call
+        if is_mcp and state.safe_use_count == 0:
+            return True
+
+        # MCP enhanced HITL: schema changed after reconnect
+        if is_mcp and schema_changed:
             return True
 
         return False
@@ -248,6 +260,7 @@ class SkillState:
         self.security_event_count: int = 0
         self.last_used: str = ""
         self.trust_history: list[dict] = []
+        self.last_schema: str = ""  # for MCP schema change detection
 
     def _add_history_entry(
         self, from_level: str, to_level: str, reason: str
@@ -266,6 +279,7 @@ class SkillState:
             "security_event_count": self.security_event_count,
             "last_used": self.last_used,
             "trust_history": self.trust_history,
+            "last_schema": self.last_schema,
         }
 
     @classmethod
@@ -276,4 +290,5 @@ class SkillState:
         state.security_event_count = data.get("security_event_count", 0)
         state.last_used = data.get("last_used", "")
         state.trust_history = data.get("trust_history", [])
+        state.last_schema = data.get("last_schema", "")
         return state
