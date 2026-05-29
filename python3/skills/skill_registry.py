@@ -40,10 +40,30 @@ class SkillRegistry:
                  project_dir: Path | None = None):
         self._user_dir = user_dir
         self._project_dir = project_dir
-        # name -> SkillMetadata (lightweight index)
+        # name -> SkillMetadata (lightweight index, always in memory)
         self._skills: dict[str, SkillMetadata] = {}
         # name -> source path (for manifest tracking)
         self._paths: dict[str, str] = {}
+
+    @property
+    def cache_size(self) -> int:
+        """Number of skills in the in-memory cache."""
+        return self.count
+
+    def cache_stats(self) -> dict[str, int]:
+        """Return cache statistics for monitoring."""
+        return {
+            "total_skills": self.count,
+            "enabled": sum(
+                1 for m in self._skills.values()
+                if not m.name.startswith("_shadowed:")
+                and m.status == SkillStatus.ENABLED
+            ),
+            "disabled": sum(
+                1 for m in self._skills.values()
+                if m.status == SkillStatus.DISABLED
+            ),
+        }
 
     # ------------------------------------------------------------------
     # Public API

@@ -1,6 +1,7 @@
 " zai/skill.vim — Skill system Vim commands
 " Provides :ZaiSkillList, :ZaiSkillInfo, :ZaiSkillEnable, :ZaiSkillDisable,
-"           :ZaiSkillUninstall, :ZaiSkillInstall, :ZaiSkillUpdate
+"           :ZaiSkillUninstall, :ZaiSkillInstall, :ZaiSkillUpdate,
+"           :ZaiSkillHistory
 
 let s:script = expand('<sfile>:h:h:h') . '/python3/skills/skill_vim.py'
 let s:py = executable('python3') ? 'python3' : 'python'
@@ -133,7 +134,24 @@ function! zai#skill#Update(name, url, ...) abort
 endfunction
 
 " ---------------------------------------------------------------------------
+" :ZaiSkillHistory <name> [limit]
+" ---------------------------------------------------------------------------
+function! zai#skill#History(name, ...) abort
+    let l:args = 'history ' . shellescape(a:name)
+    if a:0 > 0 && !empty(a:1)
+        let l:args .= ' ' . shellescape(a:1)
+    endif
+    let l:out = s:sys_call(l:args)
+    if empty(l:out)
+        return
+    endif
+    echo l:out
+endfunction
+
+" ---------------------------------------------------------------------------
 " Completion for skill names
+" ---------------------------------------------------------------------------
+function! zai#skill#CompleteNames(arglead, cmdline, cursorpos) abort
     let l:out = s:sys_call('list')
     if empty(l:out)
         return []

@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from skills.skill_installer import SkillInstaller
 from skills.skill_registry import SkillRegistry
 from skills.skill_updater import SkillUpdater
+from skills.skill_evolution import TrustEvolution
 from skills.skill_types import SkillStatus
 
 
@@ -154,6 +155,31 @@ def cmd_skill_update(name: str, url: str = "", checksum: str = "") -> str:
     return result.error or "Update failed"
 
 
+def cmd_skill_history(name: str, limit: int = 20) -> str:
+    """Show trust evolution history for a skill."""
+    evolution = TrustEvolution()
+    state = evolution.get_state(name)
+    history = evolution.get_history(name, limit=limit)
+
+    if not history:
+        return (
+            f"{name}: No trust evolution history. "
+            f"Current level: {state.trust_level}"
+        )
+
+    lines = [f"  Trust evolution for {name} (current: {state.trust_level}):"]
+    for entry in history[-limit:]:
+        ts = entry.get("timestamp", "")[:19]  # trim microseconds
+        from_lvl = entry.get("from", "?")
+        to_lvl = entry.get("to", "?")
+        reason = entry.get("reason", "")
+        marker = " [MANUAL]" if "manual_override" in reason else ""
+        lines.append(
+            f"  {ts}  {from_lvl} -> {to_lvl}  ({reason}){marker}"
+        )
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # CLI entry point for system() calls from Vim
 # ---------------------------------------------------------------------------
@@ -202,6 +228,12 @@ def main():
         url = args[1] if len(args) > 1 else ""
         checksum = args[2] if len(args) > 2 else ""
         print(cmd_skill_update(args[0], url, checksum))
+    elif cmd == "history":
+        if not args:
+            print("Usage: skill_vim.py history <name> [limit]")
+            sys.exit(1)
+        limit = int(args[1]) if len(args) > 1 else 20
+        print(cmd_skill_history(args[0], limit))
     else:
         print(f"Unknown command: {cmd}")
         sys.exit(1)
