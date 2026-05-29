@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from skills.skill_installer import SkillInstaller
 from skills.skill_registry import SkillRegistry
+from skills.skill_updater import SkillUpdater
 from skills.skill_types import SkillStatus
 
 
@@ -136,6 +137,23 @@ def cmd_skill_install(url: str, checksum: str = "") -> str:
     return f"Install failed: {result.error}"
 
 
+def cmd_skill_update(name: str, url: str = "", checksum: str = "") -> str:
+    """Update a skill from a URL or re-download."""
+    reg = _get_registry()
+    updater = SkillUpdater(registry=reg)
+    # If no URL, construct from skill origin/path
+    if not url:
+        return f"Update failed: URL required. Usage: :ZaiSkillUpdate <name> <url> [checksum]"
+    result = updater.update_from_url(name, url, checksum=checksum or None)
+    if result.success:
+        summary = result.data.get("summary", "")
+        updated = result.data.get("updated", True)
+        if not updated:
+            return summary
+        return f"Skill updated.\n{summary}"
+    return result.error or "Update failed"
+
+
 # ---------------------------------------------------------------------------
 # CLI entry point for system() calls from Vim
 # ---------------------------------------------------------------------------
@@ -177,6 +195,13 @@ def main():
             sys.exit(1)
         checksum = args[1] if len(args) > 1 else ""
         print(cmd_skill_install(args[0], checksum))
+    elif cmd == "update":
+        if not args:
+            print("Usage: skill_vim.py update <name> <url> [checksum]")
+            sys.exit(1)
+        url = args[1] if len(args) > 1 else ""
+        checksum = args[2] if len(args) > 2 else ""
+        print(cmd_skill_update(args[0], url, checksum))
     else:
         print(f"Unknown command: {cmd}")
         sys.exit(1)
