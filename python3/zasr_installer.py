@@ -19,9 +19,11 @@ import tempfile
 from pathlib import Path
 from typing import Optional, List, Tuple
 
+from paths import get_user_dir
+
 
 # Default installation directory
-DEFAULT_INSTALL_DIR = Path.home() / ".local" / "share" / "zai" / "zasr"
+DEFAULT_INSTALL_DIR = get_user_dir() / "zasr"
 
 # ZASR GitHub repository
 ZASR_GITHUB_REPO = "https://github.com/zighouse/zasr.git"

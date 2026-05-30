@@ -5,7 +5,7 @@ View, search, and manage conversation logs in Zai.Vim.
 ## Overview
 
 All Zai conversations are automatically logged to files:
-- **Location:** `~/.local/share/zai/log/` (configurable)
+- **Location:** `~/.zai/log/` (configurable)
 - **Format:** Plain text with timestamps
 - **Naming:** `chat_YYYYMMDD_HHMMSS.log`
 - **Content:** User messages, AI responses, errors
@@ -31,7 +31,7 @@ Open the current session's log file.
 
 **Log File Path:**
 ```
-~/.local/share/zai/log/chat_20250130_143022.log
+~/.zai/log/chat_20250130_143022.log
 ```
 
 ### Reading Logs
@@ -144,9 +144,9 @@ Can you elaborate more on the second point you made?
 
 | Platform | Path |
 |----------|------|
-| Linux | `~/.local/share/zai/log/` |
-| macOS | `~/.local/share/zai/log/` |
-| Windows | `%USERPROFILE%\AppData\Local\zai\log\` |
+| Linux | `~/.zai/log/` |
+| macOS | `~/.zai/log/` |
+| Windows | `%USERPROFILE%\.zai\log\` |
 
 ### Custom Log Directory
 
@@ -166,13 +166,13 @@ export ZAI_LOG_DIR="/custom/path/logs"
 
 ```bash
 # List all logs
-ls -lh ~/.local/share/zai/log/
+ls -lh ~/.zai/log/
 
 # View specific log
-less ~/.local/share/zai/log/chat_20250130_143022.log
+less ~/.zai/log/chat_20250130_143022.log
 
 # Count conversations
-find ~/.local/share/zai/log -name "chat_*.log" | wc -l
+find ~/.zai/log -name "chat_*.log" | wc -l
 ```
 
 ### Archiving Logs
@@ -180,7 +180,7 @@ find ~/.local/share/zai/log -name "chat_*.log" | wc -l
 ```bash
 # Archive old logs
 mkdir -p ~/zai-logs/archive
-mv ~/.local/share/zai/log/chat_2024*.log ~/zai-logs/archive/
+mv ~/.zai/log/chat_2024*.log ~/zai-logs/archive/
 
 # Compress archive
 tar czf ~/zai-logs/archive.tar.gz ~/zai-logs/archive/
@@ -190,13 +190,13 @@ tar czf ~/zai-logs/archive.tar.gz ~/zai-logs/archive/
 
 ```bash
 # Delete specific log
-rm ~/.local/share/zai/log/chat_20250130_143022.log
+rm ~/.zai/log/chat_20250130_143022.log
 
 # Delete old logs (older than 30 days)
-find ~/.local/share/zai/log -name "chat_*.log" -mtime +30 -delete
+find ~/.zai/log -name "chat_*.log" -mtime +30 -delete
 
 # Delete all logs (careful!)
-rm ~/.local/share/zai/log/*.log
+rm ~/.zai/log/*.log
 ```
 
 ## Log File Format
@@ -206,7 +206,7 @@ rm ~/.local/share/zai/log/*.log
 ```
 [2025-01-30 14:30:22] ===== Session started =====
 [2025-01-30 14:30:22] Model: deepseek-chat
-[2025-01-30 14:30:22] Log file: /home/user/.local/share/zai/log/chat_20250130_143022.log
+[2025-01-30 14:30:22] Log file: /home/user/.zai/log/chat_20250130_143022.log
 [2025-01-30 14:30:22]
 [2025-01-30 14:30:25] User: How do I parse JSON in Python?
 [2025-01-30 14:30:28] Assistant: Use the `json` module...
@@ -280,7 +280,7 @@ Preview chat in browser as rendered Markdown.
 ```bash
 # Extract useful conversations
 mkdir -p ~/knowledge-base
-cp ~/.local/share/zai/log/chat_*async*.log ~/knowledge-base/
+cp ~/.zai/log/chat_*async*.log ~/knowledge-base/
 
 # Index with grep
 grep -r "async" ~/knowledge-base/
@@ -292,21 +292,21 @@ grep -r "async" ~/knowledge-base/
 
 ```bash
 # Count sessions per day
-ls ~/.local/share/zai/log/chat_*.log | cut -d_ -f2 | cut -d. -f1 | sort | uniq -c
+ls ~/.zai/log/chat_*.log | cut -d_ -f2 | cut -d. -f1 | sort | uniq -c
 ```
 
 ### Find Longest Conversations
 
 ```bash
 # List logs by size
-ls -lhS ~/.local/share/zai/log/chat_*.log
+ls -lhS ~/.zai/log/chat_*.log
 ```
 
 ### Search Across All Sessions
 
 ```bash
 # Find all mentions of a topic
-grep -r "Docker" ~/.local/share/zai/log/
+grep -r "Docker" ~/.zai/log/
 ```
 
 ## Troubleshooting
@@ -317,7 +317,7 @@ grep -r "Docker" ~/.local/share/zai/log/
 
 **Check:**
 ```bash
-ls -la ~/.local/share/zai/log/
+ls -la ~/.zai/log/
 ```
 
 **Solution:**
@@ -355,7 +355,7 @@ Logs may contain:
 
 1. **Review logs before sharing:**
    ```bash
-   grep -i "api.*key\|password\|secret" ~/.local/share/zai/log/
+   grep -i "api.*key\|password\|secret" ~/.zai/log/
    ```
 
 2. **Redact sensitive information:**
@@ -370,8 +370,8 @@ Logs may contain:
 
 4. **Set secure permissions:**
    ```bash
-   chmod 700 ~/.local/share/zai/log
-   chmod 600 ~/.local/share/zai/log/*.log
+   chmod 700 ~/.zai/log
+   chmod 600 ~/.zai/log/*.log
    ```
 
 ## Next Steps

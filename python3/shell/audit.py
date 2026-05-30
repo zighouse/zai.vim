@@ -29,13 +29,14 @@ from datetime import datetime
 from pathlib import Path
 
 # internal imports
+from paths import get_audit_dir
 from shell.error import SafetyError
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-AUDIT_DIR = Path.home() / ".local" / "share" / "zai" / "audit"
+AUDIT_DIR = get_audit_dir()
 
 _CREDENTIAL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # Private key blocks (PEM format) — multi-line, check first

@@ -29,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
+from paths import get_user_dir
 from .error import SafetyError
 
 # ---------------------------------------------------------------------------
@@ -37,7 +38,7 @@ from .error import SafetyError
 
 _BWRAP_MIN_VERSION = "0.4.0"
 _CACHE_MAX_AGE_DAYS = 7
-_CACHE_DIR = Path(os.path.expanduser("~/.local/share/zai"))
+_CACHE_DIR = get_user_dir()
 _CACHE_FILE = _CACHE_DIR / "sandbox_cache.json"
 
 # seccomp BPF constants

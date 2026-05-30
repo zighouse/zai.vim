@@ -11,9 +11,13 @@ from __future__ import annotations
 
 import logging
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Optional
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from paths import get_skills_dir
 
 from .skill_audit import SkillAuditLogger
 from .skill_installer import SkillInstaller
@@ -114,9 +118,7 @@ class SkillUpdater:
                  skill_dir: Optional[Path] = None,
                  audit_logger: Optional[SkillAuditLogger] = None):
         self._registry = registry
-        self._skill_dir = skill_dir or (
-            Path.home() / ".local" / "share" / "zai" / "skills"
-        )
+        self._skill_dir = skill_dir or get_skills_dir()
         self._installer = SkillInstaller(
             registry=registry, skill_dir=self._skill_dir
         )

@@ -9,7 +9,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union, List, Dict, Any
-from appdirs import user_data_dir
+
+from paths import get_log_dir
 
 def get_char_width(char):
     # 基本多文种平面（BMP）中的全角字符
@@ -66,7 +67,7 @@ class Logger:
             self._log_path = None
             return True
         if not log_dir:
-            log_dir = Path(user_data_dir("zai", "zighouse")) / "log"
+            log_dir = get_log_dir()
         try:
             if isinstance(log_dir, str):
                 log_dir = Path(log_dir)

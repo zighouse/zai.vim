@@ -9,7 +9,8 @@ import sys
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
-from appdirs import user_data_dir
+
+from paths import get_user_dir
 
 # YAML support
 try:

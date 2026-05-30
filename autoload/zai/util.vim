@@ -15,18 +15,27 @@ let s:extra_fzf_opts = [
                         \ '--bind', 'ctrl-/:toggle-preview',
                         \ ]
 
+if exists('g:zai_user_dir')
+    let s:user_dir = fnameescape(g:zai_user_dir)
+elseif isdirectory(expand('~/.zai'))
+    let s:user_dir = expand('~/.zai')
+elseif has('win32')
+    let s:user_dir = expand('~/AppData/Local/Zighouse/Zai')
+else
+    let s:user_dir = expand('~/.local/share/zai')
+endif
 if exists('g:zai_log_dir')
     let s:log_dir = fnameescape(g:zai_log_dir)
 else
-    if has('win32')
-        let s:log_dir = expand('~/AppData/Local/Zighouse/Zai/Log')
-    else
-        let s:log_dir = expand('~/.local/share/zai/log')
-    endif
+    let s:log_dir = s:user_dir . '/log'
 endif
 
 function! zai#util#log_path()
     return s:log_dir
+endfunction
+
+function! zai#util#user_dir()
+    return s:user_dir
 endfunction
 
 function! zai#util#get_file_type()

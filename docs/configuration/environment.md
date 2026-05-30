@@ -81,8 +81,8 @@ set ZAI_LOG_DIR=C:\custom\path\to\logs
 ```
 
 **Default:**
-- Linux/Mac: `~/.local/share/zai/log`
-- Windows: `%USERPROFILE%\AppData\Local\zai\log`
+- Linux/Mac: `~/.zai/log`
+- Windows: `%USERPROFILE%\.zai\log`
 
 ### Sandbox Directory
 
@@ -92,7 +92,7 @@ Set the default sandbox directory for file operations.
 export ZAI_SANDBOX_HOME="/custom/sandbox/path"
 ```
 
-**Default:** `~/.local/share/zai/sandbox`
+**Default:** `~/.zai/sandbox`
 
 ### ASR Server URL
 
@@ -224,8 +224,8 @@ export DEEPSEEK_API_KEY=sk-********************************
 export OPENAI_API_KEY=sk-********************************
 
 # Zai Configuration
-export ZAI_LOG_DIR="$HOME/.local/share/zai/log"
-export ZAI_SANDBOX_HOME="$HOME/.local/share/zai/sandbox"
+export ZAI_LOG_DIR="$HOME/.zai/log"
+export ZAI_SANDBOX_HOME="$HOME/.zai/sandbox"
 export ZAI_LANG="en_US.UTF-8"
 
 # ASR Configuration
@@ -263,8 +263,8 @@ set -x DEEPSEEK_API_KEY sk-********************************
 set -x OPENAI_API_KEY sk-********************************
 
 # Zai Configuration
-set -x ZAI_LOG_DIR "$HOME/.local/share/zai/log"
-set -x ZAI_SANDBOX_HOME "$HOME/.local/share/zai/sandbox"
+set -x ZAI_LOG_DIR "$HOME/.zai/log"
+set -x ZAI_SANDBOX_HOME "$HOME/.zai/sandbox"
 set -x ZAI_LANG "en_US.UTF-8"
 ```
 

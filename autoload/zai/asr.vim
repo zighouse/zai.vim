@@ -23,7 +23,7 @@ let s:plugin_root = expand('<sfile>:h:h:h')
 let s:path_sep = has('win32') ? '\' : '/'
 
 " ZASR deployment directory
-let s:zasr_deploy_dir = expand('~/.local/share/zai/zasr')
+let s:zasr_deploy_dir = zai#util#user_dir() . '/zasr'
 
 " ZASR control script
 let s:zasrctl = s:zasr_deploy_dir . s:path_sep . 'scripts' . s:path_sep . 'zasrctl'

@@ -14,13 +14,13 @@ The `assistants.yaml` file allows you to define multiple AI providers (assistant
 
 | Platform | Path |
 |----------|------|
-| Linux/Mac | `~/.local/share/zai/assistants.yaml` |
-| Windows | `%USERPROFILE%\AppData\Local\Zai\assistants.yaml` |
+| Linux/Mac | `~/.zai/assistants.yaml` |
+| Windows | `%USERPROFILE%\.zai\assistants.yaml` |
 
 Create the directory if it doesn't exist:
 
 ```bash
-mkdir -p ~/.local/share/zai
+mkdir -p ~/.zai
 ```
 
 ## Configuration File Format
@@ -362,8 +362,8 @@ Let each session choose its provider:
 
 **Solution:**
 1. Check spelling: `:list ai`
-2. Verify file exists: `ls ~/.local/share/zai/assistants.yaml`
-3. Check YAML syntax: `yamllint ~/.local/share/zai/assistants.yaml`
+2. Verify file exists: `ls ~/.zai/assistants.yaml`
+3. Check YAML syntax: `yamllint ~/.zai/assistants.yaml`
 
 ### Model Not Available
 

@@ -12,12 +12,12 @@ Configure where Zai saves conversation logs.
 
 ```vim
 " Set log directory
-let g:zai_log_dir = "~/.local/share/zai/log"
+let g:zai_log_dir = "~/.zai/log"
 ```
 
 **Default values:**
-- Linux/Mac: `~/.local/share/zai/log`
-- Windows: `%USERPROFILE%\AppData\Local\zai\log`
+- Linux/Mac: `~/.zai/log`
+- Windows: `%USERPROFILE%\.zai\log`
 
 **Recommendation:** On Windows, configure a custom path since the default is hidden.
 
@@ -137,7 +137,7 @@ See [Voice Input Setup](../installation/asr.md) for complete ASR configuration.
 let g:zai_use_ai = "deepseek"
 
 " Optional: Set log directory
-let g:zai_log_dir = "~/.local/share/zai/log"
+let g:zai_log_dir = "~/.zai/log"
 
 " Optional: Set language
 let g:zai_lang = 'en_US.UTF-8'
@@ -151,7 +151,7 @@ let g:zai_lang = 'en_US.UTF-8'
 " === Zai.Vim Configuration ===
 
 " Log directory
-let g:zai_log_dir = "~/.local/share/zai/log"
+let g:zai_log_dir = "~/.zai/log"
 
 " Interface language
 let g:zai_lang = 'en_US.UTF-8'
@@ -175,7 +175,7 @@ When the same setting is defined in multiple places:
 
 1. **Session Commands** (highest priority) - Runtime overrides
 2. **Project Configuration** - `.zai/zai_project.yaml`
-3. **User Configuration** - `~/.local/share/zai/assistants.yaml`
+3. **User Configuration** - `~/.zai/assistants.yaml`
 4. **Vim Configuration** - `.vimrc` settings
 5. **Defaults** - Hardcoded defaults (lowest priority)
 

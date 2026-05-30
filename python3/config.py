@@ -9,7 +9,8 @@ import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Any, Union, Optional
-from appdirs import user_data_dir
+
+from paths import get_user_dir, get_config_dir
 
 try:
     import yaml
@@ -71,7 +72,7 @@ def config_path_assistants() -> str:
     Prefers YAML over JSON if YAML file exists.
     If neither exists, returns YAML path for new configuration.
     """
-    conf_dir = Path(user_data_dir("zai", "zighouse"))
+    conf_dir = get_user_dir()
     try:
         conf_dir.mkdir(parents=True, exist_ok=True)
     except:
@@ -119,7 +120,7 @@ def convert_assistants_json_to_yaml() -> bool:
     Convert assistants.json to assistants.yaml if exists.
     Returns True if conversion successful or YAML already exists.
     """
-    conf_dir = Path(user_data_dir("zai", "zighouse"))
+    conf_dir = get_user_dir()
     json_path = conf_dir / "assistants.json"
     yaml_path = conf_dir / "assistants.yaml"
 
@@ -211,7 +212,7 @@ class AIAssistantManager:
         Prefers YAML if exists, falls back to JSON.
         If only JSON exists and YAML support is available, auto-convert to YAML.
         """
-        conf_dir = Path(user_data_dir("zai", "zighouse"))
+        conf_dir = get_user_dir()
         yaml_path = conf_dir / "assistants.yaml"
         json_path = conf_dir / "assistants.json"
 
@@ -369,7 +370,7 @@ class AIAssistantManager:
                     print(f"{mark}{id} - {provider['name']}")
                     id = id + 1
             # Show actual config file being used
-            conf_dir = Path(user_data_dir("zai", "zighouse"))
+            conf_dir = get_user_dir()
             yaml_path = conf_dir / "assistants.yaml"
             json_path = conf_dir / "assistants.json"
             if yaml_path.is_file():

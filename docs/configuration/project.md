@@ -47,7 +47,7 @@ Configure where file-related tools can operate.
 
 ### Default Value
 
-If not specified: `~/.local/share/zai/sandbox`
+If not specified: `~/.zai/sandbox`
 
 ### Security
 

@@ -136,7 +136,7 @@ python3 python3/install.py --optional asr
 The installer will:
 - Check for zasr project (expects it at `~/mywork/github/zasr`)
 - Build zasr-server from source if needed
-- Install to `~/.local/share/zai/zasr`
+- Install to `~/.zai/zasr`
 - Guide you through model selection
 - Show memory and disk requirements
 
@@ -165,18 +165,18 @@ make -j$(nproc)
 2. **Install to deployment directory**:
 
 ```bash
-# Install zasr to ~/.local/share/zai/zasr
-./scripts/install.sh --dir ~/.local/share/zai/zasr --from-binary
+# Install zasr to ~/.zai/zasr
+./scripts/install.sh --dir ~/.zai/zasr --from-binary
 ```
 
 3. **Download ASR models**:
 
 ```bash
 # Interactive model download
-~/.local/share/zai/zasr/scripts/download-models.sh
+~/.zai/zasr/scripts/download-models.sh
 
 # Or download all models
-~/.local/share/zai/zasr/scripts/download-models.sh --type all
+~/.zai/zasr/scripts/download-models.sh --type all
 ```
 
 **Model Options**:
@@ -188,13 +188,13 @@ make -j$(nproc)
 
 ```bash
 # Using the control script (recommended)
-~/.local/share/zai/zasr/scripts/zasrctl start
+~/.zai/zasr/scripts/zasrctl start
 
 # Check status
-~/.local/share/zai/zasr/scripts/zasrctl status
+~/.zai/zasr/scripts/zasrctl status
 
 # Stop server
-~/.local/share/zai/zasr/scripts/zasrctl stop
+~/.zai/zasr/scripts/zasrctl stop
 ```
 
 5. **Install Python dependencies for ASR**:
@@ -256,8 +256,8 @@ For more information about zasr-server, visit: https://github.com/zighouse/zasr
 `g:zai_log_dir` configures the log file storage path.
 
 Default paths:
-- Linux/Mac: `~/.local/share/zai/log`
-- Windows: `%USERPROFILE%\AppData\Local\zai\log`
+- Linux/Mac: `~/.zai/log`
+- Windows: `%USERPROFILE%\.zai\log`
 
 Recommendation: Configure a custom log path on Windows as the default path is system-hidden.
 
@@ -288,8 +288,8 @@ DEEPSEEK_API_KEY=sk-********************************
 
 When multiple AI models can be used, or multiple AI assistant services are available, you can provide a YAML file as the AI assistants configuration on this location:
 
-* Linux/Mac: ~/.local/share/zai/assistants.yaml
-* Windows: %USERPROFILE%\AppData\Local\Zai\assistants.yaml
+* Linux/Mac: ~/.zai/assistants.yaml
+* Windows: %USERPROFILE%\.zai\assistants.yaml
 
 Sample code of assistants.yaml:
 ```yaml
@@ -926,7 +926,7 @@ Add the following fields to your project configuration:
 
 ### Configuration Fields
 
-- `sandbox_home`: Directory for sandboxed file operations. Defaults to `~/.local/share/zai/sandbox`.
+- `sandbox_home`: Directory for sandboxed file operations. Defaults to `~/.zai/sandbox`.
 - `shell_container`: Configuration for the `tool_shell` Docker container.
   - `image`: Docker image name (default: `taskbox:latest`)
   - `name`: Container name (default: `zai-tool-shell-taskbox`)
@@ -960,7 +960,7 @@ The tool automatically uses project configuration if available, otherwise uses d
 
 All shell command executions are automatically logged for security auditing.
 
-**Log location**: `~/.local/share/zai/audit/audit-YYYY-MM-DD.jsonl`
+**Log location**: `~/.zai/audit/audit-YYYY-MM-DD.jsonl`
 
 **Features**:
 - JSONL format with sanitized credentials

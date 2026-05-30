@@ -14,6 +14,7 @@ from pathlib import Path
 # Ensure skills package is importable
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from paths import get_project_skills_dir
 from skills.skill_installer import SkillInstaller
 from skills.skill_registry import SkillRegistry
 from skills.skill_updater import SkillUpdater
@@ -26,7 +27,7 @@ def _get_registry(project_dir: str | None = None) -> SkillRegistry:
     proj = Path(project_dir) if project_dir else None
     # Check for .skills/ in current directory
     if proj is None:
-        cwd_skills = Path.cwd() / ".skills"
+        cwd_skills = get_project_skills_dir()
         if cwd_skills.is_dir():
             proj = cwd_skills
     reg = SkillRegistry(project_dir=proj)
@@ -43,7 +44,7 @@ def cmd_skill_list(filter_domain: str = "") -> str:
         skills = [s for s in skills if str(s.security_domain) == filter_domain]
 
     if not skills:
-        return "No skills installed. Put skills in ~/.local/share/zai/skills/ or .skills/"
+        return "No skills installed. Put skills in ~/.zai/skills/ or .zai/skills/"
 
     skills.sort(key=lambda s: s.name)
 

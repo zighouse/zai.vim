@@ -12,12 +12,16 @@ import hmac
 import logging
 import re
 import shutil
+import sys
 import tarfile
 import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Optional
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from paths import get_skills_dir
 
 from .skill_parser import parse
 from .skill_registry import SkillRegistry
@@ -82,9 +86,7 @@ class SkillInstaller:
     def __init__(self, registry: SkillRegistry,
                  skill_dir: Optional[Path] = None):
         self._registry = registry
-        self._skill_dir = skill_dir or (
-            Path.home() / ".local" / "share" / "zai" / "skills"
-        )
+        self._skill_dir = skill_dir or get_skills_dir()
         self._skill_dir.mkdir(parents=True, exist_ok=True)
 
     def install_from_url(

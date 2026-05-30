@@ -22,14 +22,14 @@ from typing import Dict, List, Any, Optional
 
 import requests
 
-from appdirs import user_data_dir
+from paths import get_user_dir
 
 
 class SearXNGClient:
     """SearXNG client with auto-start functionality"""
 
     def __init__(self):
-        self._config_dir = Path(user_data_dir("zai", "zighouse"))
+        self._config_dir = get_user_dir()
         self._settings_path = self._config_dir / "searxng-settings.yaml"
         self._startup_script = self._config_dir / "start-searxng.sh"
         self._base_url = "http://127.0.0.1:8080"

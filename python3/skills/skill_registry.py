@@ -5,7 +5,7 @@ Two-level architecture:
 - Level 1: Lightweight index (frontmatter only, loaded at startup)
 - Level 2: Full metadata (loaded on demand when skill details needed)
 
-Priority: project .skills/ > user ~/.local/share/zai/skills/
+Priority: project .zai/skills/ > user skills dir
 """
 
 from __future__ import annotations
@@ -13,8 +13,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from pathlib import Path
 from typing import Any
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from paths import get_skills_dir, get_project_skills_dir
 
 from .skill_parser import parse, parse_index_only
 from .skill_types import (
@@ -29,7 +34,7 @@ from .skill_types import (
 
 logger = logging.getLogger(__name__)
 
-_USER_SKILL_DIR = Path.home() / ".local" / "share" / "zai" / "skills"
+_USER_SKILL_DIR = get_skills_dir()
 _MANIFEST_FILE = ".scan-manifest.json"
 
 

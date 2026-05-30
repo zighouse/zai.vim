@@ -10,9 +10,13 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Optional
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from paths import get_skills_dir
 
 from .skill_types import SecurityDomain
 
@@ -20,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_THRESHOLD = 5  # uses in window
 _DEFAULT_WINDOW_DAYS = 7
-_SKILLS_DIR = Path.home() / ".local" / "share" / "zai" / "skills"
+_SKILLS_DIR = get_skills_dir()
 
 
 def _domain_rank(domain: str) -> int:

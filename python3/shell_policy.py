@@ -393,8 +393,8 @@ class PermissionEngine:
         self._file_mtimes = {}
         # User policy file
         try:
-            from appdirs import user_data_dir
-            conf_dir = Path(user_data_dir("zai", "zighouse"))
+            from paths import get_user_dir
+            conf_dir = get_user_dir()
             user_file = conf_dir / PolicyLoader.USER_POLICY_FILENAME
             if user_file.is_file():
                 self._file_mtimes[str(user_file)] = user_file.stat().st_mtime
@@ -868,6 +868,6 @@ def get_permission_engine() -> PermissionEngine:
     """Get or create the singleton PermissionEngine."""
     global _engine
     if _engine is None:
-        from appdirs import user_data_dir
-        _engine = PermissionEngine(user_data_dir)
+        from paths import get_user_dir
+        _engine = PermissionEngine(lambda _a, _b: str(get_user_dir()))
     return _engine

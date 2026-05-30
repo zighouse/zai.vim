@@ -224,10 +224,10 @@ Remove Zai-related lines from:
 
 ```bash
 # Remove logs and data
-rm -rf ~/.local/share/zai
+rm -rf ~/.zai
 
 # Windows
-rmdir /s %USERPROFILE%\AppData\Local\Zai
+rmdir /s %USERPROFILE%\.zai
 ```
 
 ## Installation Verification

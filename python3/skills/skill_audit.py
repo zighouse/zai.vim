@@ -11,14 +11,18 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from paths import get_user_dir
+
 logger = logging.getLogger(__name__)
 
-_DEFAULT_LOG_DIR = Path.home() / ".local" / "share" / "zai"
+_DEFAULT_LOG_DIR = get_user_dir()
 _DEFAULT_LOG_FILE = "skill-audit.jsonl"
 
 

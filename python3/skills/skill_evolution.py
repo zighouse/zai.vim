@@ -7,7 +7,7 @@ Manages progressive trust levels:
 - L3/L2 → L1 on security event detection
 - Manual override via :ZaiSkillTrust command
 
-State persisted to ~/.local/share/zai/skill-state.yaml with HMAC integrity.
+State persisted to ~/.zai/skill-state.yaml with HMAC integrity.
 """
 
 from __future__ import annotations
@@ -17,11 +17,15 @@ import hmac
 import json
 import logging
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 import yaml
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from paths import get_skill_state_file
 
 from .skill_types import (
     ErrorCode,
@@ -32,7 +36,7 @@ from .skill_types import (
 
 logger = logging.getLogger(__name__)
 
-_STATE_FILE = Path.home() / ".local" / "share" / "zai" / "skill-state.yaml"
+_STATE_FILE = get_skill_state_file()
 _HMAC_KEY_ENV = "ZAI_SKILL_STATE_HMAC_KEY"
 _L2_THRESHOLD = 3   # safe uses to upgrade L1→L2
 _L3_THRESHOLD = 20  # safe uses to upgrade L2→L3

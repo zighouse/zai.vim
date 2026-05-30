@@ -11,7 +11,7 @@ Each line in the session file is a complete JSON object, making it crash-safe an
 suitable for append-only writes.
 
 Session data is stored in:
-    ~/.local/share/zai/sessions/<sanitized-project-path>/<sessionId>.jsonl
+    ~/.zai/sessions/<sanitized-project-path>/<sessionId>.jsonl
 
 The JSONL format is machine-readable and complementary to the Markdown audit logs
 produced by Logger. Both systems run in parallel.
@@ -27,7 +27,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from appdirs import user_data_dir
+from paths import get_sessions_dir as _get_base_sessions_dir
 
 
 # 默认配置
@@ -53,10 +53,10 @@ def get_sessions_dir(project_path: Optional[str] = None) -> Path:
                       如果为 None，使用 _get_working_dir()。
 
     Returns:
-        ~/.local/share/zai/sessions/<sanitized-project-path>/
+        ~/.zai/sessions/<sanitized-project-path>/
     """
     path = project_path or _get_working_dir()
-    base_dir = Path(user_data_dir("zai", "zighouse")) / "sessions"
+    base_dir = _get_base_sessions_dir()
     project_dir_name = sanitize_path(path)
     session_dir = base_dir / project_dir_name
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -141,7 +141,7 @@ class SessionWriter:
         返回会话存储目录
 
         Returns:
-            ~/.local/share/zai/sessions/<sanitized-project-path>/
+            ~/.zai/sessions/<sanitized-project-path>/
         """
         return get_sessions_dir(self._project_path)
 
@@ -481,7 +481,7 @@ class SessionLoader:
             project_path: 项目路径，默认使用 self._project_path
 
         Returns:
-            ~/.local/share/zai/sessions/<sanitized-project-path>/
+            ~/.zai/sessions/<sanitized-project-path>/
         """
         return get_sessions_dir(project_path or self._project_path)
 
