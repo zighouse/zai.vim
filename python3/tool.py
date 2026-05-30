@@ -192,10 +192,14 @@ class ToolPool:
             truncated = True
             # Write the full content to a temp file
             file_path = self._write_large_result(function_name, serialized)
-            # Truncate the in-memory content with a notice
+            # Build a helpful truncation notice with pagination hint
+            continuation_hint = ""
+            if function_name == "read_file":
+                continuation_hint = " 使用 offset 参数继续读取后续内容。"
             serialized = (
                 f"{serialized[: spec.max_result_size]}\n\n"
-                f"[结果被截断: 完整内容 ({result_chars} 字符) 已写入 {file_path}]"
+                f"[截断: 仅显示了 {spec.max_result_size} 字符。"
+                f"{continuation_hint}]"
             )
 
         # Post-tool hooks

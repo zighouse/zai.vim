@@ -110,8 +110,14 @@ def invoke_ls(path: str = "") -> str:
         return f"错误：{str(e)}"
 
 
-def invoke_read_file(path: str) -> str:
-    """读取沙盒内的文件内容"""
+def invoke_read_file(path: str, offset: int = 0, limit: int = None) -> str:
+    """读取沙盒内的文件内容，支持分页读取。
+
+    Args:
+        path: 文件路径
+        offset: 起始字符偏移量 (0-based)，默认 0
+        limit: 最大读取字符数，默认 None 表示不限
+    """
     try:
         target_file = sanitize_path(path)
 
@@ -121,8 +127,25 @@ def invoke_read_file(path: str) -> str:
         if not target_file.is_file():
             return f"错误：'{path}' 不是文件"
 
+        if offset < 0:
+            return f"错误：offset 不能为负数"
+        if limit is not None and limit <= 0:
+            return f"错误：limit 必须大于 0"
+
         with open(target_file, 'r', encoding='utf-8') as f:
-            return f.read()
+            if offset > 0:
+                f.seek(offset)
+            content = f.read(limit) if limit else f.read()
+
+        # If offset was used, include context so the AI knows where it is
+        if offset > 0:
+            prefix = f"[从 offset={offset} 开始读取"
+            if limit:
+                prefix += f", 最多 {limit} 字符"
+            prefix += f"]\n"
+            content = prefix + content
+
+        return content
 
     except ValueError as e:
         return f"安全错误：{e}"

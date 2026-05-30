@@ -191,13 +191,21 @@
     "prompt": "这是读取文件内容的主要工具。支持文本文件、图片（PNG/JPG）、PDF 文件。读取过大的文件可能因最大输入 tokens 而受限，调用需要谨慎。",
     "function": {
       "name": "read_file",
-      "description": "读取文件（支持文本文件、图片文件、PDF 文件）。读取过大的文件可能因最大输入 tokens 而受限制，调用需要谨慎。",
+      "description": "读取文件（支持文本文件、图片文件、PDF 文件）。大文件会被截断，使用 offset 参数继续读取后续内容。",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
             "type": "string",
             "description": "文件路径"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "起始字符偏移量（0-based），用于继续读取被截断的大文件。截断提示中会告知下次应使用的 offset 值。"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "最多读取的字符数，不指定则读取尽可能多的内容（受输出上限限制）。"
           }
         },
         "required": ["path"]
