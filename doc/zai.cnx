@@ -307,7 +307,7 @@ SearXNG 元搜索引擎集成。
 
 用户配置: ~/.zaivim/assistants.yaml
 
-项目配置: .zaivim/zai_project.yaml
+项目配置: .zaivim/project.yaml
 
 详细说明: https://github.com/zighouse/zai.vim/blob/main/docs/configuration/
 

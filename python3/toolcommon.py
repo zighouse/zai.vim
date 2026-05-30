@@ -75,8 +75,8 @@ def set_sandbox_home(new_path: str):
 
 def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> Optional[Path]:
     """
-    从指定路径开始向上遍历目录树，查找 .zaivim/zai_project.yaml 文件。
-    为了兼容性，也支持旧格式的 zai_project.yaml 文件。
+    从指定路径开始向上遍历目录树，查找 .zaivim/project.yaml 文件。
+    为了兼容性，也支持旧格式的配置文件。
 
     Args:
         start_path: 起始路径（默认为当前工作目录）
@@ -85,33 +85,38 @@ def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> 
         找到的配置文件路径，如果未找到则返回 None
     """
     if start_path is None:
-        # 优先使用 Vim 传递的工作目录，否则使用 Python 进程的工作目录
         start_path = os.getenv('ZAI_VIM_CWD') or os.getcwd()
     current = Path(start_path).resolve()
-    
-    # 如果 start_path 是文件，则从其所在目录开始查找
+
     if current.is_file():
         current = current.parent
-    
-    # 向上遍历目录树
+
     while True:
-        # 优先检查新格式：.zaivim/zai_project.yaml
-        new_format_file = current / ".zaivim" / "zai_project.yaml"
-        if new_format_file.is_file():
-            return new_format_file
+        # 新格式：.zaivim/project.yaml
+        new_file = current / ".zaivim" / "project.yaml"
+        if new_file.is_file():
+            return new_file
 
-        # 兼容旧格式：.zai/zai_project.yaml
-        legacy_format_file = current / ".zai" / "zai_project.yaml"
-        if legacy_format_file.is_file():
-            return legacy_format_file
+        # 兼容：.zaivim/zai_project.yaml
+        compat1 = current / ".zaivim" / "zai_project.yaml"
+        if compat1.is_file():
+            return compat1
 
-        # 为了兼容性，检查旧格式：zai_project.yaml
-        old_format_file = current / "zai_project.yaml"
-        if old_format_file.is_file() and current.name not in (".zaivim", ".zai"):
-            print(f"警告: 使用旧格式配置文件 {old_format_file}，建议迁移到 .zaivim/zai_project.yaml", file=sys.stderr)
-            return old_format_file
-        
-        # 到达根目录时停止
+        # 兼容：.zai/zai_project.yaml
+        compat2 = current / ".zai" / "zai_project.yaml"
+        if compat2.is_file():
+            return compat2
+
+        # 旧格式：zai_project.yaml（项目根目录）
+        old_file = current / "zai_project.yaml"
+        if old_file.is_file() and current.name not in (".zaivim", ".zai"):
+            print(f"警告: 使用旧格式配置文件 {old_file}，建议迁移到 .zaivim/project.yaml", file=sys.stderr)
+            return old_file
+
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
         parent = current.parent
         if parent == current:
             break
@@ -255,8 +260,8 @@ def sandbox_home(cwd: Optional[Union[str, Path]] = None) -> Path:
         print(f"警告：无法从项目配置获取沙盒目录：{e}", file=sys.stderr)
 
     # 找到项目根目录作为默认 sandbox。
-    # 新格式 .zaivim/zai_project.yaml → parent.parent = 项目根
-    # 旧格式 zai_project.yaml → parent = 项目根
+    # 新格式 .zaivim/project.yaml → parent.parent = 项目根
+    # 旧格式 project.yaml → parent = 项目根
     config_file = _find_project_config_file(cwd)
     if config_file is not None:
         project_root = config_file.parent

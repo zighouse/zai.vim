@@ -775,19 +775,19 @@ Change prefix example:
 
 ## Project Configuration
 
-Zai supports project-level configuration through a `.zaivim/zai_project.yaml` file (or `zai_project.yaml` for backward compatibility) in your project directory. This allows you to define project-specific settings like sandbox directory and Docker container configuration for the `tool_shell` tool.
+Zai supports project-level configuration through a `.zaivim/project.yaml` file (or `project.yaml` for backward compatibility) in your project directory. This allows you to define project-specific settings like sandbox directory and Docker container configuration for the `tool_shell` tool.
 
 ### Configuration File Location
 
 The configuration file is searched upward from the current working directory:
-- `.zaivim/zai_project.yaml` (new format)
-- `zai_project.yaml` (legacy format, prints warning)
+- `.zaivim/project.yaml` (new format)
+- `project.yaml` (legacy format, prints warning)
 
 ### Configuration Structure
 
 The configuration file should contain a list of configuration objects. The first one is used for the current project.
 
-Example `.zaivim/zai_project.yaml`:
+Example `.zaivim/project.yaml`:
 ```yaml
 - sandbox_home: /path/to/project/sandbox
   shell_container:
@@ -818,7 +818,7 @@ Example `.zaivim/zai_project.yaml`:
 
 ### Container Startup Installations
 
-Zai now supports automatic software installation when a Docker container starts. You can define packages to be installed in the `zai_project.yaml` file, and they will be automatically installed when the container is created or started.
+Zai now supports automatic software installation when a Docker container starts. You can define packages to be installed in the `project.yaml` file, and they will be automatically installed when the container is created or started.
 
 #### Installation Configuration Fields
 

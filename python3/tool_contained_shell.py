@@ -9,7 +9,7 @@ Shell工具集 - 使用taskbox Docker容器安全地执行shell和Python命令
 完全基于Docker Python SDK，避免subprocess注入风险
 基于taskbox镜像：ubuntu/debian + Python 3.12 + C/C++工具链 + ccache
 支持持久化容器，跨调用保持状态（安装的依赖、文件等）
-支持项目级配置：通过.zaivim/zai_project.yaml文件配置Docker容器参数
+支持项目级配置：通过.zaivim/project.yaml文件配置Docker容器参数
 """
 
 import json
@@ -50,7 +50,7 @@ DEFAULT_CONTAINER_NAME = "zai-taskbox"
 class TaskboxExecutor:
     """
     使用taskbox Docker容器执行命令，完全基于Docker SDK，支持持久化容器
-    支持从.zaivim/zai_project.yaml加载项目级配置
+    支持从.zaivim/project.yaml加载项目级配置
     """
     
     def __init__(self, image: str = DEFAULT_IMAGE, persistent: bool = True):

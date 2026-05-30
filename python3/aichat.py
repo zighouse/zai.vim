@@ -1829,7 +1829,7 @@ class AIChat:
         self._logger.open(log_dir, log_filename)
 
     def _load_project_hooks(self):
-        """Load tool hooks from project configuration (zai_project.yaml)."""
+        """Load tool hooks from project configuration (project.yaml)."""
         try:
             from toolcommon import get_project_config
             config = get_project_config()

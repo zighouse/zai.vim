@@ -186,7 +186,7 @@ export ZAI_ASSISTANTS_CONFIG="/custom/path/assistants.yaml"
 Override project config search path.
 
 ```bash
-export ZAI_PROJECT_CONFIG="/custom/path/zai_project.yaml"
+export ZAI_PROJECT_CONFIG="/custom/path/project.yaml"
 ```
 
 ## Debug Variables

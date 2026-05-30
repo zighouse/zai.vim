@@ -385,7 +385,7 @@ class HookManager:
         return False
 
     def load_from_project_config(self, project_config: dict):
-        """Load hooks from project configuration dict (zai_project.yaml)."""
+        """Load hooks from project configuration dict (project.yaml)."""
         self.load_from_dict(project_config)
 
     # ---- Hook execution ----

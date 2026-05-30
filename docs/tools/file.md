@@ -154,7 +154,7 @@ Source Code: [`python3/tool_file.py`](../../python3/tool_file.py)
 The `file` tool can be configured through:
 
 - **User Config**: `~/.zaivim/assistants.yaml`
-- **Project Config**: `.zaivim/zai_project.yaml`
+- **Project Config**: `.zaivim/project.yaml`
 
 ## Usage Examples
 

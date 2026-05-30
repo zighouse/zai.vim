@@ -34,7 +34,7 @@ Source Code: [`python3/tool_archive.py`](../../python3/tool_archive.py)
 The `archive` tool can be configured through:
 
 - **User Config**: `~/.zaivim/assistants.yaml`
-- **Project Config**: `.zaivim/zai_project.yaml`
+- **Project Config**: `.zaivim/project.yaml`
 
 ## Usage Examples
 

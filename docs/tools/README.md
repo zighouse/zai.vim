@@ -215,7 +215,7 @@ Tools can be configured through:
    - Default model settings
    - Tool-specific settings
 
-2. **Project Configuration** (`.zaivim/zai_project.yaml`)
+2. **Project Configuration** (`.zaivim/project.yaml`)
    - Project-specific tool settings
    - Sandbox directories
    - Docker container settings

@@ -174,7 +174,7 @@ nnoremap <leader>zl :ZaiLoad<CR>
 When the same setting is defined in multiple places:
 
 1. **Session Commands** (highest priority) - Runtime overrides
-2. **Project Configuration** - `.zaivim/zai_project.yaml`
+2. **Project Configuration** - `.zaivim/project.yaml`
 3. **User Configuration** - `~/.zaivim/assistants.yaml`
 4. **Vim Configuration** - `.vimrc` settings
 5. **Defaults** - Hardcoded defaults (lowest priority)
