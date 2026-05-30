@@ -34,6 +34,7 @@ DEFAULT_FIRST_CLASS_TOOLS = {
     "shell_abort",     # shell (abort running command)
     "web_search",      # web
     "web_get_content", # web
+    "skill",           # skill invocation
 }
 
 

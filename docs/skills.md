@@ -90,6 +90,36 @@ You can also have the AI deploy for you — it will call `skill_deploy` and ask 
 Copies `.zaivim/skills/<name>/` to `~/.zaivim/skills/<name>/`, making it available globally.
 The skill is validated before deployment — invalid SKILL.md files are rejected.
 
+## Model Compatibility
+
+Skills rely on the AI model's ability to reason about available tools before acting. This means **thinking/reasoning mode significantly affects skill discovery quality**.
+
+### Recommended: Thinking Mode Enabled
+
+Models with thinking enabled (e.g., `extra_body: {thinking: {type: enabled}}`) reason about the `## Available Skills` section in the system prompt and proactively call the `skill` tool when a user request matches a registered skill. This produces the best results — the model follows the skill's SKILL.md instructions, which often include best practices like preserving original files.
+
+### Known Limitation: Thinking Mode Disabled
+
+Models with thinking disabled (`thinking: {type: disabled}`) or models that lack reasoning capability tend to skip skill discovery. They see the same system prompt and tool list, but act reflexively — reaching for the most obvious tool (`read_file`, `write_file`) without considering registered skills. This can lead to:
+
+- Skills being ignored entirely
+- Suboptimal behavior (e.g., overwriting original files instead of creating translations with a `.zh.md` suffix)
+
+### Configuration Tip
+
+For best skill support, prefer models with thinking enabled. In `assistants.yaml`:
+
+```yaml
+# Good — thinking enabled, skills work reliably
+params:
+  extra_body: {thinking: {type: enabled}}
+  reasoning_effort: high
+
+# Skills may be ignored — thinking disabled
+params:
+  extra_body: {thinking: {type: disabled}}
+```
+
 ## SKILL.md Format
 
 Every skill is a directory containing a `SKILL.md` file. The file uses YAML frontmatter for structured metadata and Markdown body for usage instructions.

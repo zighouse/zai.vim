@@ -179,3 +179,103 @@ def invoke_skill_deploy(name: str, force: bool = False) -> str:
         f"  To:   {dst}\n"
         f"Use :ZaiSkillList to verify."
     )
+
+
+# ---------------------------------------------------------------------------
+# Skill invocation — loads SKILL.md content for LLM-driven execution
+# ---------------------------------------------------------------------------
+
+# Cached registry — scanned once per session, reused across skill invocations
+_skill_registry_cache = None
+
+
+def _get_skill_registry():
+    """Return a cached SkillRegistry, scanning only on first access."""
+    global _skill_registry_cache
+    if _skill_registry_cache is None:
+        try:
+            from skills.skill_registry import SkillRegistry
+            _skill_registry_cache = SkillRegistry()
+            _skill_registry_cache.scan(incremental=True)
+        except Exception:
+            return None
+    return _skill_registry_cache
+
+
+def invoke_skill(skill: str, args: str = "") -> str:
+    """Execute a skill by name: load its SKILL.md content and return it.
+
+    The LLM reads the returned content and follows the skill's instructions.
+    Native skills (origin=native) are loaded from SKILL.md files.
+    Adapted skills (origin=adapted) are already available as direct tools.
+
+    Args:
+        skill: Skill name in kebab-case (e.g. 'translate').
+        args: Optional invocation arguments/context.
+
+    Returns:
+        Full SKILL.md content for the LLM to follow.
+    """
+    try:
+        from skills.skill_types import SkillOrigin, SkillStatus
+    except ImportError as e:
+        return f"Skill system not available: {e}"
+
+    registry = _get_skill_registry()
+    if registry is None:
+        return "Skill system not initialized."
+
+    meta = registry.get(skill)
+    if meta is None:
+        available = [
+            m.name for m in registry.list_all()
+            if m.origin == SkillOrigin.NATIVE
+            and m.status == SkillStatus.ENABLED
+        ]
+        available_str = ", ".join(sorted(available)) if available else "(none)"
+        print(f"[skill:{skill}] NOT FOUND — available: {available_str}",
+              file=sys.stderr)
+        return (
+            f"Skill '{skill}' not found.\n"
+            f"Available native skills: {available_str}\n\n"
+            f"To see all registered skills, use :ZaiSkillList."
+        )
+
+    if meta.status == SkillStatus.DISABLED:
+        print(f"[skill:{skill}] BLOCKED — disabled", file=sys.stderr)
+        return f"Skill '{skill}' is disabled. Use :ZaiSkillEnable {skill} to enable."
+
+    if not meta.path:
+        print(f"[skill:{skill}] ERROR — no source path", file=sys.stderr)
+        return f"Skill '{skill}' has no source path — cannot load content."
+
+    # For adapted skills: they're already available as direct tools
+    if meta.origin == SkillOrigin.ADAPTED:
+        print(f"[skill:{skill}] REDIRECT — adapted, use direct tool",
+              file=sys.stderr)
+        return (
+            f"Skill '{skill}' is a system tool (adapted). "
+            f"It is already available as a direct tool function.\n\n"
+            f"Description: {meta.description}"
+        )
+
+    # Load SKILL.md content
+    try:
+        skill_path = Path(meta.path)
+        if not skill_path.is_file():
+            try:
+                skill_path = Path(meta.path) / "SKILL.md"
+            except Exception:
+                pass
+        content = skill_path.read_text(encoding="utf-8")
+    except Exception as e:
+        print(f"[skill:{skill}] ERROR — load failed: {e}", file=sys.stderr)
+        return f"Failed to load skill '{skill}' from {meta.path}: {e}"
+
+    # Append invocation args if provided
+    if args:
+        content = content.rstrip() + f"\n\n## Invocation Context\n{args}\n"
+
+    print(f"[skill:{skill}] LOADED — {len(content)} chars from {meta.path}",
+          file=sys.stderr)
+    return content

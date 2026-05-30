@@ -10,6 +10,7 @@ Provides a single entry point for invoking any registered skill with:
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -283,14 +284,57 @@ class SkillExecutor:
     def _invoke_native(
         self, meta: SkillMetadata, **kwargs: Any
     ) -> InvocationResult:
-        """Invoke a native skill (placeholder — full impl in later stories)."""
-        # Native skills will be dispatched via protocol translators.
-        # For now, return a not-yet-implemented result.
-        return InvocationResult(
-            success=False,
-            error=f"Native skill execution not yet implemented: {meta.name}",
-            error_code=ErrorCode.SKILL_EXECUTION_ERROR,
-        )
+        """Invoke a native skill by loading its SKILL.md content.
+
+        The skill content is returned so the LLM can read it and follow
+        the instructions.  This is the fallback path when skills are
+        invoked directly via SkillExecutor rather than through the
+        `skill` tool (tool_skill.py).
+        """
+        try:
+            from pathlib import Path
+            skill_path = Path(meta.path) if meta.path else None
+            if skill_path is None:
+                return InvocationResult(
+                    success=False,
+                    error=f"No source path for native skill: {meta.name}",
+                    error_code=ErrorCode.SKILL_UNAVAILABLE,
+                )
+            if not skill_path.is_file():
+                # Maybe meta.path is the directory — try dir/SKILL.md
+                skill_path = skill_path / "SKILL.md"
+            if not skill_path.is_file():
+                return InvocationResult(
+                    success=False,
+                    error=f"SKILL.md not found for: {meta.name}",
+                    error_code=ErrorCode.SKILL_UNAVAILABLE,
+                )
+
+            content = skill_path.read_text(encoding="utf-8")
+
+            # Append invocation args if provided
+            if kwargs:
+                import json
+                try:
+                    args_str = json.dumps(kwargs, ensure_ascii=False)
+                except Exception:
+                    args_str = str(kwargs)
+                content = content.rstrip() + f"\n\n## Invocation Arguments\n{args_str}\n"
+
+            return InvocationResult(
+                success=True,
+                data={"skill_content": content, "name": meta.name},
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Native skill load failed for %s: %s", meta.name, e
+            )
+            return InvocationResult(
+                success=False,
+                error=f"Failed to load skill '{meta.name}': {e}",
+                error_code=ErrorCode.SKILL_EXECUTION_ERROR,
+            )
 
     # ------------------------------------------------------------------
     # Lifecycle

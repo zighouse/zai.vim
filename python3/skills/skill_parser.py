@@ -68,6 +68,11 @@ def parse(skill_md_path: str | Path) -> SkillMetadata:
         trust_level=trust_level,
         output_schema=raw.get("output_schema", ""),
         path=str(path),
+        when_to_use=raw.get("when_to_use", ""),
+        paths=raw.get("paths", []),
+        disable_model_invocation=raw.get("disable_model_invocation", False),
+        user_invocable=raw.get("user_invocable", True),
+        tags=raw.get("tags", []),
     )
 
 
@@ -110,6 +115,11 @@ def parse_index_only(skill_md_path: str | Path) -> dict:
         "trust_level": str(
             _parse_enum(raw, "trust_level", TrustLevel, TrustLevel.L1)
         ),
+        "when_to_use": raw.get("when_to_use", ""),
+        "paths": raw.get("paths", []),
+        "disable_model_invocation": raw.get("disable_model_invocation", False),
+        "user_invocable": raw.get("user_invocable", True),
+        "tags": raw.get("tags", []),
     }
 
 
@@ -170,3 +180,13 @@ def _validate_field_types(raw: dict, filename: str) -> None:
         raise SkillParseError(f"Field 'version' must be a string in {filename}")
     if "dependencies" in raw and not isinstance(raw["dependencies"], dict):
         raise SkillParseError(f"Field 'dependencies' must be a mapping in {filename}")
+    if "when_to_use" in raw and not isinstance(raw["when_to_use"], str):
+        raise SkillParseError(f"Field 'when_to_use' must be a string in {filename}")
+    if "paths" in raw and not isinstance(raw["paths"], list):
+        raise SkillParseError(f"Field 'paths' must be a list in {filename}")
+    if "disable_model_invocation" in raw and not isinstance(raw["disable_model_invocation"], bool):
+        raise SkillParseError(f"Field 'disable_model_invocation' must be a boolean in {filename}")
+    if "user_invocable" in raw and not isinstance(raw["user_invocable"], bool):
+        raise SkillParseError(f"Field 'user_invocable' must be a boolean in {filename}")
+    if "tags" in raw and not isinstance(raw["tags"], list):
+        raise SkillParseError(f"Field 'tags' must be a list in {filename}")

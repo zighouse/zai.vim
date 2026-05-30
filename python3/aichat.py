@@ -97,6 +97,8 @@ class AIChat:
 
         # Skill system initialization (lazy — only if skills module available)
         self._skill_executor = None
+        self._skill_registry = None
+        self._skill_listing_hash = ""
         try:
             from skills.skill_registry import SkillRegistry
             from skills.skill_executor import SkillExecutor
@@ -111,6 +113,7 @@ class AIChat:
                 tool_pool=self._tool,
                 audit_logger=_audit,
             )
+            self._skill_registry = _skill_registry
         except Exception as _skill_init_ex:
             # Skill system is optional — graceful degradation
             print(f"[skill] Skill system init skipped: {_skill_init_ex}",
@@ -825,6 +828,123 @@ class AIChat:
             return parse_number_from_readable(context) or 32768
         return 32768
 
+    # ------------------------------------------------------------------
+    # Skill listing builder
+    # ------------------------------------------------------------------
+
+    def _build_skill_listing(self) -> str:
+        """Build compact skill listing for system prompt injection.
+
+        Only includes native skills that are enabled and visible to the model.
+        Uses token budget: full descriptions -> truncated -> names only.
+        """
+        registry = getattr(self, '_skill_registry', None)
+        if registry is None:
+            return ""
+
+        try:
+            from skills.skill_types import SkillOrigin, SkillStatus
+        except ImportError:
+            return ""
+
+        all_skills = registry.list_all()
+        if not all_skills:
+            return ""
+
+        # Filter: only enabled, model-visible skills
+        visible = [
+            m for m in all_skills
+            if (m.status == SkillStatus.ENABLED
+                and not getattr(m, 'disable_model_invocation', False))
+        ]
+        if not visible:
+            return ""
+
+        # Separate native from adapted/MCP
+        native = [s for s in visible
+                  if s.origin == SkillOrigin.NATIVE]
+        adapted = [s for s in visible
+                   if s.origin in (SkillOrigin.ADAPTED,
+                                   SkillOrigin.DEPRECATED_ADAPTED)]
+
+        if not native:
+            return ""  # Adapted skills are already exposed as tools
+
+        # Hash check: skip rebuild if skills haven't changed since last listing
+        import hashlib
+        payload = "|".join(
+            f"{s.name}:{s.description[:40]}:{s.status.value}"
+            for s in visible
+        )
+        current_hash = hashlib.md5(payload.encode()).hexdigest()
+        if current_hash == self._skill_listing_hash:
+            return ""  # Unchanged — suppress duplicate listing to save tokens
+        self._skill_listing_hash = current_hash
+
+        # Sort alphabetically
+        native.sort(key=lambda s: s.name)
+
+        # Build listing with token budget
+        max_context = self._get_max_context_tokens()
+        budget = max(300, int(max_context * 0.01 * 4))
+
+        is_zh = 'zh' in os.getenv('LANG', '') or 'zh' in os.getenv('LANGUAGE', '')
+        if is_zh:
+            header = ("## 可用技能 (Available Skills)\n"
+                      "你可以使用 `skill` 工具调用以下原生技能：\n\n")
+        else:
+            header = ("## Available Skills\n"
+                      "You can invoke these native skills using the `skill` tool:\n\n")
+
+        lines = [header]
+        remaining = budget - len(header)
+
+        # Phase 1: full format: - name: description | when_to_use
+        full_lines = []
+        for s in native:
+            when = getattr(s, 'when_to_use', '') or ''
+            desc = s.description or ''
+            line = f"- {s.name}: {desc}"
+            if when:
+                line += f" | {when}"
+            full_lines.append(line)
+
+        full_text = "\n".join(lines + full_lines)
+        if len(full_text) <= budget:
+            return full_text
+
+        # Phase 2: shorter descriptions (max 80 chars)
+        short_lines = []
+        for s in native:
+            desc = s.description or ''
+            if len(desc) > 80:
+                desc = desc[:77] + "..."
+            short_lines.append(f"- {s.name}: {desc}")
+
+        short_text = "\n".join(lines + short_lines)
+        if len(short_text) <= budget:
+            return short_text
+
+        # Phase 3: names only
+        name_lines = [f"- {s.name}" for s in native]
+        name_text = "\n".join(lines + name_lines)
+        if len(name_text) <= budget:
+            return name_text
+
+        # Phase 4: count-only fallback
+        native_count = len(native)
+        total_count = len(visible)
+        if is_zh:
+            return (f"## 可用技能\n"
+                    f"共 {total_count} 个技能可用 "
+                    f"({native_count} 原生, {len(adapted)} 系统). "
+                    f"使用 `:ZaiSkillList` 查看详情。")
+        else:
+            return (f"## Available Skills\n"
+                    f"{total_count} skills available "
+                    f"({native_count} native, {len(adapted)} system). "
+                    f"Use `:ZaiSkillList` for details.")
+
     def _calculate_max_history_tokens(self, current_request: Optional[Dict[str, Any]] = None) -> int:
         """
         动态计算历史可用的最大 tokens
@@ -1089,6 +1209,10 @@ class AIChat:
                 set_config(self._config)
                 sys_prompt.append(get_prompt(True))
             sys_prompt.append(self._prompt_for_title)
+            # Skill listing — dynamic discovery for native skills
+            skill_listing = self._build_skill_listing()
+            if skill_listing:
+                sys_prompt.append(skill_listing)
             if getattr(self, '_skill_hint', None):
                 sys_prompt.append(self._skill_hint)
             params['messages'][0]['content'] = "\n".join(sys_prompt)

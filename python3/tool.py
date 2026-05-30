@@ -196,6 +196,8 @@ class ToolPool:
             continuation_hint = ""
             if function_name == "read_file":
                 continuation_hint = " 使用 offset 参数继续读取后续内容。"
+            elif function_name == "skill":
+                continuation_hint = " 技能内容过长，你仍可遵循已显示的部分指令完成任务。"
             serialized = (
                 f"{serialized[: spec.max_result_size]}\n\n"
                 f"[截断: 仅显示了 {spec.max_result_size} 字符。"

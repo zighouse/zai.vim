@@ -63,5 +63,31 @@
         "required": ["name"]
       }
     }
+  },
+  {
+    "type": "function",
+    "category": "skill",
+    "is_read_only": true,
+    "is_concurrency_safe": true,
+    "max_result_size": 50000,
+    "prompt": "这是调用技能的主要工具。当需要执行某个已安装的技能时，使用此工具加载技能的完整指令。技能列表在系统提示词的 ## Available Skills 部分中。当某个技能与用户请求匹配时，这是强制要求：必须先调用 Skill 工具获取技能指令，然后再生成任何关于该任务的响应。",
+    "function": {
+      "name": "skill",
+      "description": "执行一个已命名的技能。技能是完成特定任务的文档化能力包。调用此工具以加载技能的完整指令，然后遵循这些指令完成任务。使用系统提示词中的可用技能列表（## Available Skills）来找到合适的技能。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skill": {
+            "type": "string",
+            "description": "技能名称（kebab-case，例如 'translate'、'code-review'）"
+          },
+          "args": {
+            "type": "string",
+            "description": "可选的技能调用参数或上下文。例如：'translate this text to English: hello world'"
+          }
+        },
+        "required": ["skill"]
+      }
+    }
   }
 ]

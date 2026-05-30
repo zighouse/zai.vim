@@ -98,6 +98,13 @@ class SkillMetadata:
     output_schema: str = ""
     path: str | None = None  # stored as str for JSON serialization
     status: SkillStatus = SkillStatus.ENABLED
+    # Skill discovery fields
+    when_to_use: str = ""  # hints for LLM-driven skill matching
+    paths: list[str] = field(default_factory=list)  # file patterns for conditional activation
+    disable_model_invocation: bool = False  # hide from LLM listing
+    user_invocable: bool = True  # whether user can invoke via /skillname
+    localized_descriptions: dict[str, str] = field(default_factory=dict)  # lang -> description
+    tags: list[str] = field(default_factory=list)  # auto-extracted category tags
 
 
 @dataclass
