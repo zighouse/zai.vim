@@ -1700,12 +1700,14 @@ def invoke_shell_execute(
     degraded = _check_degraded_mode(ctx)
 
     # 8. Handle ask — from L1, L2.5, L2, or degraded mode
-    # Determine if any layer requires user confirmation
+    # Determine if any layer requires user confirmation.
+    # L1 "allow" overrides L2 "ask" — if the AI classifier determined the
+    # command is safe (score >= 0.7), the L2 policy default-to-ask is lifted.
     requires_ask = (
-        l2_decision == "ask" or  # L2 asked
-        l1_decision == "ask" or  # L1 asked (score 0.3-0.7)
-        dataflow_risk or         # L2.5 detected risk
-        degraded                 # Degraded sandbox mode
+        l1_decision == "ask" or          # L1 scored 0.3-0.7 (uncertain)
+        dataflow_risk or                 # L2.5 detected risk
+        degraded or                      # Degraded sandbox mode
+        (l2_decision == "ask" and l1_decision != "allow")  # L2 asked and L1 didn't override
     )
 
     if requires_ask:
