@@ -342,6 +342,15 @@ class AIChat:
         # 更新历史：归档引用 + 最近的 window
         self._history = [archive_round] + window
 
+    @staticmethod
+    def _api_model_name(model: dict) -> str:
+        """Resolve the model identifier to send in API calls.
+
+        Uses ``api_name`` if set (the provider's model identifier),
+        otherwise falls back to ``name`` (backward compatible).
+        """
+        return model.get("api_name") or model.get("name", "")
+
     def _open_llm(self, api_key_name=None, base_url=None):
         """Open llm client with given or default parameters"""
 
@@ -395,7 +404,7 @@ class AIChat:
         sub_messages.extend(messages)
 
         params = {
-            'model': self._config['model'].get('name', ''),
+            'model': self._api_model_name(self._config['model']),
             'messages': sub_messages,
             'stream': stream,
             'max_tokens': max_tokens,
@@ -789,7 +798,7 @@ class AIChat:
             params['messages'].append(request_msg)
 
         # apply model configure settings
-        params['model'] = self._config['model'].get('name','')
+        params['model'] = self._api_model_name(self._config['model'])
         params_model_params = self._config['model'].get('params', {})
         if isinstance(params_model_params, list):
             _merged = {}
@@ -800,7 +809,7 @@ class AIChat:
         params.update(params_model_params)
 
         # apply session settings
-        if 'deepseek-r' in self._config['model'].get("name","").lower():
+        if 'deepseek-r' in self._api_model_name(self._config['model']).lower():
             valid_opts = ['max_tokens']
         else:
             valid_opts = ['temperature', 'top_p', 'max_tokens', 'presence_penalty', 'frequency_penalty']
@@ -1859,7 +1868,7 @@ class AIChat:
             if not self._llm:
                 return ""
             response = self._llm.chat.completions.create(
-                model=self._config.get("model", {}).get("name", "deepseek-chat"),
+                model=self._api_model_name(self._config.get("model", {})),
                 messages=[{"role": "user", "content": prompt_text}],
                 max_tokens=1024,
             )
@@ -1888,7 +1897,7 @@ class AIChat:
                     }],
                 }
             response = self._llm.chat.completions.create(
-                model=self._config.get("model", {}).get("name", "deepseek-chat"),
+                model=self._api_model_name(self._config.get("model", {})),
                 messages=messages,
                 tools=tools,
                 tool_choice=tool_choice,

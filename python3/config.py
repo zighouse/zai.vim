@@ -411,6 +411,7 @@ class AIAssistantManager:
                 prefix = head if idx == 0 else inner_sp
 
                 name = item.get("name", "")
+                api_name = item.get("api_name", "")
                 if checked_model:
                     # Add checkmark if this checked_model matches the selected one
                     if isinstance(checked_model, dict):
@@ -425,9 +426,12 @@ class AIAssistantManager:
 
                 # Adjust spacing to maintain alignment
                 aligned_idx = f"{idx}." if idx < 10 else f"{idx}"
-                extra = ", ".join(f"{k}={v}" for k, v in item.items() if k != "name")
+                # Show name, with api_name if it differs
+                display_name = f"{name} → {api_name}" if api_name and api_name != name else name
+                skip_keys = {"name", "api_name"}
+                extra = ", ".join(f"{k}={v}" for k, v in item.items() if k not in skip_keys)
                 extra_str = f"  ({extra})" if extra else ""
-                print(f"{prefix}{checkmark}{aligned_idx:>3} {name}{extra_str}")
+                print(f"{prefix}{checkmark}{aligned_idx:>3} {display_name}{extra_str}")
 
 def main():
     """Command line interface for configuration management."""

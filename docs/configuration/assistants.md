@@ -114,13 +114,52 @@ The file contains a list of AI assistant configurations:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | string | Yes | Model identifier (must match provider's model name) |
+| `name` | string | Yes | User-facing role name used for display and selection |
+| `api_name` | string | No | Model identifier sent to the API; falls back to `name` if unset |
 | `size` | string | No | Model size (display only) |
 | `context` | string | No | Context window size (e.g., "128K") |
 | `out-length` | object | No | Default and max output sequence length |
 | `cost` | object | No | Pricing information |
 | `features` | list | No | Supported features |
 | `shell_classifier` | boolean | No | Prefer this model for shell command safety classification |
+
+## Model Roles with `api_name`
+
+The `api_name` field separates the user-facing model label from the actual API model identifier. This lets you configure the same underlying model with different parameters for different roles.
+
+Without `api_name`, the `name` field serves double duty — both as the API identifier and the display label. This works for simple setups but prevents using the same model with different parameters (e.g., different temperatures for chat vs. classification).
+
+With `api_name`:
+- **`name`** — a user-friendly role name (shown in `:list ai`, used in `:use ai ... model <name>`)
+- **`api_name`** — the actual model identifier sent to the LLM provider's API
+
+When `api_name` is not set, `name` is used for both purposes (backward compatible).
+
+### Example: Multiple Roles from One Model
+
+```yaml
+- name: deepseek
+  base-url: https://api.deepseek.com
+  api-key-name: DEEPSEEK_API_KEY
+  model:
+  - name: fast-chat
+    api_name: deepseek-v4-flash
+    context: 128K
+    params: {temperature: 0.7}
+  - name: thinker
+    api_name: deepseek-v4-flash       # same underlying model, different params
+    context: 128K
+    params: {temperature: 0, reasoning_effort: high}
+  - name: classifier
+    api_name: deepseek-v4-flash
+    shell_classifier: true
+    params: {temperature: 0, max_tokens: 200}
+  - name: pro
+    api_name: deepseek-v4-pro          # different underlying model
+    context: 128K
+```
+
+In this setup, `:use ai deepseek model fast-chat` and `:use ai deepseek model thinker` both call the same `deepseek-v4-flash` model but with different parameters. The `:list ai` display shows each role name with an arrow to the `api_name` when they differ.
 
 ## Supported Features
 

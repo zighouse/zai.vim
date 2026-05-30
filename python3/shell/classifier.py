@@ -355,7 +355,7 @@ class ClassifierClient:
             if not classifier_model:
                 callback(degraded_result("No model available for classification"))
                 return
-            model_name = classifier_model.get("name", "")
+            model_name = classifier_model.get("api_name") or classifier_model.get("name", "")
             if not model_name:
                 callback(degraded_result("No classifier model name"))
                 return

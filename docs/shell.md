@@ -382,18 +382,20 @@ The classifier uses the currently active AI provider (base URL, API key) for cla
   base-url: https://api.deepseek.com
   api-key-name: DEEPSEEK_API_KEY
   model:
-  - name: deepseek-v4-flash
-    context: 1M
-    cost: { hit: 0.2, in: 1, out: 2 }
-    features: json, tools, complete, fim
-    shell_classifier: true    # ← Use this fast/cheap model for safety classification
-  - name: deepseek-v4-pro
-    context: 1M
-    cost: { hit: 1, in: 12, out: 24 }
-    features: json, tools, complete, fim
-    # No shell_classifier mark — not preferred for classification, but will
-    # be used as fallback when this is the active model and no other is marked.
+  - name: fast-chat
+    api_name: deepseek-v4-flash       # api_name sent to API
+    context: 128K
+  - name: classifier
+    api_name: deepseek-v4-flash       # same model, different role
+    shell_classifier: true            # ← preferred for safety classification
+    params: {temperature: 0, max_tokens: 200}
+  - name: pro
+    api_name: deepseek-v4-pro
+    context: 128K
+    # No shell_classifier — not preferred for classification
 ```
+
+When `api_name` is set, the classifier sends `api_name` to the API. When not set, it falls back to `name` (backward compatible). See [Model Roles with `api_name`](configuration/assistants.md) for details.
 
 **How it works in practice:**
 
@@ -909,7 +911,7 @@ shell_policy:
 
 | Symptom | Likely Cause | Solution |
 |---------|-------------|----------|
-| "classifier unavailable" | No `shell_classifier` in assistants config | Add `shell_classifier.model` to config |
+| "classifier unavailable" | LLM client not reachable | Check provider config and API key |
 | "LLM API timeout" | Network or API issue | Classifier degrades to ask — safe fallback |
 | "LLM API rate limit" | Too many classification requests | Results are cached per session |
 

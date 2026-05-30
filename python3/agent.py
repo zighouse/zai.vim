@@ -193,7 +193,7 @@ class SubAgent:
 
             # Build LLM params
             params = {
-                'model': _parent_config.get('model', {}).get('name', ''),
+                'model': _parent_config.get('model', {}).get('api_name') or _parent_config.get('model', {}).get('name', ''),
                 'messages': self._messages,
                 'stream': True,
             }
