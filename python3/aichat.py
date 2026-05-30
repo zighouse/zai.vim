@@ -1345,6 +1345,7 @@ class AIChat:
             id = int(value)
             if 0 <= id < len(self._assistant["model"]):
                 self._config["model"] = self._assistant["model"][id]
+                self._config['provider'] = self._assistant
                 print(f"model `{self._config['model']['name']}` is applied in AI assistant:")
             else:
                 print(f"model [{id}] is not list in AI assistant:")
@@ -1354,6 +1355,7 @@ class AIChat:
                 if value == model['name']:
                     applied = True
                     self._config["model"] = model
+                    self._config['provider'] = self._assistant
                     print(f"model `{value}` is applied in AI assistant:")
                     break
             if not applied:
@@ -1695,6 +1697,7 @@ class AIChat:
                         self._config['api_key_name'] = api_key_name
                         self._config['base_url'] = base_url
                         self._config['model'] = model
+                        self._config['provider'] = provider  # full provider data for classifier model resolution
 
                         if 'prompt' in provider:
                             self._config["prompt"] = provider['prompt']

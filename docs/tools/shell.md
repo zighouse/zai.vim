@@ -2,86 +2,48 @@
 
 ## Overview
 
-The `shell` toolset provides shell capabilities for Zai.Vim's AI assistant.
+The `shell` tool provides shell command execution capabilities for Zai.Vim's AI assistant.
 
 ## Available Functions
 
-### execute shell
+| Function | Description |
+|----------|-------------|
+| `shell_execute` | Execute a shell command through the safety chain |
+| `shell_allow_once` | Temporarily allow a command flagged as `ask` |
+| `shell_deny_once` | Reject a command flagged as `ask` |
+| `shell_abort` | Abort a running command by execution ID |
+| `shell_version` | Get shell version information |
+| `shell_sandbox_info` | Get aggregated safety status |
+| `shell_cleanup` | Clean up persistent resources |
 
-```python
-invoke_execute_shell(command, timeout, working_dir, enable_network, language, libraries, persistent)
+## Full Documentation
+
+For comprehensive documentation covering the security architecture, safety chain (L1–L5), policy configuration, authorization flow, sandbox setup, AI classifier, dataflow detection, audit logging, and troubleshooting, see:
+
+**[docs/shell.md](../shell.md)** — Shell Tool Security, Authorization, and Configuration
+
+## Quick Reference
+
+### See safety status
+```
+Ask AI: "show me the shell sandbox info"
 ```
 
-在taskbox容器中执行shell命令
-    
-    Args:
-        command: 要执行的shell命令
-        timeout: 超时时间（秒）
-        working_dir: 工作目录（容器内路径）
-        enable_network: 是否启用网络访问
-        language: 语言环境
-        libraries: 需要安装的库列表
-        persistent: 是否使用持久化容器（跨调用保持状态）
-        
-    Returns:
-        执行结果字典
+### Configure policy rules
+Edit `~/.local/share/zai/shell_policy.yaml` (user-level) or `.zaivim/project.yaml` (project-level).
 
-
-### shell cleanup
-
-```python
-invoke_shell_cleanup()
+### Install sandbox (recommended)
+```bash
+sudo apt install bubblewrap  # Debian/Ubuntu
 ```
 
-清理持久化容器（如果存在）
+## Implementation
 
-
-### shell sandbox info
-
-```python
-invoke_shell_sandbox_info()
-```
-
-获取沙盒环境信息
-
-
-
-## Implementation Details
-
-Source Code: [`python3/tool_shell.py`](../../python3/tool_shell.py)
-
-## Configuration
-
-The `shell` tool can be configured through:
-
-- **User Config**: `~/.zaivim/assistants.yaml`
-- **Project Config**: `.zaivim/project.yaml`
-
-## Usage Examples
-
-Load the tool:
-```vim
-:use tool shell
-```
-
-Use in AI chat:
-```
-# AI will call the appropriate function
-```
-
-## Troubleshooting
-
-**Tool not available:**
-- Verify tool is loaded: `:AI tool status`
-- Check if tool module exists: `ls python3/tool_shell.py`
-- Install any missing dependencies
-
-**Execution errors:**
-- Check configuration files
-- Verify permissions (especially for file and shell tools)
-- Review error messages in AI chat buffer
-
-## Related Documentation
-
-- [Tool System Overview](README.md)
-- [Configuration Guide](../configuration/)
+Source Code:
+- [`python3/tool_shell.py`](../../python3/tool_shell.py) — Main tool and safety chain
+- [`python3/shell_policy.py`](../../python3/shell_policy.py) — Permission engine
+- [`python3/shell/sandbox.py`](../../python3/shell/sandbox.py) — bwrap + seccomp sandbox
+- [`python3/shell/classifier.py`](../../python3/shell/classifier.py) — AI safety classifier
+- [`python3/shell/dataflow.py`](../../python3/shell/dataflow.py) — Dataflow danger detection
+- [`python3/shell/audit.py`](../../python3/shell/audit.py) — Audit logging
+- [`python3/bash_parser.py`](../../python3/bash_parser.py) — Shell command parser

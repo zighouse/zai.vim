@@ -57,7 +57,7 @@ When multiple configuration sources specify the same setting:
 | Platform | Path |
 |----------|------|
 | Linux/Mac | `~/.zaivim/assistants.yaml` |
-| Windows | `%USERPROFILE%\.zai\assistants.yaml` |
+| Windows | `%USERPROFILE%\.zaivim\assistants.yaml` |
 
 ### Project Configuration
 

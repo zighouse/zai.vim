@@ -17,7 +17,7 @@ let g:zai_log_dir = "~/.zaivim/log"
 
 **Default values:**
 - Linux/Mac: `~/.zaivim/log`
-- Windows: `%USERPROFILE%\.zai\log`
+- Windows: `%USERPROFILE%\.zaivim\log`
 
 **Recommendation:** On Windows, configure a custom path since the default is hidden.
 

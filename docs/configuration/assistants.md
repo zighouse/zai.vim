@@ -15,12 +15,12 @@ The `assistants.yaml` file allows you to define multiple AI providers (assistant
 | Platform | Path |
 |----------|------|
 | Linux/Mac | `~/.zaivim/assistants.yaml` |
-| Windows | `%USERPROFILE%\.zai\assistants.yaml` |
+| Windows | `%USERPROFILE%\.zaivim\assistants.yaml` |
 
 Create the directory if it doesn't exist:
 
 ```bash
-mkdir -p ~/.zai
+mkdir -p ~/.zaivim
 ```
 
 ## Configuration File Format
@@ -120,6 +120,7 @@ The file contains a list of AI assistant configurations:
 | `out-length` | object | No | Default and max output sequence length |
 | `cost` | object | No | Pricing information |
 | `features` | list | No | Supported features |
+| `shell_classifier` | boolean | No | Prefer this model for shell command safety classification |
 
 ## Supported Features
 
@@ -135,6 +136,42 @@ Models can declare support for these features:
 | `tools` | Tool calling support |
 | `infer` | Inference capabilities |
 | `moe` | Mixture of Experts |
+
+## Shell Safety Classifier
+
+The shell safety classifier is an AI-powered layer that evaluates shell commands for safety risks before execution. It automatically follows the active AI provider — when you switch providers with `:use ai`, the classifier uses the new provider's endpoint and credentials.
+
+### Model Selection
+
+By default, the classifier uses the currently active model. You can designate a specific (typically cheaper/faster) model for classification by marking it with `shell_classifier: true`:
+
+```yaml
+- name: deepseek
+  base-url: https://api.deepseek.com
+  api-key-name: DEEPSEEK_API_KEY
+  model:
+  - name: deepseek-v4-flash
+    context: 1M
+    cost: { hit: 0.2, in: 1, out: 2 }  # cheap
+    shell_classifier: true               # ← use this for classification
+  - name: deepseek-v4-pro
+    context: 1M
+    cost: { hit: 1, in: 12, out: 24 }   # expensive
+    # main chat model, not used for classification
+```
+
+**Resolution order:**
+1. Current model, if it has `shell_classifier: true`
+2. First model in the provider's list with `shell_classifier: true`
+3. Current model (fallback — the classifier is never disabled)
+
+This means you can chat with a powerful/expensive model while shell commands are classified by a fast/cheap one, all using the same provider's API key and endpoint.
+
+### No Separate Configuration Needed
+
+Unlike earlier versions, there is no need for a separate top-level `shell_classifier` configuration entry. The classifier simply follows the active provider and resolves its model from the provider's model list. It is always available when an LLM client is reachable.
+
+For full details, see [Shell Tool Security](../shell.md).
 
 ## Popular Provider Configurations
 

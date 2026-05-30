@@ -85,19 +85,19 @@ class ClassifierClient:
 
     @classmethod
     def available(cls) -> bool:
-        """Check if the classifier is available and ready (AC #1, #2).
+        """Check if the classifier is available and ready.
 
-        Returns True when shell_classifier is configured in _parent_config
-        AND _parent_llm_getter is available. Returns False otherwise.
+        Always available when the parent LLM client is reachable —
+        the classifier follows the active provider and resolves its model
+        from the current model or provider model list.
+
+        Returns False only when _parent_config or _parent_llm_getter
+        is unavailable (e.g., before AIChat initialization).
         """
         if not _parent_config:
             return False
         if not _parent_llm_getter:
             return False
-        classifier_config = _parent_config.get("shell_classifier")
-        if not classifier_config:
-            return False
-        # Verify we can get an LLM client
         llm = _parent_llm_getter()
         if llm is None:
             return False
@@ -105,12 +105,55 @@ class ClassifierClient:
 
     @classmethod
     def model_name(cls) -> str:
-        """Return the configured classifier model name, or 'unknown'."""
-        try:
-            cc = _parent_config.get("shell_classifier", {}) if _parent_config else {}
-            return cc.get("model", cc.get("name", "unknown"))
-        except Exception:
-            return "unknown"
+        """Return the resolved classifier model name, or 'unknown'.
+
+        Resolution order:
+          1. Current model if it has shell_classifier: true
+          2. First provider model with shell_classifier: true
+          3. Current model (fallback — always available)
+        """
+        resolved = cls._resolve_classifier_model()
+        if resolved:
+            return resolved.get("name", "unknown")
+        return "unknown"
+
+    @classmethod
+    def _resolve_classifier_model(cls) -> dict | None:
+        """Resolve which model to use for shell command classification.
+
+        Resolution order:
+          1. If the currently active model has ``shell_classifier: true``, use it.
+          2. Otherwise, scan the provider's model list for the first model
+             with ``shell_classifier: true``.
+          3. If no model is explicitly marked, fall back to the currently
+             active model — the classifier is never disabled just because
+             no model is marked.
+
+        Returns a model dict (with at least ``name``), or None if no config
+        is available.
+        """
+        if not _parent_config:
+            return None
+
+        current_model = _parent_config.get("model")
+        provider = _parent_config.get("provider", {})
+
+        # 1. Current model explicitly marked as classifier
+        if isinstance(current_model, dict) and current_model.get("shell_classifier"):
+            return current_model
+
+        # 2. Scan provider's model list for first marked model
+        provider_models = provider.get("model", [])
+        if isinstance(provider_models, list):
+            for m in provider_models:
+                if isinstance(m, dict) and m.get("shell_classifier"):
+                    return m
+
+        # 3. Fallback: use current model (may be a dict or just a name string)
+        if isinstance(current_model, dict) and current_model.get("name"):
+            return current_model
+
+        return None
 
     @classmethod
     def classify_async(
@@ -306,19 +349,15 @@ class ClassifierClient:
                 callback(degraded_result("LLM client unavailable"))
                 return
 
-            # Get model name from shell_classifier config
-            classifier_config = _parent_config.get("shell_classifier", {})
-            model_name = ""
-            if classifier_config:
-                models = classifier_config.get("model", [])
-                if isinstance(models, list) and models:
-                    model_name = models[0].get("name", "") if isinstance(models[0], dict) else str(models[0])
-
+            # Resolve classifier model: check current model for shell_classifier
+            # marker, then scan provider models, then fall back to current model.
+            classifier_model = cls._resolve_classifier_model()
+            if not classifier_model:
+                callback(degraded_result("No model available for classification"))
+                return
+            model_name = classifier_model.get("name", "")
             if not model_name:
-                # Fallback: use parent model name
-                model_name = _parent_config.get("model", {}).get("name", "")
-            if not model_name:
-                callback(degraded_result("No classifier model configured"))
+                callback(degraded_result("No classifier model name"))
                 return
 
             prompt = cls._build_prompt(command, parsed)
