@@ -2050,7 +2050,7 @@ if __name__ == "__main__":
                        help=f'Base url for API service (default: {_DEFAULT_BASE_URL})')
     parser.add_argument('--api-key-name', type=str, default=_DEFAULT_API_KEY_NAME,
                        help=f'Environment variable name for API key (default: {_DEFAULT_API_KEY_NAME})')
-    parser.add_argument('--model', type=str, default=_DEFAULT_MODEL)
+    parser.add_argument('--model', type=str, default=None)
     parser.add_argument('--silent', action='store_true', help='No verbose')
     parser.add_argument('--use-ai', type=str, help='Use AI assistant by name or index')
     args = parser.parse_args()
@@ -2067,7 +2067,7 @@ if __name__ == "__main__":
         aichat.enable_log(False)
     aichat.open_log(args.log_dir, args.log_filename)
 
-    # Handle --use-ai parameter
+    # Load AI assistant from config
     if args.use_ai:
         if args.model:
             found = aichat._aiconfig.use_ai(args.use_ai, args.model)
@@ -2094,9 +2094,24 @@ if __name__ == "__main__":
             aichat.set_config("prompt", port['prompt'])
         aichat._assistant = provider
     else:
-        # Use individual parameters
-        aichat.set_config("base_url", args.base_url)
-        aichat.set_config("model", args.model)
-        aichat.set_config("api_key_name", args.api_key_name)
+        # Auto-load first provider's first model from assistants.yaml
+        found = aichat._aiconfig.use_ai('0', args.model or '0')
+        if found:
+            provider = aichat._aiconfig.get_provider()
+            port = aichat._aiconfig.get_port()
+            model = port.get("model", {})
+            aichat._config["model"] = model
+            aichat._config["base_url"] = port.get('base_url', _DEFAULT_BASE_URL)
+            aichat._config["api_key_name"] = port.get('api_key_name', _DEFAULT_API_KEY_NAME)
+            aichat._assistant = provider
+            if 'prompt' in port:
+                aichat.set_config("prompt", port['prompt'])
+            print(f"Using AI assistant: {port.get('name', 'Unknown')} on model: {aichat.get_config('model').get('name', 'unknown')}")
+        else:
+            # No config available — use CLI defaults
+            aichat.set_config("base_url", args.base_url)
+            aichat.set_config("api_key_name", args.api_key_name)
+            if args.model:
+                aichat.set_config("model", args.model)
 
     aichat.start()
