@@ -44,7 +44,7 @@ def cmd_skill_list(filter_domain: str = "") -> str:
         skills = [s for s in skills if str(s.security_domain) == filter_domain]
 
     if not skills:
-        return "No skills installed. Put skills in ~/.zaivim/skills/ or .zai/skills/"
+        return "No skills installed. Put skills in ~/.zaivim/skills/ or .zaivim/skills/"
 
     skills.sort(key=lambda s: s.name)
 

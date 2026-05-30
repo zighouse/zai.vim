@@ -1,6 +1,6 @@
 # Project Configuration
 
-This page covers project-level configuration using `.zai/zai_project.yaml` for Docker containers, sandbox directories, and automatic package installation.
+This page covers project-level configuration using `.zaivim/zai_project.yaml` for Docker containers, sandbox directories, and automatic package installation.
 
 ## Overview
 
@@ -14,7 +14,7 @@ Project configuration allows you to define:
 
 Zai searches upward from the current working directory:
 
-1. `.zai/zai_project.yaml` (new format, recommended)
+1. `.zaivim/zai_project.yaml` (new format, recommended)
 2. `zai_project.yaml` (legacy format, shows warning)
 
 ## Configuration Structure
@@ -260,7 +260,7 @@ Zai automatically handles permissions:
 ## Complete Project Configuration Example
 
 ```yaml
-# .zai/zai_project.yaml
+# .zaivim/zai_project.yaml
 
 # Sandbox directory for file operations
 sandbox_home: /home/user/project/sandbox

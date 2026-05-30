@@ -75,7 +75,7 @@ def set_sandbox_home(new_path: str):
 
 def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> Optional[Path]:
     """
-    从指定路径开始向上遍历目录树，查找 .zai/zai_project.yaml 文件。
+    从指定路径开始向上遍历目录树，查找 .zaivim/zai_project.yaml 文件。
     为了兼容性，也支持旧格式的 zai_project.yaml 文件。
 
     Args:
@@ -95,15 +95,20 @@ def _find_project_config_file(start_path: Optional[Union[str, Path]] = None) -> 
     
     # 向上遍历目录树
     while True:
-        # 优先检查新格式：.zai/zai_project.yaml
-        new_format_file = current / ".zai" / "zai_project.yaml"
+        # 优先检查新格式：.zaivim/zai_project.yaml
+        new_format_file = current / ".zaivim" / "zai_project.yaml"
         if new_format_file.is_file():
             return new_format_file
-        
+
+        # 兼容旧格式：.zai/zai_project.yaml
+        legacy_format_file = current / ".zai" / "zai_project.yaml"
+        if legacy_format_file.is_file():
+            return legacy_format_file
+
         # 为了兼容性，检查旧格式：zai_project.yaml
         old_format_file = current / "zai_project.yaml"
-        if old_format_file.is_file() and current.name != ".zai":
-            print(f"警告: 使用旧格式配置文件 {old_format_file}，建议迁移到 .zai/zai_project.yaml", file=sys.stderr)
+        if old_format_file.is_file() and current.name not in (".zaivim", ".zai"):
+            print(f"警告: 使用旧格式配置文件 {old_format_file}，建议迁移到 .zaivim/zai_project.yaml", file=sys.stderr)
             return old_format_file
         
         # 到达根目录时停止
@@ -250,12 +255,12 @@ def sandbox_home(cwd: Optional[Union[str, Path]] = None) -> Path:
         print(f"警告：无法从项目配置获取沙盒目录：{e}", file=sys.stderr)
 
     # 找到项目根目录作为默认 sandbox。
-    # 新格式 .zai/zai_project.yaml → parent.parent = 项目根
+    # 新格式 .zaivim/zai_project.yaml → parent.parent = 项目根
     # 旧格式 zai_project.yaml → parent = 项目根
     config_file = _find_project_config_file(cwd)
     if config_file is not None:
         project_root = config_file.parent
-        if project_root.name == '.zai':
+        if project_root.name in ('.zaivim', '.zai'):
             project_root = project_root.parent
         if not _sandbox_home_printed:
             print(f"使用项目根目录：{project_root}", file=sys.stderr)

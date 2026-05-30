@@ -5,7 +5,7 @@ Two-level architecture:
 - Level 1: Lightweight index (frontmatter only, loaded at startup)
 - Level 2: Full metadata (loaded on demand when skill details needed)
 
-Priority: project .zai/skills/ > user skills dir
+Priority: project .zaivim/skills/ > user skills dir
 """
 
 from __future__ import annotations

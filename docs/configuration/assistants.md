@@ -332,7 +332,7 @@ Switch at runtime when needed:
 Use project configuration for different providers:
 
 ```yaml
-# project-a/.zai/zai_project.yaml
+# project-a/.zaivim/zai_project.yaml
 - shell_container: { ... }
   # Use project-specific provider
   # (via session commands)

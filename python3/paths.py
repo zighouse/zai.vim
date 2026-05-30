@@ -13,7 +13,7 @@ User-level directory resolution:
   - If legacy dir (~/.local/share/zai/) has data → use it
   - Otherwise → default to ~/.zaivim/ (for new installations)
 
-Project-level directory: .zai/ under project root.
+Project-level directory: .zaivim/ under project root.
 """
 
 from __future__ import annotations
@@ -148,22 +148,22 @@ def get_sandbox_cache_file() -> Path:
 # Project-level paths
 # ---------------------------------------------------------------------------
 
-_PROJECT_DIR_NAME = ".zai"
+_PROJECT_DIR_NAME = ".zaivim"
 
 
 def get_project_dir(cwd: Path | str | None = None) -> Path:
-    """Return the project-level directory (default: .zai/ under cwd)."""
+    """Return the project-level directory (default: .zaivim/ under cwd)."""
     base = Path(cwd) if cwd else Path.cwd()
     return base / _PROJECT_DIR_NAME
 
 
 def get_project_skills_dir(cwd: Path | str | None = None) -> Path:
-    """Return the project-level skills directory (.zai/skills/)."""
+    """Return the project-level skills directory (.zaivim/skills/)."""
     return get_project_dir(cwd) / "skills"
 
 
 def find_project_dir(start: Path | str | None = None) -> Optional[Path]:
-    """Walk up from *start* (default cwd) to find a .zai/ directory."""
+    """Walk up from *start* (default cwd) to find a .zaivim/ directory."""
     current = Path(start) if start else Path.cwd()
     current = current.resolve()
     for parent in [current] + list(current.parents):

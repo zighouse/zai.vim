@@ -163,7 +163,7 @@ class PolicyLoader:
     Priority (highest last within same behavior):
       1. Built-in default deny rules
       2. User-level: ~/.local/share/zai/shell_policy.yaml
-      3. Project-level: .zai/zai_project.yaml (shell_policy field),
+      3. Project-level: .zaivim/zai_project.yaml (shell_policy field),
          found via find_upwards from CWD
     """
 
@@ -215,7 +215,7 @@ class PolicyLoader:
             return None
 
     def _load_project_policy(self, cwd: Optional[str] = None) -> Optional[List[PolicyRule]]:
-        """Load rules from .zai/zai_project.yaml (shell_policy field)."""
+        """Load rules from .zaivim/zai_project.yaml (shell_policy field)."""
         if not HAVE_YAML or self._finder is None:
             return None
         try:

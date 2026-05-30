@@ -150,7 +150,7 @@ All users of the system share these skills. This is where URL-installed and adap
 ### Project-level skills
 
 ```
-.zai/skills/
+.zaivim/skills/
 ├── project-skill/
 │   ├── SKILL.md
 │   └── ...
@@ -162,7 +162,7 @@ Project-level skills override user-level skills with the same name (the user-lev
 
 When a skill exists in both locations:
 
-1. Project `.zai/skills/` — takes priority, shadows the user-level version
+1. Project `.zaivim/skills/` — takes priority, shadows the user-level version
 2. User `~/.zaivim/skills/` — fallback if no project version exists
 
 ## Security Model

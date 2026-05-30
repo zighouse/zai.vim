@@ -8,7 +8,7 @@ Zai.Vim uses a hierarchical configuration system:
 
 1. **Vim Configuration** (`.vimrc`) - Basic plugin settings
 2. **User Configuration** (`~/.zaivim/assistants.yaml`) - AI assistant definitions
-3. **Project Configuration** (`.zai/zai_project.yaml`) - Project-specific settings
+3. **Project Configuration** (`.zaivim/zai_project.yaml`) - Project-specific settings
 4. **Session Commands** - Runtime configuration via chat interface
 
 ## Configuration Topics
@@ -62,7 +62,7 @@ When multiple configuration sources specify the same setting:
 ### Project Configuration
 
 Searched upward from current directory:
-- `.zai/zai_project.yaml` (new format, recommended)
+- `.zaivim/zai_project.yaml` (new format, recommended)
 - `zai_project.yaml` (legacy format, shows warning)
 
 ## Common Configuration Tasks

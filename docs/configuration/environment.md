@@ -224,8 +224,8 @@ export DEEPSEEK_API_KEY=sk-********************************
 export OPENAI_API_KEY=sk-********************************
 
 # Zai Configuration
-export ZAI_LOG_DIR="$HOME/.zai/log"
-export ZAI_SANDBOX_HOME="$HOME/.zai/sandbox"
+export ZAI_LOG_DIR="$HOME/.zaivim/log"
+export ZAI_SANDBOX_HOME="$HOME/.zaivim/sandbox"
 export ZAI_LANG="en_US.UTF-8"
 
 # ASR Configuration
@@ -263,8 +263,8 @@ set -x DEEPSEEK_API_KEY sk-********************************
 set -x OPENAI_API_KEY sk-********************************
 
 # Zai Configuration
-set -x ZAI_LOG_DIR "$HOME/.zai/log"
-set -x ZAI_SANDBOX_HOME "$HOME/.zai/sandbox"
+set -x ZAI_LOG_DIR "$HOME/.zaivim/log"
+set -x ZAI_SANDBOX_HOME "$HOME/.zaivim/sandbox"
 set -x ZAI_LANG "en_US.UTF-8"
 ```
 

@@ -37,7 +37,7 @@ Source Code: [`python3/tool_ai.py`](../../python3/tool_ai.py)
 The `ai` tool can be configured through:
 
 - **User Config**: `~/.zaivim/assistants.yaml`
-- **Project Config**: `.zai/zai_project.yaml`
+- **Project Config**: `.zaivim/zai_project.yaml`
 
 ## Usage Examples
 

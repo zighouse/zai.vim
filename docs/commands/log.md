@@ -206,7 +206,7 @@ rm ~/.zaivim/log/*.log
 ```
 [2025-01-30 14:30:22] ===== Session started =====
 [2025-01-30 14:30:22] Model: deepseek-chat
-[2025-01-30 14:30:22] Log file: /home/user/.zai/log/chat_20250130_143022.log
+[2025-01-30 14:30:22] Log file: /home/user/.zaivim/log/chat_20250130_143022.log
 [2025-01-30 14:30:22]
 [2025-01-30 14:30:25] User: How do I parse JSON in Python?
 [2025-01-30 14:30:28] Assistant: Use the `json` module...
