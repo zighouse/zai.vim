@@ -2103,6 +2103,7 @@ if __name__ == "__main__":
             aichat._config["model"] = model
             aichat._config["base_url"] = port.get('base_url', _DEFAULT_BASE_URL)
             aichat._config["api_key_name"] = port.get('api_key_name', _DEFAULT_API_KEY_NAME)
+            aichat._config["provider"] = provider
             aichat._assistant = provider
             if 'prompt' in port:
                 aichat.set_config("prompt", port['prompt'])

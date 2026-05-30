@@ -997,12 +997,17 @@ class ClassifierLayer(SafetyLayer):
                 ))
                 return ctx
 
-            # Handle degraded classifier (AC #5)
+            # Handle degraded classifier (AC #5).
+            # Cache hits are marked degraded to distinguish them from fresh
+            # LLM calls, but the original safety decision (allow/deny/ask)
+            # is still valid. Only force "ask" when the degraded result has
+            # no useful decision (LLM error, timeout).
             if result.degraded:
                 latency = int((time.perf_counter() - start_time) * 1000)
+                decision = result.decision if result.decision in ("allow", "deny") else "ask"
                 ctx.trace.append(LayerDecision(
                     layer="L1_classifier",
-                    decision="ask",
+                    decision=decision,
                     detail=f"degraded: {result.degraded_reason or 'unknown'}",
                     latency_ms=latency,
                 ))
