@@ -187,7 +187,7 @@
     "category": "file",
     "is_read_only": true,
     "is_concurrency_safe": true,
-    "max_result_size": 16000,
+    "max_result_size": 65536,
     "prompt": "这是读取文件内容的主要工具。支持文本文件、图片（PNG/JPG）、PDF 文件。读取过大的文件可能因最大输入 tokens 而受限，调用需要谨慎。",
     "function": {
       "name": "read_file",
