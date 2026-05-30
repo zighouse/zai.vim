@@ -9,9 +9,9 @@ Supports three configuration mechanisms (in priority order):
 
 User-level directory resolution:
   - If ZAI_USER_DIR is set → use it
-  - If ~/.zai/ exists AND contains key data files → use it
+  - If ~/.zaivim/ exists AND contains key data files → use it
   - If legacy dir (~/.local/share/zai/) has data → use it
-  - Otherwise → default to ~/.zai/ (for new installations)
+  - Otherwise → default to ~/.zaivim/ (for new installations)
 
 Project-level directory: .zai/ under project root.
 """
@@ -44,8 +44,8 @@ def _has_data(directory: Path) -> bool:
 
 
 def _get_new_dir() -> Path:
-    """Return the new-style directory path (~/.zai/)."""
-    return Path.home() / ".zai"
+    """Return the new-style directory path (~/.zaivim/)."""
+    return Path.home() / ".zaivim"
 
 
 def _get_legacy_dir() -> Path:
@@ -59,9 +59,9 @@ def get_user_dir() -> Path:
     Priority:
       1. Previously set value (via set_user_dir or env var cached on first call)
       2. ZAI_USER_DIR environment variable
-      3. ~/.zai/ if it contains key data files
+      3. ~/.zaivim/ if it contains key data files
       4. Legacy appdirs location if it contains data
-      5. ~/.zai/ as default for new installations
+      5. ~/.zaivim/ as default for new installations
     """
     global _user_dir
     if _user_dir is not None:
@@ -177,10 +177,10 @@ def find_project_dir(start: Path | str | None = None) -> Optional[Path]:
 
 
 def migrate_to_new_dir() -> Path:
-    """Migrate data from legacy directory to ~/.zai/.
+    """Migrate data from legacy directory to ~/.zaivim/.
 
     Copies all files and subdirectories from the legacy appdirs location
-    to ~/.zai/. Existing files in ~/.zai/ are NOT overwritten.
+    to ~/.zaivim/. Existing files in ~/.zaivim/ are NOT overwritten.
 
     Returns the new directory path.
     """

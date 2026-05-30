@@ -7,7 +7,7 @@ Manages progressive trust levels:
 - L3/L2 → L1 on security event detection
 - Manual override via :ZaiSkillTrust command
 
-State persisted to ~/.zai/skill-state.yaml with HMAC integrity.
+State persisted to ~/.zaivim/skill-state.yaml with HMAC integrity.
 """
 
 from __future__ import annotations

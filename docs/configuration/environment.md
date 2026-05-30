@@ -81,7 +81,7 @@ set ZAI_LOG_DIR=C:\custom\path\to\logs
 ```
 
 **Default:**
-- Linux/Mac: `~/.zai/log`
+- Linux/Mac: `~/.zaivim/log`
 - Windows: `%USERPROFILE%\.zai\log`
 
 ### Sandbox Directory
@@ -92,7 +92,7 @@ Set the default sandbox directory for file operations.
 export ZAI_SANDBOX_HOME="/custom/sandbox/path"
 ```
 
-**Default:** `~/.zai/sandbox`
+**Default:** `~/.zaivim/sandbox`
 
 ### ASR Server URL
 

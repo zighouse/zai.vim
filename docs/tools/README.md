@@ -210,7 +210,7 @@ tool_instance = ToolClassName()
 
 Tools can be configured through:
 
-1. **User Configuration** (`~/.zai/assistants.yaml`)
+1. **User Configuration** (`~/.zaivim/assistants.yaml`)
    - API keys for external services
    - Default model settings
    - Tool-specific settings

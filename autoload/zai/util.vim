@@ -17,8 +17,8 @@ let s:extra_fzf_opts = [
 
 if exists('g:zai_user_dir')
     let s:user_dir = fnameescape(g:zai_user_dir)
-elseif isdirectory(expand('~/.zai'))
-    let s:user_dir = expand('~/.zai')
+elseif isdirectory(expand('~/.zaivim'))
+    let s:user_dir = expand('~/.zaivim')
 elseif has('win32')
     let s:user_dir = expand('~/AppData/Local/Zighouse/Zai')
 else

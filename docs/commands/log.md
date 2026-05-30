@@ -5,7 +5,7 @@ View, search, and manage conversation logs in Zai.Vim.
 ## Overview
 
 All Zai conversations are automatically logged to files:
-- **Location:** `~/.zai/log/` (configurable)
+- **Location:** `~/.zaivim/log/` (configurable)
 - **Format:** Plain text with timestamps
 - **Naming:** `chat_YYYYMMDD_HHMMSS.log`
 - **Content:** User messages, AI responses, errors
@@ -31,7 +31,7 @@ Open the current session's log file.
 
 **Log File Path:**
 ```
-~/.zai/log/chat_20250130_143022.log
+~/.zaivim/log/chat_20250130_143022.log
 ```
 
 ### Reading Logs
@@ -144,8 +144,8 @@ Can you elaborate more on the second point you made?
 
 | Platform | Path |
 |----------|------|
-| Linux | `~/.zai/log/` |
-| macOS | `~/.zai/log/` |
+| Linux | `~/.zaivim/log/` |
+| macOS | `~/.zaivim/log/` |
 | Windows | `%USERPROFILE%\.zai\log\` |
 
 ### Custom Log Directory
@@ -166,13 +166,13 @@ export ZAI_LOG_DIR="/custom/path/logs"
 
 ```bash
 # List all logs
-ls -lh ~/.zai/log/
+ls -lh ~/.zaivim/log/
 
 # View specific log
-less ~/.zai/log/chat_20250130_143022.log
+less ~/.zaivim/log/chat_20250130_143022.log
 
 # Count conversations
-find ~/.zai/log -name "chat_*.log" | wc -l
+find ~/.zaivim/log -name "chat_*.log" | wc -l
 ```
 
 ### Archiving Logs
@@ -180,7 +180,7 @@ find ~/.zai/log -name "chat_*.log" | wc -l
 ```bash
 # Archive old logs
 mkdir -p ~/zai-logs/archive
-mv ~/.zai/log/chat_2024*.log ~/zai-logs/archive/
+mv ~/.zaivim/log/chat_2024*.log ~/zai-logs/archive/
 
 # Compress archive
 tar czf ~/zai-logs/archive.tar.gz ~/zai-logs/archive/
@@ -190,13 +190,13 @@ tar czf ~/zai-logs/archive.tar.gz ~/zai-logs/archive/
 
 ```bash
 # Delete specific log
-rm ~/.zai/log/chat_20250130_143022.log
+rm ~/.zaivim/log/chat_20250130_143022.log
 
 # Delete old logs (older than 30 days)
-find ~/.zai/log -name "chat_*.log" -mtime +30 -delete
+find ~/.zaivim/log -name "chat_*.log" -mtime +30 -delete
 
 # Delete all logs (careful!)
-rm ~/.zai/log/*.log
+rm ~/.zaivim/log/*.log
 ```
 
 ## Log File Format
@@ -280,7 +280,7 @@ Preview chat in browser as rendered Markdown.
 ```bash
 # Extract useful conversations
 mkdir -p ~/knowledge-base
-cp ~/.zai/log/chat_*async*.log ~/knowledge-base/
+cp ~/.zaivim/log/chat_*async*.log ~/knowledge-base/
 
 # Index with grep
 grep -r "async" ~/knowledge-base/
@@ -292,21 +292,21 @@ grep -r "async" ~/knowledge-base/
 
 ```bash
 # Count sessions per day
-ls ~/.zai/log/chat_*.log | cut -d_ -f2 | cut -d. -f1 | sort | uniq -c
+ls ~/.zaivim/log/chat_*.log | cut -d_ -f2 | cut -d. -f1 | sort | uniq -c
 ```
 
 ### Find Longest Conversations
 
 ```bash
 # List logs by size
-ls -lhS ~/.zai/log/chat_*.log
+ls -lhS ~/.zaivim/log/chat_*.log
 ```
 
 ### Search Across All Sessions
 
 ```bash
 # Find all mentions of a topic
-grep -r "Docker" ~/.zai/log/
+grep -r "Docker" ~/.zaivim/log/
 ```
 
 ## Troubleshooting
@@ -317,7 +317,7 @@ grep -r "Docker" ~/.zai/log/
 
 **Check:**
 ```bash
-ls -la ~/.zai/log/
+ls -la ~/.zaivim/log/
 ```
 
 **Solution:**
@@ -355,7 +355,7 @@ Logs may contain:
 
 1. **Review logs before sharing:**
    ```bash
-   grep -i "api.*key\|password\|secret" ~/.zai/log/
+   grep -i "api.*key\|password\|secret" ~/.zaivim/log/
    ```
 
 2. **Redact sensitive information:**
@@ -370,8 +370,8 @@ Logs may contain:
 
 4. **Set secure permissions:**
    ```bash
-   chmod 700 ~/.zai/log
-   chmod 600 ~/.zai/log/*.log
+   chmod 700 ~/.zaivim/log
+   chmod 600 ~/.zaivim/log/*.log
    ```
 
 ## Next Steps

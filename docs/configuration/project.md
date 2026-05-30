@@ -47,7 +47,7 @@ Configure where file-related tools can operate.
 
 ### Default Value
 
-If not specified: `~/.zai/sandbox`
+If not specified: `~/.zaivim/sandbox`
 
 ### Security
 

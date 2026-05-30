@@ -236,7 +236,7 @@ Sessions are preserved:
 
 Conversations are saved to log files:
 ```
-~/.zai/log/chat_YYYYMMDD_HHMMSS.log
+~/.zaivim/log/chat_YYYYMMDD_HHMMSS.log
 ```
 
 Each session's conversation is logged separately.

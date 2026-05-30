@@ -237,7 +237,7 @@ JSONL format with sanitized credentials. Each entry contains: >
 
 LOG LOCATION                                              *zai-audit-location*
 
-    ~/.zai/audit/audit-YYYY-MM-DD.jsonl
+    ~/.zaivim/audit/audit-YYYY-MM-DD.jsonl
 
 Files rotate daily and after 10,000 entries. Retention: 30 days
 (configurable). Query via |zai-AI-audit| command.
@@ -307,7 +307,7 @@ Docs: https://github.com/zighouse/zai.vim/blob/main/docs/tools/searxng.md
 CONFIGURATION                                            *zai-config*
 ==============================================================================
 
-User config: ~/.zai/assistants.yaml
+User config: ~/.zaivim/assistants.yaml
 
 Project config: .zai/zai_project.yaml
 

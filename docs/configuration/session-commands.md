@@ -463,7 +463,7 @@ Load a previous conversation log as context:
 ```
 
 ```
-:load ~/.zai/log/chat_20250130_123456.log
+:load ~/.zaivim/log/chat_20250130_123456.log
 ```
 
 ## Completion Commands

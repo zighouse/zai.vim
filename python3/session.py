@@ -11,7 +11,7 @@ Each line in the session file is a complete JSON object, making it crash-safe an
 suitable for append-only writes.
 
 Session data is stored in:
-    ~/.zai/sessions/<sanitized-project-path>/<sessionId>.jsonl
+    ~/.zaivim/sessions/<sanitized-project-path>/<sessionId>.jsonl
 
 The JSONL format is machine-readable and complementary to the Markdown audit logs
 produced by Logger. Both systems run in parallel.
@@ -53,7 +53,7 @@ def get_sessions_dir(project_path: Optional[str] = None) -> Path:
                       如果为 None，使用 _get_working_dir()。
 
     Returns:
-        ~/.zai/sessions/<sanitized-project-path>/
+        ~/.zaivim/sessions/<sanitized-project-path>/
     """
     path = project_path or _get_working_dir()
     base_dir = _get_base_sessions_dir()
@@ -141,7 +141,7 @@ class SessionWriter:
         返回会话存储目录
 
         Returns:
-            ~/.zai/sessions/<sanitized-project-path>/
+            ~/.zaivim/sessions/<sanitized-project-path>/
         """
         return get_sessions_dir(self._project_path)
 
@@ -481,7 +481,7 @@ class SessionLoader:
             project_path: 项目路径，默认使用 self._project_path
 
         Returns:
-            ~/.zai/sessions/<sanitized-project-path>/
+            ~/.zaivim/sessions/<sanitized-project-path>/
         """
         return get_sessions_dir(project_path or self._project_path)
 

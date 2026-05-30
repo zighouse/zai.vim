@@ -86,7 +86,7 @@ Source Code: [`python3/tool_web.py`](../../python3/tool_web.py)
 
 The `web` tool can be configured through:
 
-- **User Config**: `~/.zai/assistants.yaml`
+- **User Config**: `~/.zaivim/assistants.yaml`
 - **Project Config**: `.zai/zai_project.yaml`
 
 ## Usage Examples

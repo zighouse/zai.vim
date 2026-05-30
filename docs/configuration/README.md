@@ -7,7 +7,7 @@ This section covers all aspects of configuring Zai.Vim, from basic setup to adva
 Zai.Vim uses a hierarchical configuration system:
 
 1. **Vim Configuration** (`.vimrc`) - Basic plugin settings
-2. **User Configuration** (`~/.zai/assistants.yaml`) - AI assistant definitions
+2. **User Configuration** (`~/.zaivim/assistants.yaml`) - AI assistant definitions
 3. **Project Configuration** (`.zai/zai_project.yaml`) - Project-specific settings
 4. **Session Commands** - Runtime configuration via chat interface
 
@@ -56,7 +56,7 @@ When multiple configuration sources specify the same setting:
 
 | Platform | Path |
 |----------|------|
-| Linux/Mac | `~/.zai/assistants.yaml` |
+| Linux/Mac | `~/.zaivim/assistants.yaml` |
 | Windows | `%USERPROFILE%\.zai\assistants.yaml` |
 
 ### Project Configuration
@@ -103,7 +103,7 @@ let g:zai_lang = 'en_US.UTF-8'  " English
 
 ```vim
 " In .vimrc
-let g:zai_log_dir = "~/.zai/log"
+let g:zai_log_dir = "~/.zaivim/log"
 ```
 
 ## Example Configurations

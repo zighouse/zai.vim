@@ -136,7 +136,7 @@ Skills are discovered from two locations, with project-level skills taking prior
 ### User-level skills
 
 ```
-~/.zai/skills/
+~/.zaivim/skills/
 ├── my-skill/
 │   ├── SKILL.md
 │   └── ...
@@ -163,7 +163,7 @@ Project-level skills override user-level skills with the same name (the user-lev
 When a skill exists in both locations:
 
 1. Project `.zai/skills/` — takes priority, shadows the user-level version
-2. User `~/.zai/skills/` — fallback if no project version exists
+2. User `~/.zaivim/skills/` — fallback if no project version exists
 
 ## Security Model
 
@@ -257,7 +257,7 @@ The updater:
 
 ## Audit Trail
 
-All skill invocations are logged to `~/.zai/skill-audit.jsonl` in JSONL format. Each record includes:
+All skill invocations are logged to `~/.zaivim/skill-audit.jsonl` in JSONL format. Each record includes:
 
 - Timestamp, session ID
 - Skill name, call chain
@@ -269,7 +269,7 @@ All skill invocations are logged to `~/.zai/skill-audit.jsonl` in JSONL format. 
 Query with `jq`:
 
 ```bash
-jq '.skill_name == "my-skill"' ~/.zai/skill-audit.jsonl
+jq '.skill_name == "my-skill"' ~/.zaivim/skill-audit.jsonl
 ```
 
 ## Pattern Suggestions
@@ -300,4 +300,4 @@ The user-level skills directory can be overridden:
 - **Environment variable**: `ZAI_USER_DIR=/custom/path`
 - **Vim config**: `let g:zai_user_dir = '/custom/path'`
 
-When neither is set, zai.vim uses `~/.zai/` if it exists, otherwise falls back to the platform default (`~/.local/share/zai/` on Linux).
+When neither is set, zai.vim uses `~/.zaivim/` if it exists, otherwise falls back to the platform default (`~/.local/share/zai/` on Linux).

@@ -139,7 +139,7 @@ python3 python3/install.py --optional asr
 安装程序将：
 - 检查 zasr 项目（预期位于 `~/mywork/github/zasr`）
 - 如需要则从源码编译 zasr-server
-- 安装到 `~/.zai/zasr`
+- 安装到 `~/.zaivim/zasr`
 - 引导您选择模型
 - 显示内存和磁盘需求
 
@@ -168,18 +168,18 @@ make -j$(nproc)
 2. **安装到部署目录**：
 
 ```bash
-# 安装 zasr 到 ~/.zai/zasr
-./scripts/install.sh --dir ~/.zai/zasr --from-binary
+# 安装 zasr 到 ~/.zaivim/zasr
+./scripts/install.sh --dir ~/.zaivim/zasr --from-binary
 ```
 
 3. **下载 ASR 模型**：
 
 ```bash
 # 交互式模型下载
-~/.zai/zasr/scripts/download-models.sh
+~/.zaivim/zasr/scripts/download-models.sh
 
 # 或下载所有模型
-~/.zai/zasr/scripts/download-models.sh --type all
+~/.zaivim/zasr/scripts/download-models.sh --type all
 ```
 
 **模型选项**：
@@ -191,13 +191,13 @@ make -j$(nproc)
 
 ```bash
 # 使用控制脚本（推荐）
-~/.zai/zasr/scripts/zasrctl start
+~/.zaivim/zasr/scripts/zasrctl start
 
 # 查看状态
-~/.zai/zasr/scripts/zasrctl status
+~/.zaivim/zasr/scripts/zasrctl status
 
 # 停止服务
-~/.zai/zasr/scripts/zasrctl stop
+~/.zaivim/zasr/scripts/zasrctl stop
 ```
 
 5. **安装 ASR 所需的 Python 依赖**：
@@ -259,7 +259,7 @@ call zai#asr#setup()
 `g:zai_log_dir` 配置日志文件保存路径。
 
 默认配置为:
-- Linux/Mac: `~/.zai/log`
+- Linux/Mac: `~/.zaivim/log`
 - Windows: `%USERPROFILE%\.zai\log`
 
 推荐：在 Windows 上配置新的日志存放路径。Windows 上的默认日志存放路径被系统隐藏，使用不便利。
@@ -293,7 +293,7 @@ DEEPSEEK_API_KEY=sk-********************************
 
 如果拥有多个模型，又或者拥有多个 AI 聊天服务可以接入，提供 AI 助手配置文件就可以快速切换。AI 助手配置文件的全路径：
 
-* Linux/Mac: ~/.zai/assistants.yaml
+* Linux/Mac: ~/.zaivim/assistants.yaml
 * Windows: %USERPROFILE%\.zai\assistants.yaml
 
 一个例子：
@@ -987,7 +987,7 @@ Zai 现在支持在 Docker 容器启动时自动安装软件包。您可以在 `
 
 ### 配置字段
 
-- `sandbox_home`：沙盒文件操作的目录。默认为 `~/.zai/sandbox`。
+- `sandbox_home`：沙盒文件操作的目录。默认为 `~/.zaivim/sandbox`。
 - `shell_container`：`tool_shell` Docker 容器的配置。
   - `image`：Docker 镜像名称（默认：`taskbox:latest`）
   - `name`：容器名称（默认：`zai-tool-shell-taskbox`）
@@ -1021,7 +1021,7 @@ Zai 现在支持在 Docker 容器启动时自动安装软件包。您可以在 `
 
 所有 shell 命令执行都会自动记录用于安全审计。
 
-**日志位置**：`~/.zai/audit/audit-YYYY-MM-DD.jsonl`
+**日志位置**：`~/.zaivim/audit/audit-YYYY-MM-DD.jsonl`
 
 **功能**：
 - JSONL 格式，凭据已脱敏

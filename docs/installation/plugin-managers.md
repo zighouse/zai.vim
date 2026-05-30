@@ -205,7 +205,7 @@ let g:zai_default_model = "deepseek-chat"
 let g:zai_lang = 'en_US.UTF-8'
 
 " Set log directory (optional)
-let g:zai_log_dir = "~/.zai/log"
+let g:zai_log_dir = "~/.zaivim/log"
 
 " Auto-enable ASR (optional)
 let g:zai_auto_enable_asr = 1
