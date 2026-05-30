@@ -62,6 +62,34 @@ If no checksum is provided, zai.vim will prompt for confirmation.
 :ZaiSkillUninstall my-skill
 ```
 
+### Create a new skill
+
+The easiest way to create a skill is to ask the AI assistant. The workflow:
+
+1. **Ask the AI** to create a skill for a specific task (e.g., "create a skill that translates Markdown files to Chinese")
+2. The AI calls `skill_read_spec` to learn the SKILL.md format, then creates the skill under `.zaivim/skills/<name>/SKILL.md`
+3. The AI validates the format with `skill_validate`
+4. **Debug** the skill in your project — it is automatically discovered and usable immediately
+5. When satisfied, **deploy** it globally:
+
+```vim
+:ZaiSkillDeploy my-skill
+" Force overwrite if target exists:
+:ZaiSkillDeploy! my-skill
+```
+
+You can also have the AI deploy for you — it will call `skill_deploy` and ask for confirmation before overwriting.
+
+### Deploy a project skill
+
+```vim
+:ZaiSkillDeploy my-skill           " Deploy (refuse if target exists)
+:ZaiSkillDeploy! my-skill          " Force overwrite
+```
+
+Copies `.zaivim/skills/<name>/` to `~/.zaivim/skills/<name>/`, making it available globally.
+The skill is validated before deployment — invalid SKILL.md files are rejected.
+
 ## SKILL.md Format
 
 Every skill is a directory containing a `SKILL.md` file. The file uses YAML frontmatter for structured metadata and Markdown body for usage instructions.
@@ -255,6 +283,44 @@ The updater:
 5. Auto-downgrades trust to L1 if security-related fields changed
 6. Rolls back on failure
 
+## Skill Creation Tools
+
+The AI assistant has access to three dedicated tools for creating and managing skills. These tools are automatically discovered at startup.
+
+### skill_read_spec
+
+Returns the full SKILL.md format specification (this document) plus a creation guide. The AI calls this first to learn how to structure a skill.
+
+**Output**: Complete `docs/skills.md` content plus step-by-step creation instructions.
+
+**When the AI uses it**: When the user asks to create a new skill or customize an existing one.
+
+### skill_validate
+
+Validates a project skill's `SKILL.md` file using the parser. Checks frontmatter, required fields, name format, and field types.
+
+**Parameters**:
+- `name` — skill directory name under `.zaivim/skills/`
+
+**Output**: Success with parsed metadata summary, or a description of parse errors.
+
+**When the AI uses it**: After creating or editing a SKILL.md, to verify correctness before testing.
+
+### skill_deploy
+
+Copies a project skill to the user-level directory (`~/.zaivim/skills/`), making it globally available.
+
+**Parameters**:
+- `name` — skill name to deploy
+- `force` (optional, default `false`) — overwrite if target already exists
+
+**Behavior**:
+- Validates SKILL.md before deploying (rejects invalid skills)
+- Refuses to overwrite unless `force=True`
+- Refreshes the skill registry after deployment
+
+**When the AI uses it**: When the user is satisfied with a project skill and wants to install it globally.
+
 ## Audit Trail
 
 All skill invocations are logged to `~/.zaivim/skill-audit.jsonl` in JSONL format. Each record includes:
@@ -290,6 +356,7 @@ Generated suggestions include a SKILL.md draft with the chain description pre-fi
 | `:ZaiSkillUpdate <name> <url> [checksum]` | Update a skill from a URL |
 | `:ZaiSkillHistory <name> [limit]` | Show trust evolution timeline |
 | `:ZaiSkillUninstall <name>` | Remove a skill (with confirmation) |
+| `:ZaiSkillDeploy[!] <name>` | Deploy project skill to user-level (`!` = force overwrite) |
 
 Tab completion is available for skill names in all commands that accept `<name>`.
 

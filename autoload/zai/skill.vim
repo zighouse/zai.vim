@@ -134,6 +134,27 @@ function! zai#skill#Update(name, url, ...) abort
 endfunction
 
 " ---------------------------------------------------------------------------
+" :ZaiSkillDeploy <name> — deploy project skill to user-level
+" :ZaiSkillDeploy! <name> — force overwrite
+" ---------------------------------------------------------------------------
+function! zai#skill#Deploy(name, ...) abort
+    let l:force = a:0 > 0 && a:1 ? ' force' : ''
+    let l:out = s:sys_call('deploy ' . shellescape(a:name) . l:force)
+    if empty(l:out)
+        return
+    endif
+    if stridx(l:out, 'successfully') >= 0
+        echohl MoreMsg
+    elseif stridx(l:out, 'FAILED') >= 0 || stridx(l:out, 'blocked') >= 0
+        echohl WarningMsg
+    else
+        echohl MoreMsg
+    endif
+    echom l:out
+    echohl None
+endfunction
+
+" ---------------------------------------------------------------------------
 " :ZaiSkillHistory <name> [limit]
 " ---------------------------------------------------------------------------
 function! zai#skill#History(name, ...) abort

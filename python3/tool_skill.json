@@ -1,0 +1,67 @@
+[
+  {
+    "type": "function",
+    "category": "skill",
+    "is_read_only": true,
+    "is_concurrency_safe": true,
+    "max_result_size": 8000,
+    "prompt": "当用户请求创建新的 skill（技能）时使用。返回 SKILL.md 格式规范和模板。",
+    "function": {
+      "name": "skill_read_spec",
+      "description": "读取 SKILL.md 格式规范和创建指南。调用后你会了解如何创建 skill（包括 frontmatter 字段、安全域、信任级别等），然后应使用 write_file 工具在 .zaivim/skills/<name>/SKILL.md 创建 skill。",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "category": "skill",
+    "is_read_only": true,
+    "is_concurrency_safe": true,
+    "max_result_size": 4000,
+    "prompt": "当需要验证已创建的 SKILL.md 格式是否正确时使用。",
+    "function": {
+      "name": "skill_validate",
+      "description": "验证指定 skill 目录下的 SKILL.md 格式是否正确（解析 frontmatter、检查必填字段）。返回验证结果和任何格式错误。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "要验证的 skill 名称（.zaivim/skills/ 下的目录名）"
+          }
+        },
+        "required": ["name"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "category": "skill",
+    "is_read_only": false,
+    "is_concurrency_safe": false,
+    "max_result_size": 2000,
+    "prompt": "当用户对 skill 满意并想要部署到全局时使用。需要用户确认后才能执行部署。",
+    "function": {
+      "name": "skill_deploy",
+      "description": "将项目级 skill（.zaivim/skills/<name>/）部署到用户级目录（~/.zaivim/skills/<name>/），使其全局可用。部署前会检查目标是否已存在，如果存在需要用户确认覆盖。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "要部署的 skill 名称"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "如果目标已存在，是否强制覆盖。默认为 false"
+          }
+        },
+        "required": ["name"]
+      }
+    }
+  }
+]

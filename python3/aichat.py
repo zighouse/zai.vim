@@ -126,6 +126,10 @@ class AIChat:
             self._prompt_for_title = "\n此外，请在你的回答末尾，单独一行以“### 建议标题：[简洁标题]”" + \
                     "的格式提供一个标题总结本次对话的核心，" + \
                     "越短越好，尽量不要超过 30 字。"
+            self._skill_hint = "你可以帮助用户创建或定制 zai.vim 技能：" + \
+                    "使用 skill_read_spec 了解 SKILL.md 格式，" + \
+                    "再用 write_file 创建 .zaivim/skills/<name>/SKILL.md，" + \
+                    "用 skill_validate 验证，调试满意后用 skill_deploy 部署到全局。"
         else:
             self._system_prompt = "You are a strict assistant in programming, " + \
                     "software engineering and computer science. " + \
@@ -135,6 +139,10 @@ class AIChat:
             self._prompt_for_title = "\nAdditionally, please provide a line for title in English " + \
                     "at the end of your response in the format " + \
                     '"### Title: [concise title]" to summarize the core suggestion.'
+            self._skill_hint = "You can help create or customize zai.vim skills: " + \
+                    "use skill_read_spec to learn the SKILL.md format, " + \
+                    "create .zaivim/skills/<name>/SKILL.md with write_file, " + \
+                    "validate with skill_validate, and deploy with skill_deploy when ready."
 
         self._cli.register("base_url", lambda v: self.set_config("base_url", v))
         self._cli.register("api_key_name", lambda v: self.set_config("api_key_name", v))
@@ -1072,6 +1080,8 @@ class AIChat:
                 set_config(self._config)
                 sys_prompt.append(get_prompt(True))
             sys_prompt.append(self._prompt_for_title)
+            if getattr(self, '_skill_hint', None):
+                sys_prompt.append(self._skill_hint)
             params['messages'][0]['content'] = "\n".join(sys_prompt)
         # 日期变更：在 user 消息之前插入日期更新消息（用 user role 避免破坏 assistant/user 交替模式）
         if date_changed:

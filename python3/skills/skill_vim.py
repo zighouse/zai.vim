@@ -156,6 +156,12 @@ def cmd_skill_update(name: str, url: str = "", checksum: str = "") -> str:
     return result.error or "Update failed"
 
 
+def cmd_skill_deploy(name: str, force: bool = False) -> str:
+    """Deploy a project skill to the user-level skills directory."""
+    from tool_skill import invoke_skill_deploy
+    return invoke_skill_deploy(name, force=force)
+
+
 def cmd_skill_history(name: str, limit: int = 20) -> str:
     """Show trust evolution history for a skill."""
     evolution = TrustEvolution()
@@ -229,6 +235,12 @@ def main():
         url = args[1] if len(args) > 1 else ""
         checksum = args[2] if len(args) > 2 else ""
         print(cmd_skill_update(args[0], url, checksum))
+    elif cmd == "deploy":
+        if not args:
+            print("Usage: skill_vim.py deploy <name> [force]")
+            sys.exit(1)
+        force = args[1].lower() == "force" if len(args) > 1 else False
+        print(cmd_skill_deploy(args[0], force=force))
     elif cmd == "history":
         if not args:
             print("Usage: skill_vim.py history <name> [limit]")
