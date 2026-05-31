@@ -114,6 +114,17 @@ class AIChat:
                 audit_logger=_audit,
             )
             self._skill_registry = _skill_registry
+
+            # Initialize skill enhancer with LLM access
+            try:
+                from skills.skill_enhancer import init as enhancer_init
+                enhancer_init(
+                    llm_getter=lambda: self._llm,
+                    config_getter=lambda: self._config,
+                )
+            except Exception as _enhancer_ex:
+                print(f"[skill] Enhancer init skipped: {_enhancer_ex}",
+                      file=sys.stderr)
         except Exception as _skill_init_ex:
             # Skill system is optional — graceful degradation
             print(f"[skill] Skill system init skipped: {_skill_init_ex}",
@@ -884,6 +895,15 @@ class AIChat:
         # Sort alphabetically
         native.sort(key=lambda s: s.name)
 
+        # Trigger async enhancement for skills missing user-language translations
+        try:
+            from skills.skill_enhancer import enhance_if_needed
+            for s in native:
+                if s.path:
+                    enhance_if_needed(s.name, s.path)
+        except Exception:
+            pass
+
         # Build listing with token budget
         max_context = self._get_max_context_tokens()
         budget = max(300, int(max_context * 0.01 * 4))
@@ -1413,6 +1433,12 @@ class AIChat:
                     request.get("content_tokens", 0)
                 )
                 self._cur_round = {"request": request, "response":[]}
+                # Language sampling for skill enhancement
+                try:
+                    from skills.skill_lang import record_lang
+                    record_lang(request.get("content", ""))
+                except Exception:
+                    pass
                 response = self._generate_response(self._cur_round)
             if response:
                 self._cur_round["response"].append(response)

@@ -72,6 +72,7 @@ def parse(skill_md_path: str | Path) -> SkillMetadata:
         paths=raw.get("paths", []),
         disable_model_invocation=raw.get("disable_model_invocation", False),
         user_invocable=raw.get("user_invocable", True),
+        localized_descriptions=raw.get("localized_descriptions", {}),
         tags=raw.get("tags", []),
     )
 
@@ -121,6 +122,43 @@ def parse_index_only(skill_md_path: str | Path) -> dict:
         "user_invocable": raw.get("user_invocable", True),
         "tags": raw.get("tags", []),
     }
+
+
+def serialize(skill_md_path: str | Path, updates: dict) -> None:
+    """Merge *updates* into a SKILL.md's frontmatter and write back.
+
+    Reads the file, parses frontmatter, merges the updates dict, and
+    rewrites the complete file (frontmatter + body).  Checks mtime
+    before writing to avoid clobbering concurrent edits.
+
+    Args:
+        skill_md_path: Path to the SKILL.md file.
+        updates: Dict of frontmatter fields to add or overwrite.
+    """
+    path = Path(skill_md_path)
+    content = path.read_text(encoding="utf-8")
+    stat_before = path.stat().st_mtime
+
+    frontmatter, body = _split_frontmatter(content, str(path))
+    raw = yaml.safe_load(frontmatter) or {}
+    if not isinstance(raw, dict):
+        return
+
+    # Merge updates (skip None values)
+    for k, v in updates.items():
+        if v is not None:
+            raw[k] = v
+
+    new_fm = yaml.dump(raw, allow_unicode=True, default_flow_style=False,
+                       sort_keys=False).rstrip("\n")
+    new_content = f"---\n{new_fm}\n---\n{body}"
+
+    # Atomic-ish: check mtime hasn't changed
+    if path.stat().st_mtime != stat_before:
+        logger.warning("Skipping write to %s — file changed during processing", path)
+        return
+
+    path.write_text(new_content, encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
