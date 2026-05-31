@@ -12,9 +12,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import shlex
+import subprocess
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 from .skill_adapter import invoke_adapted
@@ -33,6 +37,287 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 30
 _DEFAULT_MAX_WORKERS = 4
+
+# ---------------------------------------------------------------------------
+# Dynamic context injection (!`cmd` and ```! ... ```)
+# ---------------------------------------------------------------------------
+
+# Inline: !`command` at line start or after whitespace
+_INLINE_INJECT_RE = re.compile(r"(^|\s)!`([^`]+)`", re.MULTILINE)
+# Block: ```!\n...\n```
+_BLOCK_INJECT_RE = re.compile(r"```!\n(.*?)\n```", re.DOTALL)
+
+_INJECT_TIMEOUT = 30  # seconds
+
+
+def inject_dynamic_context(
+    content: str,
+    meta: SkillMetadata,
+    *,
+    disabled: bool = False,
+) -> str:
+    """Execute shell commands in !`cmd` and ```! ... ``` blocks.
+
+    Replaces placeholders with command output (once, no recursive scan).
+    If *disabled* is True (disableSkillShellExecution), replaces with
+    a policy-disabled message instead.
+    """
+    if disabled:
+        _disabled_msg = "[shell command execution disabled by policy]"
+
+        def _replace_disabled_inline(m: re.Match) -> str:
+            return f"{m.group(1)}{_disabled_msg}"
+
+        content = _INLINE_INJECT_RE.sub(_replace_disabled_inline, content)
+        content = _BLOCK_INJECT_RE.sub(_disabled_msg, content)
+        return content
+
+    allowed = _is_injection_allowed(meta)
+    if not allowed:
+        _blocked_msg = "[shell command execution blocked: security policy]"
+
+        def _replace_blocked_inline(m: re.Match) -> str:
+            return f"{m.group(1)}{_blocked_msg}"
+
+        content = _INLINE_INJECT_RE.sub(_replace_blocked_inline, content)
+        content = _BLOCK_INJECT_RE.sub(_blocked_msg, content)
+        return content
+
+    # Inline: !`command`
+    def _replace_inline(m: re.Match) -> str:
+        prefix = m.group(1)
+        cmd = m.group(2)
+        output = _run_inject_command(cmd)
+        return f"{prefix}{output}"
+
+    content = _INLINE_INJECT_RE.sub(_replace_inline, content)
+
+    # Block: ```!\n...\n```
+    def _replace_block(m: re.Match) -> str:
+        cmds = m.group(1)
+        output = _run_inject_command(cmds)
+        return output
+
+    content = _BLOCK_INJECT_RE.sub(_replace_block, content)
+    return content
+
+
+def _is_injection_allowed(meta: SkillMetadata) -> bool:
+    """Check whether dynamic shell injection is allowed for this skill.
+
+    public/personal domains: allowed (user-level or community skills)
+    workspace: allowed only for native origin (project's own skills)
+    local, external origin: blocked (untrusted third-party skills)
+    """
+    domain = str(meta.security_domain)
+    if domain in ("public", "personal"):
+        return True
+    if domain == "workspace" and str(meta.origin) not in ("external",
+                                                           "deprecated_adapted"):
+        return True
+    return False
+
+
+def _get_skill_shell_config() -> str:
+    """Read skillShellExecution from settings.json.
+
+    Returns:
+        'sandbox' — bwrap sandboxed execution (default, matches zai.vim security model)
+        'host'   — direct host execution (legacy, bypasses sandbox)
+        'docker' — docker execution (not yet implemented, falls back to sandbox)
+    """
+    try:
+        from paths import get_user_dir
+        settings_path = get_user_dir() / "settings.json"
+        if settings_path.is_file():
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            value = settings.get("skillShellExecution", "sandbox")
+            if value in ("sandbox", "host", "docker"):
+                return value
+    except Exception:
+        pass
+    return "sandbox"
+
+
+def _run_inject_command(cmd: str) -> str:
+    """Execute a shell command for dynamic injection, return output.
+
+    Respects skillShellExecution setting:
+      - 'sandbox' (default): bwrap sandbox, fail-closed if unavailable
+      - 'host': direct host execution
+      - 'docker': not yet implemented, falls back to sandbox
+    """
+    config = _get_skill_shell_config()
+
+    if config == "host":
+        return _run_inject_command_host(cmd)
+
+    if config == "docker":
+        # Docker mode not yet implemented — fall back to sandbox
+        pass
+
+    return _run_inject_command_sandbox(cmd)
+
+
+def _run_inject_command_sandbox(cmd: str) -> str:
+    """Execute command inside bwrap sandbox (same security model as tool_shell)."""
+    try:
+        from shell.sandbox import SandboxBuilder
+        from paths import get_project_root
+
+        available, _ = SandboxBuilder.available()
+        if not available:
+            return "[command execution blocked: sandbox unavailable]"
+
+        project_root = str(get_project_root())
+        config, build_err = SandboxBuilder.build(
+            allow_network=False,
+            working_dir=project_root,
+        )
+
+        if config is None or not config.bwrap_args:
+            reason = build_err.message if build_err else "unknown"
+            return f"[command execution blocked: sandbox build failed ({reason})]"
+
+        # Validate bwrap binary (defense-in-depth)
+        bwrap_bin = config.bwrap_args[0]
+        if bwrap_bin not in ('bwrap', '/usr/bin/bwrap', '/usr/local/bin/bwrap'):
+            return "[command execution blocked: invalid sandbox configuration]"
+
+        bwrap_args_safe = list(config.bwrap_args)
+        bwrap_cmd = bwrap_args_safe + ['/bin/sh', '-c', cmd]
+
+        result = subprocess.run(
+            bwrap_cmd,
+            capture_output=True,
+            text=True,
+            timeout=_INJECT_TIMEOUT,
+            cwd=project_root,
+        )
+        output = result.stdout.strip()
+        if result.returncode != 0 and not output:
+            return f"[command failed: exit code {result.returncode}]"
+        return output
+    except subprocess.TimeoutExpired:
+        return f"[command timed out after {_INJECT_TIMEOUT}s]"
+    except Exception as e:
+        return f"[command failed: {e}]"
+
+
+def _run_inject_command_host(cmd: str) -> str:
+    """Execute command directly on host (legacy mode, opt-in only)."""
+    try:
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=_INJECT_TIMEOUT,
+        )
+        output = result.stdout.strip()
+        if result.returncode != 0 and not output:
+            return f"[command failed: exit code {result.returncode}]"
+        return output
+    except subprocess.TimeoutExpired:
+        return f"[command timed out after {_INJECT_TIMEOUT}s]"
+    except Exception as e:
+        return f"[command failed: {e}]"
+
+# ---------------------------------------------------------------------------
+# Variable expansion
+# ---------------------------------------------------------------------------
+
+# Regex for $ARGUMENTS[N] / $N (positional args)
+_POS_ARG_RE = re.compile(r"\$ARGUMENTS\[(\d+)\]|\$(\d+)")
+# Regex for ${VAR} style variables
+_BRACE_VAR_RE = re.compile(r"\$\{([^}]+)\}")
+# Regex for @{project-root}
+_PROJECT_ROOT_RE = re.compile(r"@\{project-root\}")
+# Regex for $ARGUMENTS (full — but NOT $ARGUMENTS[N] or $name)
+_FULL_ARGS_RE = re.compile(r"\$ARGUMENTS(?!\[)(?!\w)")
+
+
+def expand_variables(
+    content: str,
+    meta: SkillMetadata,
+    args: str = "",
+    session_id: str = "",
+    effort: str = "",
+) -> str:
+    """Expand skill variables in *content* at invocation time.
+
+    Supported:
+      - @{project-root} → project root directory
+      - ${CLAUDE_SESSION_ID} / ${ZAI_SESSION_ID} → session_id
+      - ${CLAUDE_EFFORT} / ${ZAI_EFFORT} → effort
+      - ${CLAUDE_SKILL_DIR} / ${ZAI_SKILL_DIR} → skill directory
+      - ${CLAUDE_PROJECT_ROOT} / ${ZAI_PROJECT_ROOT} → project root
+      - $ARGUMENTS → full argument string
+      - $ARGUMENTS[N] / $N → positional argument
+      - $name → named argument from meta.arguments
+    """
+    from paths import get_project_root
+    project_root = str(get_project_root())
+
+    # Skill directory (parent of SKILL.md path)
+    skill_dir = ""
+    if meta.path:
+        p = Path(meta.path)
+        skill_dir = str(p.parent if p.is_file() else p)
+
+    # Parse positional arguments
+    pos_args: list[str] = []
+    if args:
+        try:
+            pos_args = shlex.split(args)
+        except ValueError:
+            pos_args = args.split()
+
+    # --- @{project-root} ---
+    content = _PROJECT_ROOT_RE.sub(project_root, content)
+
+    # --- ${VAR} style ---
+    def _replace_brace_var(m: re.Match) -> str:
+        var = m.group(1)
+        mapping = {
+            "CLAUDE_SESSION_ID": session_id,
+            "ZAI_SESSION_ID": session_id,
+            "CLAUDE_EFFORT": effort,
+            "ZAI_EFFORT": effort,
+            "CLAUDE_SKILL_DIR": skill_dir,
+            "ZAI_SKILL_DIR": skill_dir,
+            "CLAUDE_PROJECT_ROOT": project_root,
+            "ZAI_PROJECT_ROOT": project_root,
+        }
+        return mapping.get(var, m.group(0))
+
+    content = _BRACE_VAR_RE.sub(_replace_brace_var, content)
+
+    # --- $name (named args from meta.arguments) — before positional/$ARGUMENTS ---
+    if meta.arguments and pos_args:
+        for i, arg_name in enumerate(meta.arguments):
+            if i < len(pos_args):
+                # Use regex with word-boundary-like check (not greedy replace)
+                pat = re.compile(r'\$' + re.escape(arg_name) + r'(?!\w)')
+                content = pat.sub(pos_args[i], content)
+
+    # --- $ARGUMENTS[N] / $N (positional) ---
+    def _replace_pos(m: re.Match) -> str:
+        idx_str = m.group(1) or m.group(2)
+        if idx_str is None:
+            return m.group(0)
+        idx = int(idx_str)
+        if 0 <= idx < len(pos_args):
+            return pos_args[idx]
+        # Out of range: leave unchanged (avoids silently eating $50 in prose)
+        return m.group(0)
+
+    content = _POS_ARG_RE.sub(_replace_pos, content)
+
+    # --- $ARGUMENTS (full) — LAST to avoid re-expansion of $0/$1 in output ---
+    content = _FULL_ARGS_RE.sub(args, content)
+
+    return content
 
 
 class SkillExecutor:
@@ -312,14 +597,36 @@ class SkillExecutor:
 
             content = skill_path.read_text(encoding="utf-8")
 
-            # Append invocation args if provided
-            if kwargs:
-                import json
+            # Strip frontmatter — we only want the body
+            from .skill_parser import _split_frontmatter
+            try:
+                _, body = _split_frontmatter(content, str(skill_path))
+                content = body
+            except Exception:
+                pass  # no frontmatter, use as-is
+
+            # Expand variables ($ARGUMENTS, ${CLAUDE_*}, etc.)
+            args_str = kwargs.get("args", "") or ""
+            session_id = kwargs.get("session_id", "") or ""
+            effort = kwargs.get("effort", "") or ""
+            content = expand_variables(content, meta, args_str, session_id, effort)
+
+            # Dynamic context injection (!`cmd` and ```! ... ```)
+            shell_disabled = _is_shell_execution_disabled()
+            content = inject_dynamic_context(content, meta, disabled=shell_disabled)
+
+            # Task 10: Inject allowed/disallowed tools hints
+            content = _inject_tool_hints(content, meta)
+
+            # Append invocation kwargs as context if present
+            remaining = {k: v for k, v in kwargs.items()
+                         if k not in ("args", "session_id", "effort")}
+            if remaining:
                 try:
-                    args_str = json.dumps(kwargs, ensure_ascii=False)
+                    args_json = json.dumps(remaining, ensure_ascii=False)
                 except Exception:
-                    args_str = str(kwargs)
-                content = content.rstrip() + f"\n\n## Invocation Arguments\n{args_str}\n"
+                    args_json = str(remaining)
+                content = content.rstrip() + f"\n\n## Invocation Arguments\n{args_json}\n"
 
             return InvocationResult(
                 success=True,
@@ -343,3 +650,31 @@ class SkillExecutor:
     def shutdown(self, wait: bool = True) -> None:
         """Shut down the executor thread pool."""
         self._executor.shutdown(wait=wait)
+
+
+def _is_shell_execution_disabled() -> bool:
+    """Check the global disableSkillShellExecution setting."""
+    try:
+        from paths import get_user_dir
+        settings_path = get_user_dir() / "settings.json"
+        if settings_path.is_file():
+            import json
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            return bool(settings.get("disableSkillShellExecution", False))
+    except Exception:
+        pass
+    return False
+
+
+def _inject_tool_hints(content: str, meta: SkillMetadata) -> str:
+    """Append allowed/disallowed tools hints to skill content (Task 10)."""
+    hints: list[str] = []
+    if meta.allowed_tools:
+        tools = ", ".join(meta.allowed_tools)
+        hints.append(f"## Allowed Tools\nYou may use: {tools}")
+    if meta.disallowed_tools:
+        tools = ", ".join(meta.disallowed_tools)
+        hints.append(f"## Disallowed Tools\nYou must NOT use: {tools}")
+    if hints:
+        content = content.rstrip() + "\n\n" + "\n\n".join(hints) + "\n"
+    return content

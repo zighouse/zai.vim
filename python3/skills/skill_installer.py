@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
+import os
 import re
 import shutil
 import sys
 import tarfile
 import tempfile
 import urllib.request
+import yaml
 import zipfile
 from pathlib import Path
 from typing import Optional
@@ -283,3 +286,311 @@ class SkillInstaller:
             for chunk in iter(lambda: f.read(8192), b""):
                 h.update(chunk)
         return hmac.compare_digest(h.hexdigest(), expected)
+
+    # ------------------------------------------------------------------
+    # Claude Code skill import
+    # ------------------------------------------------------------------
+
+    def import_from_claude_code(
+        self, source_dir: Optional[Path] = None
+    ) -> list[dict]:
+        """Discover skills from a Claude Code configuration directory.
+
+        Scans ~/.claude/commands/*.md and ~/.claude/skills/*/SKILL.md.
+        Returns a list of dicts with name, description, path, format.
+        Does NOT install — caller presents list for user selection.
+        """
+        base = source_dir or Path.home() / ".claude"
+        if not base.is_dir():
+            return []
+
+        found: list[dict] = []
+
+        # Scan commands/*.md (legacy CC format)
+        commands_dir = base / "commands"
+        if commands_dir.is_dir():
+            for md_file in commands_dir.glob("*.md"):
+                name = md_file.stem
+                if not _KEBAB_RE.match(name):
+                    continue
+                desc = self._quick_description(md_file)
+                found.append({
+                    "name": name,
+                    "description": desc,
+                    "path": str(md_file),
+                    "format": "cc-command",
+                })
+
+        # Scan skills/*/SKILL.md (modern CC format)
+        skills_dir = base / "skills"
+        if skills_dir.is_dir():
+            for skill_dir in skills_dir.iterdir():
+                if not skill_dir.is_dir():
+                    continue
+                skill_md = skill_dir / "SKILL.md"
+                if not skill_md.is_file():
+                    continue
+                name = skill_dir.name
+                if not _KEBAB_RE.match(name):
+                    continue
+                desc = self._quick_description(skill_md)
+                found.append({
+                    "name": name,
+                    "description": desc,
+                    "path": str(skill_md),
+                    "format": "cc-skill",
+                })
+
+        return found
+
+    def import_selected(
+        self, source_dir: Optional[Path], selected: list[str]
+    ) -> list[str]:
+        """Install selected CC skills into ~/.zaivim/skills/.
+
+        Args:
+            source_dir: Claude config dir (default ~/.claude/).
+            selected: List of skill names to install.
+
+        Returns:
+            List of installed skill names.
+        """
+        base = source_dir or Path.home() / ".claude"
+        discovered = self.import_from_claude_code(base)
+        by_name = {s["name"]: s for s in discovered}
+
+        installed: list[str] = []
+        for name in selected:
+            info = by_name.get(name)
+            if info is None:
+                logger.warning("CC skill '%s' not found during import", name)
+                continue
+
+            dst = self._skill_dir / name
+            if dst.exists():
+                logger.warning("Skill '%s' already installed, skipping", name)
+                continue
+
+            src_path = Path(info["path"])
+
+            try:
+                if info["format"] == "cc-command":
+                    # Single .md → create directory structure
+                    dst.mkdir(parents=True, exist_ok=True)
+                    skill_md = dst / "SKILL.md"
+                    content = src_path.read_text(encoding="utf-8")
+                    # Inject zai.vim defaults if frontmatter exists
+                    content = self._inject_zaivim_defaults(content)
+                    skill_md.write_text(content, encoding="utf-8")
+                else:
+                    # Directory → copy entire skill
+                    shutil.copytree(src_path.parent, dst)
+
+                installed.append(name)
+                logger.info("Imported CC skill '%s' to %s", name, dst)
+            except Exception as e:
+                logger.error("Failed to import CC skill '%s': %s", name, e)
+                # Cleanup partial install
+                if dst.exists():
+                    try:
+                        shutil.rmtree(dst)
+                    except OSError:
+                        pass
+
+        # Refresh registry
+        if installed:
+            try:
+                self._registry.scan(incremental=True)
+            except Exception:
+                pass
+
+        return installed
+
+    # ------------------------------------------------------------------
+    # GitHub skill installation
+    # ------------------------------------------------------------------
+
+    def install_from_github(
+        self, repo: str, subpath: str = ".claude/commands"
+    ) -> list[dict]:
+        """List available skills from a GitHub repo via API.
+
+        Args:
+            repo: GitHub repo in owner/name format (e.g. 'bmad-method/BMAD-METHOD').
+            subpath: Path within repo to scan for skill files.
+
+        Returns:
+            List of dicts with name, description, url.
+        """
+        api_url = f"https://api.github.com/repos/{repo}/contents/{subpath}"
+        headers = {"Accept": "application/vnd.github.v3+json",
+                   "User-Agent": "zaivim-skill-installer"}
+        # Use GITHUB_TOKEN if available (raises rate limit from 60 to 5000/hr)
+        gh_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        if gh_token:
+            headers["Authorization"] = f"Bearer {gh_token}"
+        try:
+            req = urllib.request.Request(api_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                items = json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            logger.error("GitHub API call failed for %s: %s", api_url, e)
+            return []
+
+        if not isinstance(items, list):
+            return []
+
+        found: list[dict] = []
+        for item in items:
+            name = item.get("name", "")
+            if not name.endswith(".md"):
+                continue
+            skill_name = name[:-3]  # strip .md
+            if not _KEBAB_RE.match(skill_name):
+                continue
+            download_url = item.get("download_url", "")
+            if not download_url:
+                continue
+            found.append({
+                "name": skill_name,
+                "description": f"(from {repo}/{subpath}/{name})",
+                "download_url": download_url,
+                "format": "github",
+            })
+
+        return found
+
+    def install_selected_from_github(
+        self, repo: str, subpath: str, selected: list[str]
+    ) -> list[str]:
+        """Download and install selected skills from GitHub.
+
+        Args:
+            repo: GitHub repo in owner/name format.
+            subpath: Path within repo (e.g. '.claude/commands').
+            selected: List of skill names to install.
+
+        Returns:
+            List of installed skill names.
+        """
+        discovered = self.install_from_github(repo, subpath)
+        by_name = {s["name"]: s for s in discovered}
+
+        installed: list[str] = []
+        for name in selected:
+            info = by_name.get(name)
+            if info is None:
+                logger.warning("GitHub skill '%s' not found", name)
+                continue
+
+            dst = self._skill_dir / name
+            if dst.exists():
+                logger.warning("Skill '%s' already installed, skipping", name)
+                continue
+
+            download_url = info["download_url"]
+            try:
+                # Download content
+                headers = {"User-Agent": "zaivim-skill-installer"}
+                gh_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+                if gh_token:
+                    headers["Authorization"] = f"Bearer {gh_token}"
+                req = urllib.request.Request(download_url, headers=headers)
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    content = resp.read().decode("utf-8")
+
+                # Create directory structure
+                dst.mkdir(parents=True, exist_ok=True)
+                content = self._inject_zaivim_defaults(content)
+                (dst / "SKILL.md").write_text(content, encoding="utf-8")
+                installed.append(name)
+                logger.info("Installed GitHub skill '%s' to %s", name, dst)
+            except Exception as e:
+                logger.error("Failed to install GitHub skill '%s': %s", name, e)
+                if dst.exists():
+                    try:
+                        shutil.rmtree(dst)
+                    except OSError:
+                        pass
+
+        if installed:
+            try:
+                self._registry.scan(incremental=True)
+            except Exception:
+                pass
+
+        return installed
+
+    # ------------------------------------------------------------------
+    # Internal helpers for CC/GitHub import
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _quick_description(md_path: Path) -> str:
+        """Extract a quick description from a .md file (frontmatter or body)."""
+        try:
+            content = md_path.read_text(encoding="utf-8")
+        except Exception:
+            return ""
+        # Try YAML frontmatter description
+        m = re.match(r"^---\s*\r?\n(.*?)\r?\n---", content, re.DOTALL)
+        if m:
+            try:
+                fm = yaml.safe_load(m.group(1)) or {}
+                if isinstance(fm, dict):
+                    desc = fm.get("description", "")
+                    if desc:
+                        return str(desc)[:200]
+            except Exception:
+                pass
+        # Fallback: first non-heading paragraph
+        body = content[m.end():] if m else content
+        for line in body.strip().splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                return stripped[:200]
+        return ""
+
+    @staticmethod
+    def _inject_zaivim_defaults(content: str) -> str:
+        """Add zai.vim default fields to CC-format SKILL.md frontmatter."""
+        m = re.match(r"^---\s*\r?\n(.*?)\r?\n---", content, re.DOTALL)
+        if not m:
+            # No frontmatter at all — wrap entire content
+            return (
+                "---\n"
+                "security_domain: workspace\n"
+                "origin: external\n"
+                "trust_level: L1\n"
+                "---\n\n"
+                + content
+            )
+
+        fm_text = m.group(1)
+        try:
+            fm = yaml.safe_load(fm_text) or {}
+        except Exception:
+            return content  # leave untouched if YAML is broken
+
+        if not isinstance(fm, dict):
+            return content
+
+        # Add zai.vim defaults for missing fields
+        defaults = {
+            "security_domain": "workspace",
+            "origin": "external",
+            "trust_level": "L1",
+        }
+        changed = False
+        for key, default in defaults.items():
+            if key not in fm:
+                fm[key] = default
+                changed = True
+
+        if not changed:
+            return content
+
+        new_fm = yaml.dump(fm, allow_unicode=True, default_flow_style=False,
+                           sort_keys=False).rstrip("\n")
+        body = content[m.end():]
+        return f"---\n{new_fm}\n---{body}"

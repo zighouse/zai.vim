@@ -272,6 +272,36 @@ def invoke_skill(skill: str, args: str = "") -> str:
         print(f"[skill:{skill}] ERROR — load failed: {e}", file=sys.stderr)
         return f"Failed to load skill '{skill}' from {meta.path}: {e}"
 
+    # Strip frontmatter — only body goes to LLM
+    try:
+        from skills.skill_parser import _split_frontmatter
+        _, body = _split_frontmatter(content, str(skill_path))
+        content = body
+    except Exception:
+        pass  # no frontmatter, use as-is
+
+    # Expand variables ($ARGUMENTS, ${CLAUDE_*}/${ZAI_*}, etc.)
+    try:
+        from skills.skill_executor import expand_variables
+        content = expand_variables(content, meta, args=args)
+    except Exception:
+        pass  # expansion failure is non-fatal
+
+    # Dynamic context injection (!`cmd` and ```! ... ```)
+    try:
+        from skills.skill_executor import inject_dynamic_context, _is_shell_execution_disabled
+        shell_disabled = _is_shell_execution_disabled()
+        content = inject_dynamic_context(content, meta, disabled=shell_disabled)
+    except Exception:
+        pass  # injection failure is non-fatal
+
+    # Inject allowed/disallowed tools hints
+    try:
+        from skills.skill_executor import _inject_tool_hints
+        content = _inject_tool_hints(content, meta)
+    except Exception:
+        pass
+
     # Append invocation args if provided
     if args:
         content = content.rstrip() + f"\n\n## Invocation Context\n{args}\n"
@@ -279,3 +309,129 @@ def invoke_skill(skill: str, args: str = "") -> str:
     print(f"[skill:{skill}] LOADED — {len(content)} chars from {meta.path}",
           file=sys.stderr)
     return content
+
+
+# ---------------------------------------------------------------------------
+# Claude Code skill import
+# ---------------------------------------------------------------------------
+
+def invoke_skill_import_claude(source_dir: str = "") -> str:
+    """Discover skills from Claude Code configuration.
+
+    Scans ~/.claude/commands/ and ~/.claude/skills/ by default.
+    Returns a formatted list of discovered skills for user selection.
+    """
+    try:
+        from skills.skill_installer import SkillInstaller
+        from skills.skill_registry import SkillRegistry
+    except ImportError as e:
+        return f"Skill system not available: {e}"
+
+    registry = _get_skill_registry() or SkillRegistry()
+    installer = SkillInstaller(registry)
+
+    src = Path(source_dir) if source_dir else None
+    found = installer.import_from_claude_code(src)
+
+    if not found:
+        search_dir = src or Path.home() / ".claude"
+        return f"No Claude Code skills found in {search_dir}/"
+
+    lines = ["## Claude Code Skills Found\n"]
+    for i, s in enumerate(found, 1):
+        fmt_label = "command" if s["format"] == "cc-command" else "skill"
+        lines.append(f"{i}. **{s['name']}** ({fmt_label}) — {s['description']}")
+    lines.append(
+        f"\nTo install, call: "
+        f"skill_import_selected(names='name1,name2,...')"
+    )
+
+    return "\n".join(lines)
+
+
+def invoke_skill_import_selected(names: str) -> str:
+    """Install selected CC skills by comma-separated names."""
+    try:
+        from skills.skill_installer import SkillInstaller
+        from skills.skill_registry import SkillRegistry
+    except ImportError as e:
+        return f"Skill system not available: {e}"
+
+    registry = _get_skill_registry() or SkillRegistry()
+    installer = SkillInstaller(registry)
+
+    selected = [n.strip() for n in names.split(",") if n.strip()]
+    if not selected:
+        return "No skill names provided."
+
+    installed = installer.import_selected(None, selected)
+
+    if not installed:
+        return "No skills were installed (not found or already exist)."
+
+    return (
+        f"Installed {len(installed)} skill(s): {', '.join(installed)}\n"
+        f"Use :ZaiSkillList to verify."
+    )
+
+
+def invoke_skill_install_github(repo: str, subpath: str = ".claude/commands") -> str:
+    """List skills available in a GitHub repository.
+
+    Args:
+        repo: GitHub repo in owner/name format.
+        subpath: Path within repo to scan for skills.
+    """
+    try:
+        from skills.skill_installer import SkillInstaller
+        from skills.skill_registry import SkillRegistry
+    except ImportError as e:
+        return f"Skill system not available: {e}"
+
+    registry = _get_skill_registry() or SkillRegistry()
+    installer = SkillInstaller(registry)
+
+    found = installer.install_from_github(repo, subpath)
+
+    if not found:
+        return f"No skills found at {repo}/{subpath}/"
+
+    lines = [f"## Skills in {repo}/{subpath}/\n"]
+    for i, s in enumerate(found, 1):
+        lines.append(f"{i}. **{s['name']}** — {s['description']}")
+    lines.append(
+        f"\nTo install, call: "
+        f"skill_install_github_selected(repo='{repo}', subpath='{subpath}', "
+        f"names='name1,name2,...')"
+    )
+
+    return "\n".join(lines)
+
+
+def invoke_skill_install_github_selected(
+    repo: str, subpath: str = ".claude/commands", names: str = ""
+) -> str:
+    """Install selected skills from a GitHub repo."""
+    try:
+        from skills.skill_installer import SkillInstaller
+        from skills.skill_registry import SkillRegistry
+    except ImportError as e:
+        return f"Skill system not available: {e}"
+
+    registry = _get_skill_registry() or SkillRegistry()
+    installer = SkillInstaller(registry)
+
+    selected = [n.strip() for n in names.split(",") if n.strip()]
+    if not selected:
+        return "No skill names provided."
+
+    installed = installer.install_selected_from_github(repo, subpath, selected)
+
+    if not installed:
+        return f"No skills were installed from {repo}/{subpath}/."
+
+    return (
+        f"Installed {len(installed)} skill(s) from {repo}: "
+        f"{', '.join(installed)}\n"
+        f"Use :ZaiSkillList to verify."
+    )

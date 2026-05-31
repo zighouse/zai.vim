@@ -61,6 +61,14 @@ class SkillStatus(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class SkillVisibility(StrEnum):
+    """Four-level visibility control for skills (CC skillOverrides)."""
+    ON = "on"
+    NAME_ONLY = "name-only"
+    USER_INVOCABLE_ONLY = "user-invocable-only"
+    OFF = "off"
+
+
 # ---------------------------------------------------------------------------
 # Error codes (constants)
 # ---------------------------------------------------------------------------
@@ -98,6 +106,7 @@ class SkillMetadata:
     output_schema: str = ""
     path: str | None = None  # stored as str for JSON serialization
     status: SkillStatus = SkillStatus.ENABLED
+    visibility: str = "on"  # SkillVisibility value for skillOverrides
     # Skill discovery fields
     when_to_use: str = ""  # hints for LLM-driven skill matching
     paths: list[str] = field(default_factory=list)  # file patterns for conditional activation
@@ -105,6 +114,20 @@ class SkillMetadata:
     user_invocable: bool = True  # whether user can invoke via /skillname
     localized_descriptions: dict[str, str] = field(default_factory=dict)  # lang -> description
     tags: list[str] = field(default_factory=list)  # auto-extracted category tags
+    # Claude Code compatibility fields
+    arguments: list[str] = field(default_factory=list)  # named positional args ($name mapping)
+    argument_hint: str = ""  # displayed during autocompletion
+    allowed_tools: list[str] = field(default_factory=list)  # tools allowed without confirmation
+    disallowed_tools: list[str] = field(default_factory=list)  # tools removed during skill
+    # CC reserved fields (tolerated but not implemented)
+    context: str = ""  # e.g. "fork" for sub-agent execution
+    agent: str = ""  # sub-agent type when context: fork
+    model: str = ""  # model override
+    effort: str = ""  # effort level override
+    hooks: dict[str, Any] = field(default_factory=dict)  # skill-scoped hooks
+    shell: str = ""  # bash or powershell
+    # Catch-all for unrecognized frontmatter fields
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

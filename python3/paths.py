@@ -150,10 +150,49 @@ def get_sandbox_cache_file() -> Path:
 
 _PROJECT_DIR_NAME = ".zaivim"
 
+# Markers indicating a project root, in priority order.
+_PROJECT_MARKERS = (_PROJECT_DIR_NAME, "zai.project", ".claude")
+
+
+def find_project_root(start: Path | str | None = None) -> Optional[Path]:
+    """Walk up from *start* (default cwd) to find a project root directory.
+
+    Searches for any of: .zaivim/, zai.project/, .claude/
+    Stops at home directory or filesystem root.
+    Returns the parent directory containing the marker (not the marker itself).
+    """
+    current = Path(start).resolve() if start else Path.cwd().resolve()
+    home = Path.home()
+
+    for parent in [current] + list(current.parents):
+        for marker in _PROJECT_MARKERS:
+            if (parent / marker).is_dir():
+                return parent
+        # Stop at home directory (don't search into other users' directories)
+        if parent == home:
+            break
+    return None
+
+
+def get_project_root(cwd: Path | str | None = None) -> Path:
+    """Return the project root directory (no .zaivim/ suffix).
+
+    Uses upward search via find_project_root(). Falls back to cwd.
+    """
+    root = find_project_root(cwd)
+    return root if root else (Path(cwd).resolve() if cwd else Path.cwd().resolve())
+
 
 def get_project_dir(cwd: Path | str | None = None) -> Path:
-    """Return the project-level directory (default: .zaivim/ under cwd)."""
-    base = Path(cwd) if cwd else Path.cwd()
+    """Return the project-level directory (.zaivim/ under project root).
+
+    Uses upward search. If a project root is found via .zaivim/, zai.project/,
+    or .claude/, returns <root>/.zaivim/. Falls back to cwd/.zaivim/.
+    """
+    root = find_project_root(cwd)
+    if root is not None:
+        return root / _PROJECT_DIR_NAME
+    base = Path(cwd).resolve() if cwd else Path.cwd().resolve()
     return base / _PROJECT_DIR_NAME
 
 
@@ -163,16 +202,13 @@ def get_project_skills_dir(cwd: Path | str | None = None) -> Path:
 
 
 def find_project_dir(start: Path | str | None = None) -> Optional[Path]:
-    """Walk up from *start* (default cwd) to find a .zaivim/ directory."""
-    current = Path(start) if start else Path.cwd()
-    current = current.resolve()
-    for parent in [current] + list(current.parents):
-        candidate = parent / _PROJECT_DIR_NAME
-        if candidate.is_dir():
-            return candidate
-        # Stop at home directory
-        if parent == Path.home():
-            break
+    """Walk up from *start* to find a .zaivim/ directory.
+
+    Deprecated: prefer find_project_root() which supports multiple markers.
+    """
+    root = find_project_root(start)
+    if root is not None:
+        return root / _PROJECT_DIR_NAME
     return None
 
 

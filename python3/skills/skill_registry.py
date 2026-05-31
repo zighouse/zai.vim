@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from paths import get_skills_dir, get_project_skills_dir
+from paths import get_skills_dir, get_project_skills_dir, find_project_root
 
 from .skill_parser import parse, parse_index_only
 from .skill_types import (
@@ -49,6 +49,8 @@ class SkillRegistry:
         self._skills: dict[str, SkillMetadata] = {}
         # name -> source path (for manifest tracking)
         self._paths: dict[str, str] = {}
+        # skillOverrides from settings.json
+        self._overrides: dict[str, str] = self._load_overrides()
 
     @property
     def cache_size(self) -> int:
@@ -77,79 +79,43 @@ class SkillRegistry:
     def scan(self, *, incremental: bool = True) -> int:
         """Scan skill directories and register discovered skills.
 
+        Scans:
+          1. .zaivim/skills/ (project, upward-searched)
+          2. .claude/skills/ (CC compatible, project root)
+          3. .claude/commands/ (CC legacy, project root — single .md files)
+          4. ~/.zaivim/skills/ (user-level)
+
         Returns the number of newly registered skills.
         """
         new_count = 0
         dirs_to_scan: list[tuple[Path, bool]] = []
 
+        # Project .zaivim/skills/ (via upward search)
         if self._project_dir and self._project_dir.is_dir():
             dirs_to_scan.append((self._project_dir, True))
 
+        # Discover CC directories in project root
+        project_root = find_project_root()
+        if project_root is not None:
+            cc_skills = project_root / ".claude" / "skills"
+            if cc_skills.is_dir():
+                dirs_to_scan.append((cc_skills, True))
+            # CC commands are single .md files — handled below
+
+        # User-level skills
         if self._user_dir.is_dir():
             dirs_to_scan.append((self._user_dir, False))
 
         for skill_dir, is_project in dirs_to_scan:
-            manifest = self._load_manifest(skill_dir) if incremental else {}
-            for entry in sorted(skill_dir.iterdir()):
-                if not entry.is_dir():
-                    continue
-                skill_md = entry / "SKILL.md"
-                if not skill_md.is_file():
-                    continue
+            new_count += self._scan_skill_dir(
+                skill_dir, is_project, incremental
+            )
 
-                # Incremental: skip if mtime unchanged
-                if incremental:
-                    current_hash = _file_hash(skill_md)
-                    cached = manifest.get(entry.name)
-                    if cached == current_hash and entry.name in self._skills:
-                        continue
-                    manifest[entry.name] = current_hash
-
-                try:
-                    idx = parse_index_only(skill_md)
-                    name = idx["name"]
-                except Exception as e:
-                    logger.warning("Failed to parse %s: %s", skill_md, e)
-                    continue
-
-                meta = SkillMetadata(
-                    name=name,
-                    description=idx["description"],
-                    security_domain=SecurityDomain(idx["security_domain"]),
-                    origin=SkillOrigin(idx["origin"]),
-                    path=idx["path"],
-                    version=idx["version"],
-                    trust_level=TrustLevel(idx["trust_level"]),
-                )
-
-                # Project-level priority: shadow user-level same-name
-                existing = self._skills.get(name)
-                if existing is not None:
-                    if is_project and existing.status != SkillStatus.SHADOWED:
-                        # Project skill takes priority, shadow the existing
-                        existing.status = SkillStatus.SHADOWED
-                        shadow_key = f"_shadowed:{name}:{_safe_key(existing.path or '')}"
-                        self._skills[shadow_key] = existing
-                        self._skills[name] = meta
-                        new_count += 1
-                        continue
-                    else:
-                        # User skill with same name as project — shadow this one
-                        meta.status = SkillStatus.SHADOWED
-                        shadow_key = f"_shadowed:{name}:{_safe_key(meta.path or '')}"
-                        self._skills[shadow_key] = meta
-                        continue
-
-                # Check for previously-registered skill now missing
-                if name in self._paths and self._paths[name] != str(skill_md):
-                    pass  # path changed, update normally
-
-                self._skills[name] = meta
-                self._paths[name] = str(skill_md)
-                new_count += 1
-
-            if incremental:
-                self._save_manifest(skill_dir, manifest)
+        # Scan .claude/commands/*.md (CC legacy single-file format)
+        if project_root is not None:
+            cc_commands = project_root / ".claude" / "commands"
+            if cc_commands.is_dir():
+                new_count += self._scan_cc_commands(cc_commands)
 
         # Mark missing: skills in registry whose path no longer exists
         for name, meta in list(self._skills.items()):
@@ -157,6 +123,102 @@ class SkillRegistry:
                 continue
             if meta.path and not Path(meta.path).exists():
                 meta.status = SkillStatus.MISSING
+
+        return new_count
+
+    def _scan_skill_dir(
+        self, skill_dir: Path, is_project: bool, incremental: bool
+    ) -> int:
+        """Scan a directory of skill subdirectories."""
+        new_count = 0
+        manifest = self._load_manifest(skill_dir) if incremental else {}
+
+        for entry in sorted(skill_dir.iterdir()):
+            if not entry.is_dir():
+                continue
+            skill_md = entry / "SKILL.md"
+            if not skill_md.is_file():
+                continue
+
+            # Incremental: skip if mtime unchanged
+            if incremental:
+                current_hash = _file_hash(skill_md)
+                cached = manifest.get(entry.name)
+                if cached == current_hash and entry.name in self._skills:
+                    continue
+                manifest[entry.name] = current_hash
+
+            try:
+                idx = parse_index_only(skill_md)
+                name = idx["name"]
+            except Exception as e:
+                logger.warning("Failed to parse %s: %s", skill_md, e)
+                continue
+
+            meta = SkillMetadata(
+                name=name,
+                description=idx["description"],
+                security_domain=SecurityDomain(idx["security_domain"]),
+                origin=SkillOrigin(idx["origin"]),
+                path=idx["path"],
+                version=idx["version"],
+                trust_level=TrustLevel(idx["trust_level"]),
+            )
+
+            # Project-level priority: shadow user-level same-name
+            existing = self._skills.get(name)
+            if existing is not None:
+                if is_project and existing.status != SkillStatus.SHADOWED:
+                    existing.status = SkillStatus.SHADOWED
+                    shadow_key = f"_shadowed:{name}:{_safe_key(existing.path or '')}"
+                    self._skills[shadow_key] = existing
+                    self._skills[name] = meta
+                    self._apply_override(meta)
+                    new_count += 1
+                    continue
+                else:
+                    meta.status = SkillStatus.SHADOWED
+                    shadow_key = f"_shadowed:{name}:{_safe_key(meta.path or '')}"
+                    self._skills[shadow_key] = meta
+                    continue
+
+            self._skills[name] = meta
+            self._paths[name] = str(skill_md)
+            self._apply_override(meta)
+            new_count += 1
+
+        if incremental:
+            self._save_manifest(skill_dir, manifest)
+
+        return new_count
+
+    def _scan_cc_commands(self, commands_dir: Path) -> int:
+        """Scan .claude/commands/*.md (CC legacy single-file format)."""
+        new_count = 0
+        for md_file in sorted(commands_dir.glob("*.md")):
+            try:
+                idx = parse_index_only(md_file)
+                skill_name = idx["name"]
+            except Exception as e:
+                logger.warning("Failed to parse CC command %s: %s", md_file, e)
+                continue
+
+            # Skip if already registered from .zaivim/skills/ (use parsed name)
+            if skill_name in self._skills:
+                continue
+
+            meta = SkillMetadata(
+                name=skill_name,
+                description=idx.get("description", ""),
+                security_domain=SecurityDomain.WORKSPACE,
+                origin=SkillOrigin.EXTERNAL,
+                path=str(md_file),
+                trust_level=TrustLevel.L1,
+            )
+            self._skills[skill_name] = meta
+            self._paths[skill_name] = str(md_file)
+            self._apply_override(meta)
+            new_count += 1
 
         return new_count
 
@@ -261,6 +323,51 @@ class SkillRegistry:
             )
         except OSError as e:
             logger.warning("Failed to save manifest: %s", e)
+
+    # ------------------------------------------------------------------
+    # Skill visibility overrides (Task 11)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _load_overrides() -> dict[str, str]:
+        """Load skillOverrides from ~/.zaivim/settings.json."""
+        try:
+            from paths import get_user_dir
+            settings_path = get_user_dir() / "settings.json"
+            if settings_path.is_file():
+                data = json.loads(settings_path.read_text(encoding="utf-8"))
+                overrides = data.get("skillOverrides", {})
+                if isinstance(overrides, dict):
+                    return overrides
+        except Exception:
+            pass
+        return {}
+
+    def _apply_override(self, meta: SkillMetadata) -> None:
+        """Apply visibility override to a skill if configured."""
+        override = self._overrides.get(meta.name)
+        if override:
+            meta.visibility = override
+            if override == "off":
+                meta.status = SkillStatus.DISABLED
+
+    def list_for_model(self) -> list[SkillMetadata]:
+        """Return skills visible to the LLM (respects visibility settings)."""
+        result = []
+        for m in self._skills.values():
+            if m.status == SkillStatus.SHADOWED:
+                continue
+            if m.status == SkillStatus.DISABLED:
+                continue
+            vis = m.visibility
+            # off: hidden from everyone
+            if vis == "off":
+                continue
+            # user-invocable-only: hidden from model listing
+            if vis == "user-invocable-only":
+                continue
+            result.append(m)
+        return result
 
 
 def _file_hash(path: Path) -> str:
