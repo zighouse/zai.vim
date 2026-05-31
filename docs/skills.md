@@ -167,6 +167,25 @@ output_schema: |                  # expected output format (YAML)
   properties:
     result:
       type: string
+
+# Claude Code compatible fields (hyphenated or underscore form accepted)
+when_to_use: When the user asks for X   # natural-language trigger description
+arguments: file_path output_format       # named positional parameters
+argument_hint: "<file> <format>"         # human-readable argument hint
+allowed_tools: read_file write_file      # tools the skill is allowed to use
+disallowed_tools: shell_execute          # tools the skill must NOT use
+tags: documentation, translation         # categorization tags
+paths: "*.md" "*.txt"                    # file path patterns
+disable_model_invocation: false          # hide from automatic model discovery
+user_invocable: true                     # whether user can invoke via /name
+localized_descriptions:                  # i18n descriptions
+  zh: 该技能的功能说明
+context: ""                              # extra context injected into prompt
+agent: ""                                # target agent type
+model: ""                                # target model override
+effort: ""                               # reasoning effort level
+hooks: {}                                # lifecycle hooks (reserved)
+shell: ""                                # shell environment (reserved)
 ---
 
 # Skill Body
@@ -174,22 +193,228 @@ output_schema: |                  # expected output format (YAML)
 Markdown content describing the skill's capabilities and usage instructions.
 ```
 
+> **Note**: zai.vim accepts both hyphenated (`allowed-tools`) and underscore (`allowed_tools`) key forms in frontmatter. Hyphenated keys are automatically mapped to their underscore equivalents for Claude Code compatibility.
+
 ### Field Details
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `name` | Yes | — | kebab-case identifier (`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`) |
-| `description` | Yes | — | One-line summary |
+| `description` | No* | — | One-line summary (inferred from body if missing) |
 | `version` | No | `"0.1.0"` | Semantic version string |
 | `security_domain` | No | `workspace` | Permission scope (see Security Domains) |
 | `origin` | No | `native` | How the skill was introduced |
 | `trust_level` | No | `L1` | Initial trust level |
 | `dependencies` | No | `{}` | Required tools or services |
 | `output_schema` | No | `""` | Expected output format |
+| `when_to_use` | No | `""` | Natural-language trigger description for auto-discovery |
+| `arguments` | No | `[]` | Named positional parameters (space/comma-separated or YAML list) |
+| `argument_hint` | No | `""` | Human-readable argument hint, e.g. `"<file> <format>"` |
+| `allowed_tools` | No | `[]` | Tools the skill is allowed to use (space/comma-separated or YAML list) |
+| `disallowed_tools` | No | `[]` | Tools the skill must NOT use |
+| `tags` | No | `[]` | Categorization tags |
+| `paths` | No | `[]` | File path patterns relevant to this skill |
+| `disable_model_invocation` | No | `false` | Hide from automatic model discovery (user can still invoke via `/name`) |
+| `user_invocable` | No | `true` | Whether user can invoke via `/name` slash command |
+| `localized_descriptions` | No | `{}` | i18n descriptions (e.g. `zh: 中文描述`) |
+| `context` | No | `""` | Extra context injected into the system prompt |
+| `agent` | No | `""` | Target agent type override |
+| `model` | No | `""` | Target model override |
+| `effort` | No | `""` | Reasoning effort level |
+| `hooks` | No | `{}` | Lifecycle hooks (reserved for future use) |
+| `shell` | No | `""` | Shell environment override (reserved for future use) |
+
+\* `name` and `description` are automatically inferred from the directory name and body text if omitted from frontmatter.
+
+## Variable System
+
+Skills support variable expansion in SKILL.md body text. Variables are expanded at invocation time before the content is sent to the AI model.
+
+### Project Root
+
+```
+@{project-root}
+```
+
+Expands to the absolute path of the project root directory (discovered by upward search for `.zaivim/`, `zai.project/`, or `.claude/`).
+
+### Session Variables
+
+```
+${CLAUDE_SESSION_ID}  or  ${ZAI_SESSION_ID}
+${CLAUDE_EFFORT}      or  ${ZAI_EFFORT}
+${CLAUDE_SKILL_DIR}   or  ${ZAI_SKILL_DIR}
+${CLAUDE_PROJECT_ROOT} or ${ZAI_PROJECT_ROOT}
+```
+
+Dual-name compatibility: both `CLAUDE_*` and `ZAI_*` prefixes are supported, making skills portable between Claude Code and zai.vim.
+
+| Variable | Description |
+|----------|-------------|
+| `${ZAI_SESSION_ID}` / `${CLAUDE_SESSION_ID}` | Current session identifier |
+| `${ZAI_EFFORT}` / `${CLAUDE_EFFORT}` | Reasoning effort level |
+| `${ZAI_SKILL_DIR}` / `${CLAUDE_SKILL_DIR}` | Directory containing the skill's SKILL.md |
+| `${ZAI_PROJECT_ROOT}` / `${CLAUDE_PROJECT_ROOT}` | Project root directory |
+
+### Positional Arguments
+
+```
+$ARGUMENTS         # full argument string
+$ARGUMENTS[0]      # first positional argument (0-indexed)
+$0                 # shorthand for $ARGUMENTS[0]
+$1                 # shorthand for $ARGUMENTS[1]
+```
+
+### Named Arguments
+
+When `arguments` is declared in frontmatter, positional arguments are also available by name:
+
+```yaml
+arguments: file_path output_format
+```
+
+With invocation args `"README.md pdf"`, both `$file_path` and `$0` expand to `README.md`.
+
+Out-of-range positional arguments (e.g. `$50` when only 3 args provided) are left unchanged rather than silently deleted.
+
+## Dynamic Context Injection
+
+Skills can execute shell commands and inject their output into the skill body using `!`cmd`` syntax. This enables dynamic, context-aware skill content.
+
+### Inline Form
+
+```
+The current git branch is !`git branch --show-current`.
+```
+
+### Block Form
+
+```
+```!
+ls -la
+```
+```
+
+### Security Model
+
+Dynamic injection follows zai.vim's layered security architecture:
+
+1. **Domain/Origin Gate**: Only `public`/`personal` domain skills, or `workspace` skills with `native` origin, are allowed to execute injected commands. External/untrusted skills are blocked.
+2. **Sandboxed Execution** (default): Commands run inside a bwrap sandbox with seccomp syscall filtering — the same security model as `shell_execute`. If the sandbox is unavailable, execution is blocked (fail-closed).
+3. **Global Kill Switch**: Set `disableSkillShellExecution: true` in settings to disable all dynamic injection.
+
+### Shell Execution Configuration
+
+Control how injected commands are executed via `skillShellExecution` in `~/.zaivim/settings.json`:
+
+**Global setting** (applies to all skills):
+```json
+{
+  "skillShellExecution": "sandbox"
+}
+```
+
+**Per-skill rules** (regex-based, first match wins):
+```json
+{
+  "skillShellExecution": [
+    { "pattern": "^git-", "mode": "host" },
+    { "pattern": "^docker-", "mode": "docker" },
+    { "pattern": ".*", "mode": "sandbox" }
+  ]
+}
+```
+
+| Mode | Behavior |
+|------|----------|
+| `sandbox` (default) | bwrap sandbox with seccomp filtering — matches zai.vim security philosophy |
+| `host` | Direct host execution (opt-in, bypasses sandbox) |
+| `docker` | Docker container execution (reserved, currently falls back to sandbox) |
+
+**Configuration precedence**:
+1. Per-skill regex rules (first match wins)
+2. Global string value (`"sandbox"`, `"host"`, or `"docker"`)
+3. Default: `"sandbox"`
+
+## Claude Code Compatibility
+
+zai.vim is compatible with the Claude Code skill format. Skills written for Claude Code can be used directly, and zai.vim skills can include CC-specific fields.
+
+### Field Mapping
+
+CC's hyphenated field names are automatically mapped to zai.vim's underscore form:
+
+| Claude Code | zai.vim |
+|-------------|---------|
+| `allowed-tools` | `allowed_tools` |
+| `disallowed-tools` | `disallowed_tools` |
+| `user-invocable` | `user_invocable` |
+| `disable-model-invocation` | `disable_model_invocation` |
+
+### Project Root Discovery
+
+zai.vim searches upward from the current directory for project markers:
+- `.zaivim/` (zai.vim project config)
+- `zai.project/` (legacy zai.vim project config)
+- `.claude/` (Claude Code project config)
+
+This means zai.vim automatically discovers skills in projects that use Claude Code's `.claude/skills/` or `.claude/commands/` directories.
+
+### Importing Claude Code Skills
+
+#### From Local Claude Code Installation
+
+List discoverable CC skills:
+```vim
+:ZaiSkillImportClaude
+```
+
+Install selected CC skills:
+```vim
+:ZaiSkillImportClaude my-cc-skill another-skill
+```
+
+Scans `~/.claude/commands/*.md` and `~/.claude/skills/*/SKILL.md` for importable skills. Installed skills are placed in `~/.zaivim/skills/` with zai.vim default frontmatter fields added (`security_domain: workspace`, `origin: external`, `trust_level: L1`).
+
+#### From GitHub Repository
+
+List skills available in a GitHub repo:
+```vim
+:ZaiSkillInstallGithub owner/repo .claude/commands
+```
+
+Install selected skills:
+```vim
+:ZaiSkillInstallGithub owner/repo .claude/commands skill-name-1 skill-name-2
+```
+
+Reads `GITHUB_TOKEN` or `GH_TOKEN` environment variable for authenticated API access (raises rate limit from 60 to 5000 requests/hour).
+
+## Skill Visibility
+
+Control which skills are visible to the AI model via `skillOverrides` in `~/.zaivim/settings.json`:
+
+```json
+{
+  "skillOverrides": {
+    "my-skill": "on",
+    "experimental-skill": "name-only",
+    "dangerous-skill": "user-invocable-only",
+    "deprecated-skill": "off"
+  }
+}
+```
+
+| Visibility | Model Can See | User Can Invoke via `/name` | Description |
+|------------|---------------|----------------------------|-------------|
+| `on` (default) | Yes | Yes | Fully visible and invocable |
+| `name-only` | Name only (no description) | Yes | Model knows it exists but not what it does |
+| `user-invocable-only` | No | Yes | Hidden from model listing, user-invocable only |
+| `off` | No | No | Completely disabled (same as `:ZaiSkillDisable`) |
 
 ## Directory Structure
 
-Skills are discovered from two locations, with project-level skills taking priority over user-level skills.
+Skills are discovered from multiple locations. Project-level skills take priority over user-level skills.
 
 ### User-level skills
 
@@ -214,14 +439,29 @@ All users of the system share these skills. This is where URL-installed and adap
 │   └── ...
 ```
 
-Project-level skills override user-level skills with the same name (the user-level version is "shadowed").
+### Claude Code directories (auto-discovered)
+
+zai.vim automatically scans Claude Code skill directories in the project root:
+
+```
+.claude/skills/           # Modern CC format (directory per skill)
+└── cc-skill/
+    └── SKILL.md
+
+.claude/commands/          # Legacy CC format (single .md files)
+├── cc-command-1.md
+└── cc-command-2.md
+```
+
+Skills from `.claude/` directories are registered with `origin: external` and `trust_level: L1`.
 
 ### Priority
 
-When a skill exists in both locations:
+When a skill exists in multiple locations:
 
-1. Project `.zaivim/skills/` — takes priority, shadows the user-level version
-2. User `~/.zaivim/skills/` — fallback if no project version exists
+1. Project `.zaivim/skills/` — takes priority, shadows all other versions
+2. Project `.claude/skills/` and `.claude/commands/` — CC-compatible project skills
+3. User `~/.zaivim/skills/` — fallback if no project version exists
 
 ## Security Model
 
@@ -294,6 +534,34 @@ Security measures:
 - Symlink/hardlink filtering
 - 100MB download size limit
 - Atomic install with rollback on failure
+
+### From Claude Code (Local)
+
+Import skills from your local Claude Code installation:
+
+```vim
+" List importable CC skills
+:ZaiSkillImportClaude
+
+" Install selected skills
+:ZaiSkillImportClaude skill-1 skill-2
+```
+
+Scans `~/.claude/commands/*.md` and `~/.claude/skills/*/SKILL.md`. Installed skills are placed in `~/.zaivim/skills/` with zai.vim governance fields added automatically.
+
+### From GitHub Repository
+
+Install skills from any GitHub repository's `.claude/commands/` or similar path:
+
+```vim
+" List skills in a GitHub repo
+:ZaiSkillInstallGithub owner/repo .claude/commands
+
+" Install selected skills
+:ZaiSkillInstallGithub owner/repo .claude/commands skill-1 skill-2
+```
+
+Set `GITHUB_TOKEN` or `GH_TOKEN` environment variable for authenticated API access (raises rate limit from 60 to 5000 requests/hour).
 
 ### From MCP Server
 
@@ -384,13 +652,17 @@ Generated suggestions include a SKILL.md draft with the chain description pre-fi
 | `:ZaiSkillDisable <name>` | Disable a skill without removing it |
 | `:ZaiSkillInstall <url> [checksum]` | Install a skill from a URL |
 | `:ZaiSkillUpdate <name> <url> [checksum]` | Update a skill from a URL |
+| `:ZaiSkillImportClaude [names...]` | Import CC skills from local `~/.claude/` installation |
+| `:ZaiSkillInstallGithub <repo> <path> [names...]` | List/install skills from a GitHub repository |
 | `:ZaiSkillHistory <name> [limit]` | Show trust evolution timeline |
 | `:ZaiSkillUninstall <name>` | Remove a skill (with confirmation) |
 | `:ZaiSkillDeploy[!] <name>` | Deploy project skill to user-level (`!` = force overwrite) |
 
 Tab completion is available for skill names in all commands that accept `<name>`.
 
-## Configuration Override
+## Configuration Reference
+
+### User Directory Override
 
 The user-level skills directory can be overridden:
 
@@ -398,3 +670,21 @@ The user-level skills directory can be overridden:
 - **Vim config**: `let g:zai_user_dir = '/custom/path'`
 
 When neither is set, zai.vim uses `~/.zaivim/` if it exists, otherwise falls back to the platform default (`~/.local/share/zai/` on Linux).
+
+### Settings File (`~/.zaivim/settings.json`)
+
+All skill-related settings are stored in `~/.zaivim/settings.json`:
+
+```json
+{
+  "disableSkillShellExecution": false,
+  "skillShellExecution": "sandbox",
+  "skillOverrides": {}
+}
+```
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `disableSkillShellExecution` | boolean | `false` | Global kill switch — disables all `!`cmd`` dynamic injection |
+| `skillShellExecution` | string or array | `"sandbox"` | Shell execution mode: `"sandbox"`, `"host"`, `"docker"`, or per-skill regex rules |
+| `skillOverrides` | object | `{}` | Per-skill visibility: `"on"`, `"name-only"`, `"user-invocable-only"`, `"off"` |

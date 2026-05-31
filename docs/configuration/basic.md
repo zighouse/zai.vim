@@ -179,6 +179,64 @@ When the same setting is defined in multiple places:
 4. **Vim Configuration** - `.vimrc` settings
 5. **Defaults** - Hardcoded defaults (lowest priority)
 
+## User Settings (`~/.zaivim/settings.json`)
+
+Global user preferences are stored in `~/.zaivim/settings.json`:
+
+```json
+{
+  "disableSkillShellExecution": false,
+  "skillShellExecution": "sandbox",
+  "skillOverrides": {}
+}
+```
+
+### Shell Execution Settings
+
+**`disableSkillShellExecution`** (boolean, default `false`)
+: Global kill switch that completely disables `!`cmd`` dynamic context injection in skills. All injected commands are replaced with a disabled-by-policy message.
+
+**`skillShellExecution`** (string or array, default `"sandbox"`)
+: Controls how shell commands in `!`cmd`` blocks are executed.
+
+Simple string form (applies to all skills):
+```json
+{ "skillShellExecution": "sandbox" }
+```
+
+Per-skill regex rules (first match wins):
+```json
+{
+  "skillShellExecution": [
+    { "pattern": "^git-", "mode": "host" },
+    { "pattern": "^docker-", "mode": "docker" },
+    { "pattern": ".*", "mode": "sandbox" }
+  ]
+}
+```
+
+| Mode | Description |
+|------|-------------|
+| `sandbox` (default) | bwrap sandbox with seccomp syscall filtering — matches zai.vim security model. Blocked if sandbox unavailable. |
+| `host` | Direct host execution — bypasses sandbox. Use with caution. |
+| `docker` | Docker container execution (reserved, currently falls back to sandbox) |
+
+### Skill Visibility Overrides
+
+**`skillOverrides`** (object, default `{}`)
+: Per-skill visibility control. Accepts `"on"`, `"name-only"`, `"user-invocable-only"`, or `"off"` for each skill name.
+
+```json
+{
+  "skillOverrides": {
+    "experimental-skill": "name-only",
+    "deprecated-skill": "off"
+  }
+}
+```
+
+See [Skills System](../skills.md#skill-visibility) for details on each visibility level.
+
 ## Environment Variables
 
 ### API Keys
