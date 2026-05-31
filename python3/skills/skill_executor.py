@@ -83,11 +83,13 @@ def inject_dynamic_context(
         content = _BLOCK_INJECT_RE.sub(_blocked_msg, content)
         return content
 
+    skill_name = meta.name
+
     # Inline: !`command`
     def _replace_inline(m: re.Match) -> str:
         prefix = m.group(1)
         cmd = m.group(2)
-        output = _run_inject_command(cmd)
+        output = _run_inject_command(cmd, skill_name)
         return f"{prefix}{output}"
 
     content = _INLINE_INJECT_RE.sub(_replace_inline, content)
@@ -95,7 +97,7 @@ def inject_dynamic_context(
     # Block: ```!\n...\n```
     def _replace_block(m: re.Match) -> str:
         cmds = m.group(1)
-        output = _run_inject_command(cmds)
+        output = _run_inject_command(cmds, skill_name)
         return output
 
     content = _BLOCK_INJECT_RE.sub(_replace_block, content)
@@ -118,13 +120,16 @@ def _is_injection_allowed(meta: SkillMetadata) -> bool:
     return False
 
 
-def _get_skill_shell_config() -> str:
+def _get_skill_shell_config(skill_name: str = "") -> str:
     """Read skillShellExecution from settings.json.
 
-    Returns:
-        'sandbox' — bwrap sandboxed execution (default, matches zai.vim security model)
-        'host'   — direct host execution (legacy, bypasses sandbox)
-        'docker' — docker execution (not yet implemented, falls back to sandbox)
+    Supports two formats:
+      - String: "sandbox" | "host" | "docker" (applies to all skills)
+      - List of rules: [{"pattern": "regex", "mode": "sandbox|host|docker"}, ...]
+        First matching rule wins. Default "sandbox" if no match.
+
+    Args:
+        skill_name: Name of the skill being invoked, used for rule matching.
     """
     try:
         from paths import get_user_dir
@@ -132,22 +137,42 @@ def _get_skill_shell_config() -> str:
         if settings_path.is_file():
             settings = json.loads(settings_path.read_text(encoding="utf-8"))
             value = settings.get("skillShellExecution", "sandbox")
-            if value in ("sandbox", "host", "docker"):
-                return value
+
+            # Simple string format (backward compatible)
+            if isinstance(value, str):
+                if value in ("sandbox", "host", "docker"):
+                    return value
+                return "sandbox"
+
+            # List of rules format: [{"pattern": "regex", "mode": "..."}, ...]
+            if isinstance(value, list):
+                for rule in value:
+                    if not isinstance(rule, dict):
+                        continue
+                    pattern = rule.get("pattern", "")
+                    mode = rule.get("mode", "sandbox")
+                    if not pattern or mode not in ("sandbox", "host", "docker"):
+                        continue
+                    try:
+                        if re.match(pattern, skill_name):
+                            return mode
+                    except re.error:
+                        continue
+                return "sandbox"
     except Exception:
         pass
     return "sandbox"
 
 
-def _run_inject_command(cmd: str) -> str:
+def _run_inject_command(cmd: str, skill_name: str = "") -> str:
     """Execute a shell command for dynamic injection, return output.
 
-    Respects skillShellExecution setting:
+    Respects skillShellExecution setting (per-skill rule matching):
       - 'sandbox' (default): bwrap sandbox, fail-closed if unavailable
       - 'host': direct host execution
       - 'docker': not yet implemented, falls back to sandbox
     """
-    config = _get_skill_shell_config()
+    config = _get_skill_shell_config(skill_name)
 
     if config == "host":
         return _run_inject_command_host(cmd)
