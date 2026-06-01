@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "zai.vim",
+  "version": "0.0.1",
+  "description": "zai.vim browser extension — AI agent companion",
+  "permissions": ["storage"],
+  "host_permissions": ["http://localhost:*/*"],
+  "background": {
+    "service_worker": "src/background.js"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "@zaivim/browser-ext",
+  "version": "0.0.1",
+  "private": true,
+  "description": "zai.vim browser extension — Chrome + Firefox (Vision phase)",
+  "scripts": {
+    "lint": "web-ext lint || true"
+  }
+}

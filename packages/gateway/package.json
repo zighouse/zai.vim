@@ -1,0 +1,31 @@
+{
+  "name": "@zaivim/gateway",
+  "version": "0.0.1",
+  "private": false,
+  "description": "zai.vim gateway — CLI, stdio, HTTP transports + JSON-RPC",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "bin": {
+    "zaivim": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@zaivim/core": "workspace:*",
+    "@zaivim/engine": "workspace:*"
+  }
+}

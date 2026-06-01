@@ -1,0 +1,10 @@
+{
+  "name": "@zaivim/tui",
+  "version": "0.0.1",
+  "private": true,
+  "description": "zai.vim terminal UI — ink-based TUI client (Growth phase)",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}
