@@ -4,7 +4,9 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": ["ES2024"],
+    "types": ["node"],
     "strict": true,
+    "ignoreDeprecations": "6.0",
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
@@ -16,7 +18,7 @@
     "noUncheckedIndexedAccess": true,
     "noPropertyAccessFromIndexSignature": false,
     "exactOptionalPropertyTypes": false,
-    "incremental": true,
+    "incremental": false,
     "composite": false
   },
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/test-utils/**"]

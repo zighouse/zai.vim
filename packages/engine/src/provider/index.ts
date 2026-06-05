@@ -152,7 +152,8 @@ export class OpenAICompatibleProvider implements IProvider {
           const chunk = safeParseJsonLine(data);
           if (!chunk) continue;
 
-          const choice = chunk.choices?.[0] as Record<string, unknown> | undefined;
+          const choices = chunk.choices as Record<string, unknown>[] | undefined;
+          const choice = choices?.[0] as Record<string, unknown> | undefined;
           if (!choice) continue;
 
           // Check finish_reason

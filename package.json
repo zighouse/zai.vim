@@ -14,5 +14,11 @@
     "test:browser": "web-ext lint packages/browser-ext || true",
     "typecheck:downstream": "pnpm --filter @zaivim/core --filter @zaivim/engine --filter @zaivim/tools --filter @zaivim/skills --filter @zaivim/gateway typecheck",
     "lint": "eslint --config eslint.config.js packages/*/src"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
   }
 }

@@ -22,6 +22,9 @@ import type { AgentDeps } from '../agent/index.js';
 
 export class Engine implements EngineAPI {
   readonly version = '0.0.1';
+  readonly #startedAt = Date.now();
+
+  get uptime(): number { return Date.now() - this.#startedAt; }
 
   #config: ZaiConfig;
   #sessionStore: InMemorySessionStore;
@@ -148,12 +151,11 @@ let instance: EngineAPI | undefined;
  * MVP: Global singleton — second call returns existing instance (no PID conflict).
  * Growth: Per-session instances with optional pool management.
  */
-export function createEngine(
+export function createPipelineEngine(
   tools?: ToolDefinition[],
   configOverrides?: Partial<ZaiConfig>,
 ): EngineAPI {
   if (instance) {
-    // Log warning in Growth phase: "createEngine called again, returning existing instance"
     return instance;
   }
   instance = new Engine(tools, configOverrides);

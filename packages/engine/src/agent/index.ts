@@ -14,9 +14,37 @@ import type {
 } from '@zaivim/core';
 import type { ISecurityProvider } from '@zaivim/core';
 import { randomUUID } from 'node:crypto';
-import { LifecycleStateMachine } from '../lifecycle/index.js';
 import type { ProviderRegistry } from '../provider/index.js';
 import type { SessionStore } from '../session/index.js';
+
+// ---- Agent lifecycle state machine (inline, separate from EngineStateMachine) ----
+
+type AgentLifecycleState = 'idle' | 'running' | 'waiting_tool' | 'done' | 'error' | 'cancelled';
+type AgentLifecycleEvent = 'start' | 'tool_call' | 'tool_result' | 'finish' | 'error' | 'cancel';
+
+const AGENT_TRANSITIONS: ReadonlyMap<AgentLifecycleState, ReadonlyMap<AgentLifecycleEvent, AgentLifecycleState>> = new Map([
+  ['idle', new Map([['start', 'running'], ['cancel', 'cancelled']])],
+  ['running', new Map([['tool_call', 'waiting_tool'], ['finish', 'done'], ['error', 'error'], ['cancel', 'cancelled']])],
+  ['waiting_tool', new Map([['tool_result', 'running'], ['error', 'error'], ['cancel', 'cancelled']])],
+  ['done', new Map()],
+  ['error', new Map()],
+  ['cancelled', new Map()],
+]);
+
+class AgentLifecycleSM {
+  #state: AgentLifecycleState;
+  constructor(initial?: AgentLifecycleState) { this.#state = initial ?? 'idle'; }
+  transition(event: AgentLifecycleEvent): AgentLifecycleState {
+    const validEvents = AGENT_TRANSITIONS.get(this.#state);
+    if (!validEvents) throw new Error(`Agent state corrupted: "${this.#state}"`);
+    const next = validEvents.get(event);
+    if (!next) throw new Error(`Invalid agent transition: "${this.#state}" + "${event}"`);
+    this.#state = next;
+    return this.#state;
+  }
+  get state(): AgentLifecycleState { return this.#state; }
+  get isTerminal(): boolean { return this.#state === 'done' || this.#state === 'error' || this.#state === 'cancelled'; }
+}
 
 export interface AgentDeps {
   providerRegistry: ProviderRegistry;
@@ -34,7 +62,7 @@ export class AsyncGeneratorAgent implements AgentHandle {
   #sessionStore: SessionStore;
   #securityProvider: ISecurityProvider;
   #tools: ToolDefinition[];
-  #stateMachine: LifecycleStateMachine;
+  #stateMachine: AgentLifecycleSM;
   #externalSignal?: AbortSignal;
 
   constructor(
@@ -50,7 +78,7 @@ export class AsyncGeneratorAgent implements AgentHandle {
     this.#tools = options?.tools
       ? deps.tools?.filter(t => options.tools!.includes(t.name)) ?? deps.tools ?? []
       : deps.tools ?? [];
-    this.#stateMachine = new LifecycleStateMachine('idle');
+    this.#stateMachine = new AgentLifecycleSM('idle');
     this.#externalSignal = deps.signal;
   }
 

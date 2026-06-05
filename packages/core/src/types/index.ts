@@ -4,6 +4,26 @@
 // Zero external dependencies.
 // =============================================================================
 
+// ---- Engine types (Task 1.1) ------------------------------------------------
+export type {
+  EngineState,
+  EngineConfig,
+  EngineStatus,
+  HealthResponse,
+} from './engine.js';
+
+// ---- Config types (Task 1.2) ------------------------------------------------
+export type {
+  SandboxConfig,
+  ProviderConfig,
+  DefaultConfig,
+  AuditConstants,
+  ApprovalConstants,
+  ToolCallConstants,
+  EngineConstants,
+  ZaiConfig,
+} from './config.js';
+
 // ---- Message types ---------------------------------------------------------
 
 export type MessageRole = 'user' | 'assistant' | 'tool' | 'system';
@@ -39,7 +59,7 @@ export interface Session {
   readonly id: string;
   readonly messages: Message[];
   readonly createdAt: number;
-  readonly config: ZaiConfig;
+  readonly config: import('./config.js').ZaiConfig;
   readonly status: SessionStatus;
 }
 
@@ -181,47 +201,12 @@ export interface SkillAdapter {
   cleanup?(): Promise<void>;
 }
 
-export interface SkillLoadError {  // elided from ZaiError hierarchy for protocol use
-  readonly skillName: string;
-  readonly reason: string;
-}
-
-// ---- Config types ----------------------------------------------------------
-
-export interface ZaiConfig {
-  readonly language: string;
-  readonly sandbox: SandboxConfig;
-  readonly providers: Record<string, ProviderConfig>;
-  readonly defaults: DefaultConfig;
-}
-
-export interface SandboxConfig {
-  readonly enabled: boolean;
-  readonly type: 'none' | 'bwrap';
-  readonly workDir: string;
-  readonly timeout: number;
-}
-
-export interface ProviderConfig {
-  readonly type: string;
-  readonly apiKey: string;
-  readonly baseURL: string;
-  readonly models: string[];
-  readonly defaultModel: string;
-}
-
-export interface DefaultConfig {
-  readonly provider: string;
-  readonly model: string;
-  readonly temperature: number;
-  readonly maxTokens: number;
-}
-
 // ---- Engine API types ------------------------------------------------------
 
 export interface EngineAPI {
   readonly version: string;
-  createSession(config?: Partial<ZaiConfig>): Promise<Session>;
+  readonly uptime: number;
+  createSession(config?: Partial<import('./config.js').ZaiConfig>): Promise<Session>;
   getSession(id: string): Session | undefined;
   closeSession(id: string): Promise<void>;
   createAgent(persona: PersonaConfig, options?: ForkOptions): AgentHandle;
