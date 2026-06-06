@@ -242,6 +242,7 @@ export interface EngineAPI {
   readonly uptime: number;
   createSession(config?: Partial<import('./config.js').ZaiConfig>, projectDir?: string): Promise<Session>;
   getSession(id: string): Session | undefined;
+  listSessions(filter?: { status?: SessionStatus }): Session[];
   closeSession(id: string): Promise<void>;
   pushSessionMessage(sessionId: string, msg: Message): void;
   createAgent(persona: PersonaConfig, options?: ForkOptions): AgentHandle;

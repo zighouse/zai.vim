@@ -126,6 +126,10 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
     return this.#sessionStore.get(id);
   }
 
+  listSessions(filter?: { status?: import('@zaivim/core').SessionStatus }): Session[] {
+    return this.#sessionStore.list(filter);
+  }
+
   async closeSession(id: string): Promise<void> {
     await this.#sessionStore.close(id);
     this.emit('session.closed', { sessionId: id });

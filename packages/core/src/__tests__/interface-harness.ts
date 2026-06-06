@@ -198,7 +198,9 @@ function harness(): void {
     const session = await api.createSession();
     const h: AgentHandle = api.createAgent({ name: 'test', systemPrompt: '' });
     const health: EngineHealth = api.getHealth();
-    void session; void h; void health;
+    const sessions = api.listSessions({ status: 'active' });
+    const allSessions = api.listSessions();
+    void session; void h; void health; void sessions; void allSessions;
   };
 
   // ---- ApprovalHandler ----

@@ -113,9 +113,20 @@ export function createStdioTransport(
     };
   });
 
-  handlers.set('session.list', () => {
-    const health = engine.getHealth();
-    return { activeSessions: health.activeSessions, sessions: [] };
+  handlers.set('session.list', (params?: unknown) => {
+    const p = params as Record<string, unknown> | undefined;
+    const filter = p?.status ? { status: p.status as 'active' | 'paused' | 'closed' } : undefined;
+    const sessions = engine.listSessions(filter);
+    return {
+      activeSessions: sessions.filter(s => s.status === 'active' || s.status === 'paused').length,
+      sessions: sessions.map(s => ({
+        sessionId: s.id,
+        status: s.status,
+        createdAt: s.createdAt,
+        projectDir: s.projectDir,
+        messageCount: s.messages.length,
+      })),
+    };
   });
 
   handlers.set('session.close', async (params?: unknown) => {

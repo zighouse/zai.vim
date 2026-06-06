@@ -19,6 +19,7 @@ function createMockEngine(): EngineAPI & { destroy: ReturnType<typeof vi.fn> } {
     }),
     uptime: 1000,
     createSession: vi.fn().mockResolvedValue({ id: 'mock-session', status: 'active', createdAt: Date.now(), messages: [], config: {} }),
+    listSessions: vi.fn().mockReturnValue([]),
     getSession: vi.fn().mockReturnValue(undefined),
     closeSession: vi.fn().mockResolvedValue(undefined),
     pushSessionMessage: vi.fn(),

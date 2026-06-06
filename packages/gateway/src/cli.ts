@@ -268,8 +268,17 @@ async function cmdSession(
       break;
     }
     case 'list': {
-      const health = engine.getHealth();
-      console.log(JSON.stringify({ activeSessions: health.activeSessions }));
+      const sessions = engine.listSessions();
+      const active = sessions.filter(s => s.status === 'active' || s.status === 'paused');
+      console.log(JSON.stringify({
+        activeSessions: active.length,
+        sessions: active.map(s => ({
+          sessionId: s.id,
+          createdAt: s.createdAt,
+          projectDir: s.projectDir,
+          messageCount: s.messages.length,
+        })),
+      }, null, 2));
       break;
     }
     case 'get': {
