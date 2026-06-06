@@ -62,8 +62,7 @@ When multiple configuration sources specify the same setting:
 ### Project Configuration
 
 Searched upward from current directory:
-- `.zaivim/project.yaml` (new format, recommended)
-- `project.yaml` (legacy format, shows warning)
+- `.zaivim/project.yaml`
 
 ## Common Configuration Tasks
 

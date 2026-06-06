@@ -12,10 +12,7 @@ Project configuration allows you to define:
 
 ## Configuration File Location
 
-Zai searches upward from the current working directory:
-
-1. `.zaivim/project.yaml` (new format, recommended)
-2. `project.yaml` (legacy format, shows warning)
+Zai searches upward from the current working directory for `.zaivim/project.yaml`.
 
 ## Configuration Structure
 

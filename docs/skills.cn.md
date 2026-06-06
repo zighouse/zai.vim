@@ -206,7 +206,7 @@ shell: ""                           # Shell 环境（预留）
 @{project-root}
 ```
 
-展开为项目根目录的绝对路径（通过向上搜索 `.zaivim/`、`zai.project/` 或 `.claude/` 发现）。
+展开为项目根目录的绝对路径（通过向上搜索 `.zaivim/` 或 `.claude/` 发现）。
 
 ### 会话变量
 
@@ -325,7 +325,7 @@ CC 的连字符字段名会自动映射为 zai.vim 的下划线形式：
 
 zai.vim 从当前目录向上搜索项目标记：
 - `.zaivim/`（zai.vim 项目配置）
-- `zai.project/`（旧版 zai.vim 项目配置）
+- `zai.project/`（旧版 Python 配置 — 参见[迁移指南](config-migration-guide.md)）
 - `.claude/`（Claude Code 项目配置）
 
 这意味着 zai.vim 会自动发现使用 Claude Code 的 `.claude/skills/` 或 `.claude/commands/` 目录的项目中的技能。

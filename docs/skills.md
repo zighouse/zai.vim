@@ -236,7 +236,7 @@ Skills support variable expansion in SKILL.md body text. Variables are expanded 
 @{project-root}
 ```
 
-Expands to the absolute path of the project root directory (discovered by upward search for `.zaivim/`, `zai.project/`, or `.claude/`).
+Expands to the absolute path of the project root directory (discovered by upward search for `.zaivim/` or `.claude/`).
 
 ### Session Variables
 
@@ -355,7 +355,7 @@ CC's hyphenated field names are automatically mapped to zai.vim's underscore for
 
 zai.vim searches upward from the current directory for project markers:
 - `.zaivim/` (zai.vim project config)
-- `zai.project/` (legacy zai.vim project config)
+- `zai.project/` (legacy Python version — see [migration guide](config-migration-guide.md))
 - `.claude/` (Claude Code project config)
 
 This means zai.vim automatically discovers skills in projects that use Claude Code's `.claude/skills/` or `.claude/commands/` directories.
