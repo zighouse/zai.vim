@@ -68,16 +68,14 @@ export class EventBus {
 
   /**
    * Get total active listener count across all event types.
+   * Uses EventEmitter.eventNames() to dynamically enumerate registered types.
    */
   get totalActiveListeners(): number {
-    // Known event types we track
-    const types: EngineEventType[] = [
-      'session.created',
-      'session.closed',
-      'security.degraded',
-      'engine.warning',
-      'engine.shutdown',
-    ];
-    return types.reduce((sum, t) => sum + this.#emitter.listenerCount(t), 0);
+    const names = this.#emitter.eventNames();
+    let count = 0;
+    for (const name of names) {
+      count += this.#emitter.listenerCount(name as string);
+    }
+    return count;
   }
 }
