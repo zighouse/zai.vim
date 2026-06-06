@@ -57,8 +57,10 @@ describe('MethodACL', () => {
     expect(defaultAcl.has('ping')).toBe(true);
     expect(defaultAcl.has('metrics')).toBe(true);
     expect(defaultAcl.has('session.create')).toBe(true);
+    expect(defaultAcl.has('session.get')).toBe(true);
+    expect(defaultAcl.has('session.list')).toBe(true);
     expect(defaultAcl.has('session.close')).toBe(true);
-    expect(defaultAcl.has('session.send')).toBe(true);
+    expect(defaultAcl.has('session.pushMessage')).toBe(true);
     expect(defaultAcl.has('engine.stop')).toBe(true);
     expect(defaultAcl.has('audit.query')).toBe(true);
     expect(defaultAcl.has('config.set')).toBe(true);
@@ -177,9 +179,11 @@ describe('MethodACL default instance', () => {
     expect(methods.health).toBe('public');
     expect(methods.ping).toBe('public');
     expect(methods.metrics).toBe('public');
-    expect(methods['session.create']).toBe('session-scoped');
+    expect(methods['session.create']).toBe('public');
+    expect(methods['session.get']).toBe('session-scoped');
+    expect(methods['session.list']).toBe('session-scoped');
     expect(methods['session.close']).toBe('session-scoped');
-    expect(methods['session.send']).toBe('session-scoped');
+    expect(methods['session.pushMessage']).toBe('session-scoped');
     expect(methods['engine.stop']).toBe('admin');
     expect(methods['audit.query']).toBe('admin');
     expect(methods['config.set']).toBe('admin');

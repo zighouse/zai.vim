@@ -247,6 +247,72 @@ function cmdStatus(): void {
   console.log(JSON.stringify(response));
 }
 
+// ---- session command --------------------------------------------------------
+
+async function cmdSession(
+  args: string[],
+  _opts: Record<string, unknown>,
+): Promise<void> {
+  const subcommand = args[0];
+  const engine = getEngineInstance() as EngineAPI | undefined;
+  if (!engine) {
+    console.error('Error: no engine running');
+    process.exit(1);
+  }
+
+  switch (subcommand) {
+    case 'create': {
+      const projectDir = args.find((a, i) => args[i - 1] === '--project-dir');
+      const session = await engine.createSession(undefined, projectDir);
+      console.log(JSON.stringify({ sessionId: session.id, status: session.status, createdAt: session.createdAt }));
+      break;
+    }
+    case 'list': {
+      const health = engine.getHealth();
+      console.log(JSON.stringify({ activeSessions: health.activeSessions }));
+      break;
+    }
+    case 'get': {
+      const id = args[1];
+      if (!id) {
+        console.error('Usage: zaivim session get <session-id>');
+        process.exit(1);
+      }
+      const session = engine.getSession(id);
+      if (!session) {
+        console.error(`Session not found: ${id}`);
+        process.exit(1);
+      }
+      console.log(JSON.stringify({
+        sessionId: session.id,
+        status: session.status,
+        createdAt: session.createdAt,
+        projectDir: session.projectDir,
+        messageCount: session.messages.length,
+        messages: session.messages,
+      }, null, 2));
+      break;
+    }
+    case 'close': {
+      const closeId = args[1];
+      if (!closeId) {
+        console.error('Usage: zaivim session close <session-id>');
+        process.exit(1);
+      }
+      await engine.closeSession(closeId);
+      console.log(JSON.stringify({ sessionId: closeId, status: 'closed' }));
+      break;
+    }
+    default:
+      console.log('Usage: zaivim session <create|list|get|close> [options]');
+      console.log('  create [--project-dir <path>]  Create a new session');
+      console.log('  list                           List active sessions');
+      console.log('  get <id>                       Get session details');
+      console.log('  close <id>                     Close a session');
+      break;
+  }
+}
+
 // ---- ping command ----------------------------------------------------------
 
 function cmdPing(): void {
@@ -401,6 +467,9 @@ async function main(): Promise<void> {
         console.error('Stop command failed:', err);
         process.exit(1);
       });
+      break;
+    case 'session':
+      await cmdSession(positionals.slice(1), values);
       break;
     case 'smoke-test':
       cmdSmokeTest();

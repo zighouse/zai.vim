@@ -2,6 +2,13 @@
 // Pure data types, zero runtime dependencies.
 // EventBus implementation lives in @zaivim/engine.
 
+import type {
+  SessionApproachingLimitEvent,
+  SessionAutoTrimmedEvent,
+  SessionPersistenceDroppedEvent,
+  SessionRecoveredEvent,
+} from './session.js';
+
 export interface SessionCreatedEvent {
   sessionId: string;
 }
@@ -29,6 +36,10 @@ export interface EngineShutdownEvent {
 export interface EngineEventMap {
   'session.created': SessionCreatedEvent;
   'session.closed': SessionClosedEvent;
+  'session.approaching_limit': SessionApproachingLimitEvent;
+  'session.auto_trimmed': SessionAutoTrimmedEvent;
+  'session.persistence.dropped': SessionPersistenceDroppedEvent;
+  'session.recovered': SessionRecoveredEvent;
   'security.degraded': SecurityDegradedEvent;
   'engine.warning': EngineWarningEvent;
   'engine.shutdown': EngineShutdownEvent;

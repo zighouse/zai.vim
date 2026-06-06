@@ -87,6 +87,57 @@ export function createStdioTransport(
     return { status: 'stopping' };
   });
 
+  // ---- Session methods (Story 1a.3) ----
+
+  handlers.set('session.create', async (params?: unknown) => {
+    const p = params as Record<string, unknown> | undefined;
+    const projectDir = p?.projectDir as string | undefined;
+    const session = await engine.createSession(p?.config as any, projectDir);
+    return { sessionId: session.id, status: session.status, createdAt: session.createdAt };
+  });
+
+  handlers.set('session.get', (params?: unknown) => {
+    const p = params as Record<string, unknown>;
+    const id = p.sessionId as string;
+    const session = engine.getSession(id);
+    if (!session) {
+      throw new Error(`Session not found: ${id}`);
+    }
+    return {
+      sessionId: session.id,
+      status: session.status,
+      createdAt: session.createdAt,
+      projectDir: session.projectDir,
+      messageCount: session.messages.length,
+      messages: session.messages,
+    };
+  });
+
+  handlers.set('session.list', () => {
+    const health = engine.getHealth();
+    return { activeSessions: health.activeSessions, sessions: [] };
+  });
+
+  handlers.set('session.close', async (params?: unknown) => {
+    const p = params as Record<string, unknown>;
+    const id = p.sessionId as string;
+    await engine.closeSession(id);
+    return { sessionId: id, status: 'closed' };
+  });
+
+  handlers.set('session.pushMessage', (params?: unknown) => {
+    const p = params as Record<string, unknown>;
+    const sessionId = p.sessionId as string;
+    const msg = p.message as Record<string, unknown>;
+    engine.pushSessionMessage(sessionId, {
+      id: msg.id as string,
+      role: msg.role as 'user' | 'assistant' | 'tool' | 'system',
+      content: msg.content as string,
+    });
+    const session = engine.getSession(sessionId);
+    return { sessionId, messageCount: session?.messages.length ?? 0 };
+  });
+
   const input = streams?.stdin ?? process.stdin;
   const output = streams?.stdout ?? process.stdout;
   const rl = createInterface({ input });
@@ -101,6 +152,10 @@ export function createStdioTransport(
     const eventTypes: Array<{ type: string; handler: (data: unknown) => void }> = [
       { type: 'session.created', handler: (data) => output.write(encodeNotification('session.created', data)) },
       { type: 'session.closed', handler: (data) => output.write(encodeNotification('session.closed', data)) },
+      { type: 'session.approaching_limit', handler: (data) => output.write(encodeNotification('session.approaching_limit', data)) },
+      { type: 'session.auto_trimmed', handler: (data) => output.write(encodeNotification('session.auto_trimmed', data)) },
+      { type: 'session.persistence.dropped', handler: (data) => output.write(encodeNotification('session.persistence.dropped', data)) },
+      { type: 'session.recovered', handler: (data) => output.write(encodeNotification('session.recovered', data)) },
       { type: 'security.degraded', handler: (data) => output.write(encodeNotification('security.degraded', data)) },
       { type: 'engine.warning', handler: (data) => output.write(encodeNotification('engine.warning', data)) },
       { type: 'engine.shutdown', handler: (data) => output.write(encodeNotification('engine.shutdown', data)) },

@@ -1,9 +1,16 @@
 // @zaivim/engine — Session management
-// In-memory session store. Growth phase: SQLite persistence.
+// In-memory session store (legacy). Growth phase: SQLite persistence.
+// New code should use ISessionStore interface from @zaivim/core.
 
 import type { Session, Message, ZaiConfig } from '@zaivim/core';
 import { ZaiError } from '@zaivim/core';
 import { randomUUID } from 'node:crypto';
+
+export { JsonlSessionStore } from './jsonl-store.js';
+export type { JsonlSessionStoreOptions, StoreNotification } from './jsonl-store.js';
+export { SessionLifecycleManager } from './lifecycle-manager.js';
+export type { SessionLifecycleManagerOptions, LifecycleNotification } from './lifecycle-manager.js';
+export { InMemorySessionStoreFull } from './memory-store.js';
 
 export interface SessionStore {
   create(config: ZaiConfig): Session;

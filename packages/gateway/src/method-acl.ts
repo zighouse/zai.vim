@@ -44,9 +44,11 @@ export class MethodACL {
     acl.register('health', { access: 'public', description: 'Engine health check' });
     acl.register('ping', { access: 'public', description: 'Engine ping' });
     acl.register('metrics', { access: 'public', description: 'Engine metrics' });
-    acl.register('session.create', { access: 'session-scoped', description: 'Create a new chat session' });
+    acl.register('session.create', { access: 'public', description: 'Create a new chat session' });
+    acl.register('session.get', { access: 'session-scoped', description: 'Get session by ID' });
+    acl.register('session.list', { access: 'session-scoped', description: 'List active sessions' });
     acl.register('session.close', { access: 'session-scoped', description: 'Close a chat session' });
-    acl.register('session.send', { access: 'session-scoped', description: 'Send a message to a session' });
+    acl.register('session.pushMessage', { access: 'session-scoped', description: 'Push a message to a session' });
     acl.register('engine.stop', { access: 'admin', description: 'Stop the engine' });
     acl.register('audit.query', { access: 'admin', description: 'Query audit logs' });
     acl.register('config.set', { access: 'admin', description: 'Set configuration values' });

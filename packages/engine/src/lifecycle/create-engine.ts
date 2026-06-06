@@ -1,11 +1,13 @@
 // @zaivim/engine — createEngine() singleton factory
 // MVP: global singleton. Second call returns existing instance.
 
-import type { EngineAPI, EngineConfig, EngineHealth, ShutdownOptions } from '@zaivim/core';
+import type { EngineAPI, EngineConfig, EngineHealth, ShutdownOptions, Session, ZaiConfig, Message } from '@zaivim/core';
 import { EventEmitter } from 'node:events';
 import { EngineStateMachine } from './state-machine.js';
 import { removePidFile } from './pid-file.js';
 import { ShutdownSequencer, type ShutdownDependencies } from './shutdown-sequencer.js';
+import { JsonlSessionStore, type StoreNotification } from '../session/jsonl-store.js';
+import { SessionLifecycleManager, type LifecycleNotification } from '../session/lifecycle-manager.js';
 
 export class EngineImpl extends EventEmitter implements EngineAPI {
   readonly version: string;
@@ -13,7 +15,8 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
   readonly #config: EngineConfig;
   readonly #shutdownSequencer: ShutdownSequencer;
   readonly #agentPool: any = null; // Will be implemented in future stories
-  readonly #sessionManager: any = null; // Will be implemented in future stories
+  readonly #sessionStore: JsonlSessionStore;
+  readonly #lifecycleManager: SessionLifecycleManager;
 
   #signalHandlers: Array<(signal: NodeJS.Signals) => void> = [];
 
@@ -23,7 +26,19 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
     this.#config = config;
     this.#stateMachine = new EngineStateMachine();
 
-    // Create shutdown sequencer with minimal dependencies for MVP
+    // Initialize session store and lifecycle manager
+    this.#sessionStore = new JsonlSessionStore({ engineVersion: config.version });
+    this.#lifecycleManager = new SessionLifecycleManager(this.#sessionStore);
+
+    // Forward store and lifecycle notifications as engine events
+    this.#sessionStore.on('store.notification', (n: StoreNotification) => {
+      this.emit(n.type, n);
+    });
+    this.#lifecycleManager.on('lifecycle.notification', (n: LifecycleNotification) => {
+      this.emit(n.type, n);
+    });
+
+    // Create shutdown sequencer with real session persistence
     this.#shutdownSequencer = new ShutdownSequencer({
       stateMachine: {
         transition: (event: string) => this.#stateMachine.transition(event as any),
@@ -38,7 +53,7 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
       },
       sessionManager: {
         persistAll: async () => {
-          // MVP: no sessions to persist
+          await this.#sessionStore.persistAll();
         },
         flushAuditLog: async () => {
           // MVP: no audit log to flush
@@ -101,16 +116,24 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
   get uptime() { return this.#stateMachine.uptime; }
   get config() { return this.#config; }
 
-  async createSession(): Promise<never> {
-    throw new Error('Not implemented in this story');
+  async createSession(config?: Partial<ZaiConfig>, projectDir?: string): Promise<Session> {
+    const session = this.#sessionStore.create(config, projectDir);
+    this.emit('session.created', { sessionId: session.id });
+    return session;
   }
 
-  getSession(): undefined {
-    return undefined;
+  getSession(id: string): Session | undefined {
+    return this.#sessionStore.get(id);
   }
 
-  async closeSession(): Promise<void> {
-    // no-op for MVP
+  async closeSession(id: string): Promise<void> {
+    await this.#sessionStore.close(id);
+    this.emit('session.closed', { sessionId: id });
+  }
+
+  pushSessionMessage(sessionId: string, msg: Message): void {
+    this.#sessionStore.pushMessage(sessionId, msg);
+    this.#lifecycleManager.checkMessageLimit(sessionId);
   }
 
   createAgent(): never {
@@ -121,7 +144,7 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
     return {
       status: this.#stateMachine.isRunning ? 'ok' : 'down',
       sandboxAvailable: false,
-      activeSessions: 0,
+      activeSessions: this.#sessionStore.activeCount,
       activeAgents: 0,
     };
   }
@@ -152,6 +175,8 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
       console.error('Engine destroy error:', err);
       throw err;
     } finally {
+      this.#lifecycleManager.dispose();
+      this.#sessionStore.destroy();
       this.cleanupSignalHandlers();
       clearInstance();
     }

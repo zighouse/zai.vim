@@ -18,6 +18,11 @@ function createMockEngine(): EngineAPI & { destroy: ReturnType<typeof vi.fn> } {
       activeAgents: 0,
     }),
     uptime: 1000,
+    createSession: vi.fn().mockResolvedValue({ id: 'mock-session', status: 'active', createdAt: Date.now(), messages: [], config: {} }),
+    getSession: vi.fn().mockReturnValue(undefined),
+    closeSession: vi.fn().mockResolvedValue(undefined),
+    pushSessionMessage: vi.fn(),
+    createAgent: vi.fn(),
     destroy: vi.fn().mockResolvedValue(undefined),
   } as unknown as EngineAPI & { destroy: ReturnType<typeof vi.fn> };
 }
@@ -205,7 +210,7 @@ describe('Transport ACL integration', () => {
     const acl = MethodACL.createDefault();
     createStdioTransport(engine, undefined, { stdin: stdin as any, stdout: stdout as any }, { acl });
 
-    stdin.write('{"jsonrpc":"2.0","id":4,"method":"session.create"}\n');
+    stdin.write('{"jsonrpc":"2.0","id":4,"method":"session.get","params":{"sessionId":"test"}}\n');
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(stdoutLines.length).toBeGreaterThan(0);
@@ -218,16 +223,14 @@ describe('Transport ACL integration', () => {
     const acl = MethodACL.createDefault();
     createStdioTransport(engine, undefined, { stdin: stdin as any, stdout: stdout as any }, { acl });
 
-    // session.create is registered in ACL but not in handlers — will get method_not_found
-    // But it should pass the ACL check first
-    stdin.write('{"jsonrpc":"2.0","id":5,"method":"session.create","params":{"token":"sess-token"}}\n');
+    // session.get is session-scoped — with token it passes ACL, then fails on session not found
+    stdin.write('{"jsonrpc":"2.0","id":5,"method":"session.get","params":{"token":"sess-token","sessionId":"nonexistent"}}\n');
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(stdoutLines.length).toBeGreaterThan(0);
     const response = JSON.parse(stdoutLines[0]);
-    // Should pass ACL (not -32001), but get method_not_found since handler not registered
-    expect(response.error.code).toBe(-32601);
-    expect(response.error.message).toContain('Method not found');
+    // Should pass ACL, then handler throws "Session not found"
+    expect(response.error.message).toContain('Session not found');
   });
 
   it('unknown method still returns method_not_found (ACL check passes through)', async () => {

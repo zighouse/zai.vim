@@ -29,6 +29,13 @@ import type {
   ProviderCapabilities,
   PersonaConfig,
   ForkOptions,
+  ISessionStore,
+  SessionMeta,
+  SessionApproachingLimitEvent,
+  SessionAutoTrimmedEvent,
+  SessionPersistenceDroppedEvent,
+  SessionRecoveredEvent,
+  SessionStatus,
 } from '../index.js';
 
 import type {
@@ -49,6 +56,9 @@ import {
   ZaiConfigError,
   ZaiSecurityError,
   ZaiGatewayError,
+  ZaiSessionNotFoundError,
+  ZaiSessionExpiredError,
+  ZaiSessionMaxMessagesError,
   ErrorCodes,
 } from '../index.js';
 
@@ -91,8 +101,17 @@ function harness(): void {
     createdAt: Date.now(),
     config: {} as ZaiConfig,
     status: 'active',
+    projectDir: '/tmp/project',
+    version: '0.1.0',
   };
   void s;
+  // Session with mutable internal state
+  const sm: Session = { ...s, seqCounter: 5, reconnecting: true, disconnectedAt: Date.now() };
+  void sm;
+
+  // ---- Message — with optional seq ----
+  const mSeq: Message = { id: '', role: 'user', content: '', seq: 42 };
+  void mSeq;
 
   // ---- JsonRpcMessage — discriminated union ----
   const req: JsonRpcMessage = { jsonrpc: '2.0', id: 1, method: 'chat' } as JsonRpcRequest;
@@ -134,6 +153,37 @@ function harness(): void {
   // ---- ErrorCodes constant ----
   void (ErrorCodes.CORE_PARSE_ERROR as string);
   void (ErrorCodes.ENGINE_AGENT_TIMEOUT as string);
+  void (ErrorCodes.ENGINE_SESSION_NOT_FOUND as string);
+  void (ErrorCodes.ENGINE_SESSION_EXPIRED as string);
+  void (ErrorCodes.ENGINE_SESSION_MAX_MESSAGES as string);
+
+  // ---- Session error classes ----
+  const zSNotFound = new ZaiSessionNotFoundError('session-123');
+  const zSExpired = new ZaiSessionExpiredError('session-456');
+  const zSMaxMsg = new ZaiSessionMaxMessagesError('session-789', 1000, 1000);
+  void zSNotFound; void zSExpired; void zSMaxMsg;
+
+  // ---- ISessionStore interface substitutability ----
+  void function (store: ISessionStore) {
+    const created: Session = store.create(undefined, '/tmp/project');
+    const got: Session | undefined = store.get('id');
+    const listed: Session[] = store.list({ status: 'active' });
+    const byProject: Session[] = store.queryByProject('/tmp/project');
+    void created; void got; void listed; void byProject;
+    store.pushMessage('id', { id: 'm1', role: 'user', content: 'hi' });
+    void store.activeCount;
+  };
+
+  // ---- SessionMeta ----
+  const meta: SessionMeta = { format_version: 1, engine_version: '0.1.0', created_at: new Date().toISOString() };
+  void meta;
+
+  // ---- Session persistence events ----
+  const evLimit: SessionApproachingLimitEvent = { type: 'session.approaching_limit', sessionId: 's1', current: 900, max: 1000 };
+  const evTrimmed: SessionAutoTrimmedEvent = { type: 'session.auto_trimmed', sessionId: 's1', removed: 500 };
+  const evDropped: SessionPersistenceDroppedEvent = { type: 'session.persistence.dropped', sessionId: 's1', count: 2 };
+  const evRecovered: SessionRecoveredEvent = { type: 'session.recovered', sessionId: 's1', recoveredCount: 10, skippedLines: 1 };
+  void evLimit; void evTrimmed; void evDropped; void evRecovered;
 
   // ---- AgentPool ----
   void async function (pool: AgentPool) {

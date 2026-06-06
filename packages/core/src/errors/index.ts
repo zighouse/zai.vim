@@ -17,6 +17,8 @@ export const ErrorCodes = {
   ENGINE_SANDBOX_UNAVAILABLE: 'ENGINE_SANDBOX_UNAVAILABLE',
   ENGINE_PROVIDER_ERROR: 'ENGINE_PROVIDER_ERROR',
   ENGINE_SESSION_NOT_FOUND: 'ENGINE_SESSION_NOT_FOUND',
+  ENGINE_SESSION_EXPIRED: 'ENGINE_SESSION_EXPIRED',
+  ENGINE_SESSION_MAX_MESSAGES: 'ENGINE_SESSION_MAX_MESSAGES',
   ENGINE_CONFIG_INVALID: 'ENGINE_CONFIG_INVALID',
   ENGINE_INSTANCE_CONFLICT: 'ENGINE_INSTANCE_CONFLICT',
 
@@ -189,5 +191,46 @@ export class ZaiGatewayError extends ZaiError {
   constructor(message: string, code: ErrorCode = 'GATEWAY_TRANSPORT_ERROR', statusCode = 502) {
     super(message, code, statusCode);
     this.name = 'ZaiGatewayError';
+  }
+}
+
+// ---- Session errors ---------------------------------------------------------
+
+export class ZaiSessionNotFoundError extends ZaiError {
+  readonly sessionId: string;
+
+  constructor(sessionId: string) {
+    super(`Session not found: ${sessionId}`, 'ENGINE_SESSION_NOT_FOUND', 404, { sessionId });
+    this.name = 'ZaiSessionNotFoundError';
+    this.sessionId = sessionId;
+  }
+}
+
+export class ZaiSessionExpiredError extends ZaiError {
+  readonly sessionId: string;
+
+  constructor(sessionId: string) {
+    super(`Session expired: ${sessionId}`, 'ENGINE_SESSION_EXPIRED', 410, { sessionId });
+    this.name = 'ZaiSessionExpiredError';
+    this.sessionId = sessionId;
+  }
+}
+
+export class ZaiSessionMaxMessagesError extends ZaiError {
+  readonly sessionId: string;
+  readonly current: number;
+  readonly max: number;
+
+  constructor(sessionId: string, current: number, max: number) {
+    super(
+      `Session message limit reached: ${current}/${max}`,
+      'ENGINE_SESSION_MAX_MESSAGES',
+      422,
+      { sessionId, current, max },
+    );
+    this.name = 'ZaiSessionMaxMessagesError';
+    this.sessionId = sessionId;
+    this.current = current;
+    this.max = max;
   }
 }

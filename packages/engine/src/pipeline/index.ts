@@ -81,7 +81,7 @@ export class Engine implements EngineAPI {
 
   // ---- Session management ----
 
-  async createSession(configOverrides?: Partial<ZaiConfig>): Promise<Session> {
+  async createSession(configOverrides?: Partial<ZaiConfig>, projectDir?: string): Promise<Session> {
     this.#ensureNotDestroyed();
     const config = configOverrides
       ? loadConfig(configOverrides)
@@ -95,6 +95,10 @@ export class Engine implements EngineAPI {
 
   async closeSession(id: string): Promise<void> {
     this.#sessionStore.close(id);
+  }
+
+  pushSessionMessage(sessionId: string, msg: import('@zaivim/core').Message): void {
+    this.#sessionStore.appendMessage(sessionId, msg);
   }
 
   // ---- Agent management ----
@@ -125,7 +129,7 @@ export class Engine implements EngineAPI {
 
   // ---- Destroy ----
 
-  async destroy(): Promise<void> {
+  async destroy(options?: Partial<import('@zaivim/core').ShutdownOptions>): Promise<void> {
     this.#destroyed = true;
     // Close all active sessions
     for (const session of this.#sessionStore.list()) {
@@ -144,7 +148,7 @@ export class Engine implements EngineAPI {
 
 // ---- Factory function (singleton) ----------------------------------------
 
-let instance: EngineAPI | undefined;
+let instance: Engine | undefined;
 
 /**
  * Create or return the existing engine instance.
@@ -156,8 +160,8 @@ export function createPipelineEngine(
   configOverrides?: Partial<ZaiConfig>,
 ): EngineAPI {
   if (instance) {
-    return instance;
+    return instance as EngineAPI;
   }
   instance = new Engine(tools, configOverrides);
-  return instance;
+  return instance as EngineAPI;
 }

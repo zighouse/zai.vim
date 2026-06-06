@@ -29,6 +29,16 @@ export type {
   EngineShutdownEvent,
 } from './events.js';
 
+// ---- Session store types (Story 1a.3) ---------------------------------------
+export type {
+  ISessionStore,
+  SessionMeta,
+  SessionApproachingLimitEvent,
+  SessionAutoTrimmedEvent,
+  SessionPersistenceDroppedEvent,
+  SessionRecoveredEvent,
+} from './session.js';
+
 // ---- Config types (Task 1.2) ------------------------------------------------
 export type {
   SandboxConfig,
@@ -57,6 +67,7 @@ export interface Message {
   readonly content: string;
   readonly toolCalls?: ToolCall[];
   readonly createdAt?: number;
+  readonly seq?: number;
 }
 
 // ---- Response stream -------------------------------------------------------
@@ -78,6 +89,12 @@ export interface Session {
   readonly createdAt: number;
   readonly config: import('./config.js').ZaiConfig;
   readonly status: SessionStatus;
+  readonly projectDir?: string;
+  readonly version?: string;
+  /** Internal — mutable via type assertion in store implementations */
+  seqCounter?: number;
+  reconnecting?: boolean;
+  disconnectedAt?: number;
 }
 
 // ---- Agent types -----------------------------------------------------------
@@ -223,9 +240,10 @@ export interface SkillAdapter {
 export interface EngineAPI {
   readonly version: string;
   readonly uptime: number;
-  createSession(config?: Partial<import('./config.js').ZaiConfig>): Promise<Session>;
+  createSession(config?: Partial<import('./config.js').ZaiConfig>, projectDir?: string): Promise<Session>;
   getSession(id: string): Session | undefined;
   closeSession(id: string): Promise<void>;
+  pushSessionMessage(sessionId: string, msg: Message): void;
   createAgent(persona: PersonaConfig, options?: ForkOptions): AgentHandle;
   getHealth(): EngineHealth;
   destroy(options?: Partial<ShutdownOptions>): Promise<void>;
