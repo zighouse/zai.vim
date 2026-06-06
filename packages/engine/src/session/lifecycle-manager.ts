@@ -193,10 +193,6 @@ export class SessionLifecycleManager extends EventEmitter {
     this.#store.close(sessionId).catch(() => { /* already closed */ });
   }
 
-    // Session expired — close it
-    this.#store.close(sessionId).catch(() => { /* already closed */ });
-  }
-
   // ---- Cleanup ----
 
   dispose(): void {
