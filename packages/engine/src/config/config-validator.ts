@@ -44,6 +44,17 @@ export function validateConfig(config: Record<string, unknown>, options?: { skip
     }
   }
 
+  // Validate provider status — unavailable providers are warnings, not errors
+  const providers = config.providers as Record<string, Record<string, unknown>> | undefined;
+  if (providers) {
+    for (const [name, cfg] of Object.entries(providers)) {
+      if (cfg.status === 'unavailable') {
+        // Not an error — just skip further validation for this provider
+        continue;
+      }
+    }
+  }
+
   if (errors.length > 0) {
     throw new ZaiConfigError(
       `Configuration validation failed: ${errors.join('; ')}`,

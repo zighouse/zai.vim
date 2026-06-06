@@ -18,6 +18,8 @@ export interface ProviderConfig {
   readonly baseURL: string;
   readonly models: readonly string[];
   readonly defaultModel: string;
+  /** Config-time availability status (set when env var is missing) */
+  readonly status?: 'available' | 'unavailable';
 }
 
 /** Default model settings */

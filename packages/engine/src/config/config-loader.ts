@@ -1,13 +1,16 @@
 // @zaivim/engine — Config loader
 // YAML layer merging (default → user → project) + validation + deepFreeze
+// Integrated: comment stripping, key/model normalization, backup/recovery
 
 import type { ZaiConfig, ProviderConfig } from '@zaivim/core';
 import { ZaiConfigError } from '@zaivim/core';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { resolveEnvVars } from './env-resolver.js';
+import { resolveEnvVars, markUnavailableProviders } from './env-resolver.js';
 import { validateConfig } from './config-validator.js';
+import { stripJsComments, normalizeConfigKeys, normalizeModelField } from './config-compat.js';
+import { createConfigBackup, restoreFromBackup, getDefaultConfig } from './config-backup.js';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 let yaml: { parse: (s: string) => unknown } | undefined;
@@ -34,10 +37,13 @@ const DEFAULT_CONFIG: ZaiConfig = {
   },
 };
 
-function resolveUserConfigPath(): string | null {
+function resolveUserConfigPath(configHomeDir?: string): string | null {
+  const home = configHomeDir ?? homedir();
   const candidates = [
-    resolve(homedir(), '.zaivim', 'assistants.yaml'),
-    resolve(homedir(), '.zaivim', 'assistants.yml'),
+    resolve(home, '.zaivim', 'config.yaml'),
+    resolve(home, '.zaivim', 'config.yml'),
+    resolve(home, '.zaivim', 'assistants.yaml'),
+    resolve(home, '.zaivim', 'assistants.yml'),
   ];
   for (const p of candidates) {
     if (existsSync(p)) return p;
@@ -49,6 +55,7 @@ function resolveProjectConfigPath(): string | null {
   const candidates = [
     resolve(process.cwd(), '.zaivim', 'project.yaml'),
     resolve(process.cwd(), '.zaivim', 'project.yml'),
+    resolve(process.cwd(), '.zaivim', 'project.json'),
   ];
   for (const p of candidates) {
     if (existsSync(p)) return p;
@@ -60,19 +67,43 @@ function loadYamlFile(path: string): Record<string, unknown> | null {
   if (!yaml) return null;
   try {
     const raw = readFileSync(path, 'utf-8');
-    const parsed = yaml.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    return parsed as Record<string, unknown>;
+    const cleaned = stripJsComments(raw);
+    const normalized = normalizeConfigKeys(yaml.parse(cleaned));
+    if (typeof normalized !== 'object' || normalized === null) return null;
+    return normalized as Record<string, unknown>;
   } catch (err) {
-    if (err instanceof Error && 'mark' in err) {
+    if (err instanceof Error) {
       const mark = (err as { mark?: { line?: number; column?: number } }).mark;
       throw new ZaiConfigError(
         `YAML parse error in ${path}: ${err.message}`,
-        { file: path, line: mark?.line, column: mark?.column },
+        { file: path, line: mark?.line ?? undefined, column: mark?.column ?? undefined },
       );
     }
     return null;
   }
+}
+
+function loadJsonFile(path: string): Record<string, unknown> | null {
+  try {
+    const raw = readFileSync(path, 'utf-8');
+    const cleaned = stripJsComments(raw);
+    const normalized = normalizeConfigKeys(JSON.parse(cleaned));
+    if (typeof normalized !== 'object' || normalized === null) return null;
+    return normalized as Record<string, unknown>;
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      throw new ZaiConfigError(
+        `JSON parse error in ${path}: ${err.message}`,
+        { file: path },
+      );
+    }
+    return null;
+  }
+}
+
+function loadConfigFile(path: string): Record<string, unknown> | null {
+  if (path.endsWith('.json')) return loadJsonFile(path);
+  return loadYamlFile(path);
 }
 
 function parseProviderConfig(raw: Record<string, unknown>): Record<string, ProviderConfig> {
@@ -80,13 +111,14 @@ function parseProviderConfig(raw: Record<string, unknown>): Record<string, Provi
   for (const [name, cfg] of Object.entries(raw)) {
     if (!cfg || typeof cfg !== 'object') continue;
     const c = cfg as Record<string, unknown>;
-    const models = Array.isArray(c.models) ? c.models.map(String) : [];
+    const models = normalizeModelField(c.models);
+    const modelNames = models.map((m) => m.name);
     providers[name] = {
       type: String(c.type ?? 'openai'),
       apiKey: String(c.api_key ?? c.apiKey ?? ''),
       baseURL: String(c.base_url ?? c.baseURL ?? ''),
-      models,
-      defaultModel: String(c.default_model ?? c.defaultModel ?? models[0] ?? ''),
+      models: modelNames,
+      defaultModel: String(c.default_model ?? c.defaultModel ?? modelNames[0] ?? ''),
     };
   }
   return providers;
@@ -102,13 +134,26 @@ function deepFreeze<T>(obj: T): T {
   return obj;
 }
 
+export interface LoadConfigOptions {
+  overrides?: Partial<ZaiConfig>;
+  logger?: (msg: string) => void;
+  /** Override home directory for path resolution (testing) */
+  configHomeDir?: string;
+}
+
 /**
  * Load configuration with YAML layer merging.
- * Layers: default → user (~/.zaivim/assistants.yaml) → project (.zaivim/project.yaml)
- * Legacy Python paths (zai.project/, zai_project.yaml) require manual migration — see docs/adr-config-naming.md
+ * Layers: default → user (~/.zaivim/config.yaml or assistants.yaml) → project (.zaivim/project.yaml)
+ * Includes: comment stripping, key normalization, model normalization, backup/recovery, env var resolution.
  * Returns Readonly<ZaiConfig> (deepFrozen).
  */
-export function loadConfig(overrides?: Partial<ZaiConfig>): Readonly<ZaiConfig> {
+export function loadConfig(overrides?: Partial<ZaiConfig>, logger?: (msg: string) => void): Readonly<ZaiConfig>;
+export function loadConfig(opts: LoadConfigOptions): Readonly<ZaiConfig>;
+export function loadConfig(overridesOrOpts?: Partial<ZaiConfig> | LoadConfigOptions, logger?: (msg: string) => void): Readonly<ZaiConfig> {
+  const opts: LoadConfigOptions = overridesOrOpts && typeof overridesOrOpts === 'object' && ('configHomeDir' in overridesOrOpts || 'overrides' in overridesOrOpts || 'logger' in overridesOrOpts)
+    ? overridesOrOpts as LoadConfigOptions
+    : { overrides: overridesOrOpts as Partial<ZaiConfig> | undefined, logger };
+
   const config = JSON.parse(JSON.stringify(DEFAULT_CONFIG)) as {
     language: string;
     sandbox: { enabled: boolean; type: 'none' | 'bwrap'; workDir: string; timeout: number };
@@ -118,13 +163,36 @@ export function loadConfig(overrides?: Partial<ZaiConfig>): Readonly<ZaiConfig> 
   };
 
   // Layer 1: User config
-  const userPath = resolveUserConfigPath();
+  const userPath = resolveUserConfigPath(opts.configHomeDir);
   if (userPath) {
-    const userRaw = loadYamlFile(userPath);
+    let userRaw: Record<string, unknown> | null = null;
+    try {
+      userRaw = loadConfigFile(userPath);
+    } catch (err) {
+      if (err instanceof ZaiConfigError) {
+        const log = opts.logger ?? ((msg: string) => process.stderr.write(msg + '\n'));
+        const restored = restoreFromBackup(userPath, log);
+        if (restored) {
+          userRaw = loadConfigFile(restored);
+        } else {
+          log('Warning: no valid config found, using defaults');
+          userRaw = null;
+        }
+      } else {
+        throw err;
+      }
+    }
+
     if (userRaw) {
-      const services = userRaw.services ?? userRaw.assistants ?? userRaw;
-      if (typeof services === 'object' && services) {
-        const providers = parseProviderConfig(services as Record<string, unknown>);
+      // New format: top-level providers key
+      // Old format: services or assistants key wrapping providers
+      const isNewFormat = typeof userRaw.providers === 'object' && userRaw.providers !== null;
+      const providerSource = isNewFormat
+        ? userRaw.providers as Record<string, unknown>
+        : (userRaw.services ?? userRaw.assistants ?? userRaw) as Record<string, unknown>;
+
+      if (typeof providerSource === 'object' && providerSource) {
+        const providers = parseProviderConfig(providerSource);
         Object.assign(config.providers, providers);
 
         const keys = Object.keys(providers);
@@ -133,32 +201,47 @@ export function loadConfig(overrides?: Partial<ZaiConfig>): Readonly<ZaiConfig> 
           config.defaults.model = providers[keys[0]!]?.defaultModel ?? '';
         }
       }
+
+      // Apply defaults from new-format config
+      if (isNewFormat && typeof userRaw.defaults === 'object' && userRaw.defaults) {
+        const cfgDefaults = userRaw.defaults as Record<string, unknown>;
+        if (cfgDefaults.provider) config.defaults.provider = String(cfgDefaults.provider);
+        if (cfgDefaults.model) config.defaults.model = String(cfgDefaults.model);
+        if (cfgDefaults.temperature !== undefined) config.defaults.temperature = Number(cfgDefaults.temperature);
+        if (cfgDefaults.maxTokens !== undefined) config.defaults.maxTokens = Number(cfgDefaults.maxTokens);
+        if (cfgDefaults.language) config.language = String(cfgDefaults.language);
+      }
+
+      createConfigBackup(userPath, opts.logger);
     }
   }
 
   // Layer 2: Project config
   const projectPath = resolveProjectConfigPath();
   if (projectPath) {
-    const projRaw = loadYamlFile(projectPath);
+    const projRaw = loadConfigFile(projectPath);
     if (projRaw) {
       const sandbox = projRaw.sandbox as Record<string, unknown> | undefined;
       if (sandbox) {
         if (sandbox.enabled !== undefined) config.sandbox.enabled = Boolean(sandbox.enabled);
         if (sandbox.type) config.sandbox.type = sandbox.type as 'none' | 'bwrap';
-        if (sandbox.work_dir) config.sandbox.workDir = String(sandbox.work_dir);
+        if (sandbox.work_dir ?? sandbox.workDir) config.sandbox.workDir = String(sandbox.work_dir ?? sandbox.workDir);
       }
     }
   }
 
   // Layer 3: Overrides (CLI flags, env vars)
-  if (overrides) {
-    if (overrides.language) config.language = overrides.language;
-    if (overrides.defaults?.provider) config.defaults.provider = overrides.defaults.provider;
-    if (overrides.defaults?.model) config.defaults.model = overrides.defaults.model;
+  if (opts.overrides) {
+    if (opts.overrides.language) config.language = opts.overrides.language;
+    if (opts.overrides.defaults?.provider) config.defaults.provider = opts.overrides.defaults.provider;
+    if (opts.overrides.defaults?.model) config.defaults.model = opts.overrides.defaults.model;
   }
 
   // Resolve environment variables ($VAR_NAME patterns)
   resolveEnvVars(config);
+
+  // Mark providers with unresolved env vars as unavailable
+  markUnavailableProviders(config.providers as unknown as Record<string, Record<string, unknown>>);
 
   // Validate (skip provider check for MVP/engine-start mode)
   validateConfig(config, { skipProviderCheck: !config.defaults.provider });

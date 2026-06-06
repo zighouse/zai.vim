@@ -14,7 +14,9 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -22,6 +24,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@zaivim/core": "workspace:*"
+    "@zaivim/core": "workspace:*",
+    "yaml": "^2.9.0"
   }
 }
