@@ -6,21 +6,33 @@ import { decodeLine, isRequest, isError, successResponse, errorResponse, encodeL
 import { JSONRPC_ERROR_CODES } from '@zaivim/core';
 import type { JsonRpcRequest, JsonRpcMessage } from '@zaivim/core';
 import type { EngineAPI } from '@zaivim/core';
-import { buildHealthResponse } from '@zaivim/engine';
+import { readPidFile, isProcessAlive } from '@zaivim/engine';
 
 type MethodHandler = (params: unknown) => unknown;
 
 /**
  * Create a stdio transport that reads JSON-RPC from stdin and writes to stdout.
+ * @param pidPath - Optional PID file path to cross-check daemon state (AC8: pipe mode should not report ok after stop)
  */
-export function createStdioTransport(engine: EngineAPI): void {
+export function createStdioTransport(engine: EngineAPI, pidPath?: string): void {
   const handlers = new Map<string, MethodHandler>();
 
   // Register built-in methods
   handlers.set('health', () => {
     const health = engine.getHealth();
+    let status = health.status;
+
+    // Cross-check with PID file: if status is 'ok' but no daemon PID alive,
+    // this is a throwaway engine from pipe mode — report 'down' (AC8)
+    if (status === 'ok' && pidPath) {
+      const pidData = readPidFile(pidPath);
+      if (!pidData || !isProcessAlive(pidData.pid)) {
+        status = 'down';
+      }
+    }
+
     return {
-      status: health.status,
+      status,
       version: engine.version,
       sandboxAvailable: health.sandboxAvailable,
       activeSessions: health.activeSessions,
