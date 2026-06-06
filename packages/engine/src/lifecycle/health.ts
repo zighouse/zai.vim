@@ -38,6 +38,17 @@ export function buildPingResponse(engine: EngineAPI | undefined, version: string
     };
   }
 
+  // No engine instance (daemon mode or not running)
+  // If uptime is provided, assume daemon mode with running engine
+  if (uptime && uptime > 0) {
+    return {
+      status: 'ok',
+      version,
+      uptime,
+      nextMilestone: NEXT_MILESTONE,
+    };
+  }
+
   return {
     status: 'down',
     version,

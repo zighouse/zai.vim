@@ -32,6 +32,12 @@ export function createStdioTransport(engine: EngineAPI): void {
     version: engine.version,
   }));
 
+  handlers.set('stop', async () => {
+    // Trigger graceful shutdown via JSON-RPC
+    await engine.destroy({ force: false, reason: 'jsonrpc_stop' });
+    return { status: 'stopping' };
+  });
+
   const rl = createInterface({ input: process.stdin });
 
   rl.on('line', (line: string) => {

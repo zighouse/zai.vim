@@ -5,11 +5,12 @@
 import { parseArgs } from 'node:util';
 import { createEngine, getEngineInstance, loadConfig } from '@zaivim/engine';
 import { buildPingResponse, buildHealthResponse } from '@zaivim/engine';
-import { writePidFile, checkExistingPid, removePidFile, readPidFile } from '@zaivim/engine';
+import { writePidFile, checkExistingPid, removePidFile, readPidFile, InstanceGuard } from '@zaivim/engine';
 import type { EngineConfig, EngineStatus, EngineAPI } from '@zaivim/core';
-import { ZaiConfigError } from '@zaivim/core';
+import { ZaiConfigError, ZaiInstanceConflictError } from '@zaivim/core';
 import { createStdioTransport } from './stdio/transport.js';
 import { resolve, dirname, join } from 'node:path';
+import { openSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { execSync } from 'node:child_process';
@@ -62,7 +63,7 @@ function getEngineConfig(): EngineConfig {
 
 // ---- serve command ---------------------------------------------------------
 
-function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): void {
+async function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): Promise<void> {
   // Load and validate config (throws ZaiConfigError on error — AC4)
   try {
     loadConfig();
@@ -99,8 +100,24 @@ function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): void {
   if (opts?.daemon) {
     // Daemon mode: no stdio transport (stdio is /dev/null)
     // Engine runs until SIGTERM
-    process.stdin.resume();
-    return;
+    console.log(`Engine running in daemon mode (pid: ${process.pid})`);
+
+    // Keep the event loop alive by not returning
+    // Use a simple interval to keep event loop active
+    const keepAlive = setInterval(() => {
+      // Do nothing - just keep event loop alive
+    }, 60000); // Once per minute
+
+    // Clean up on signals
+    const cleanup = () => {
+      clearInterval(keepAlive);
+    };
+
+    process.on('SIGTERM', cleanup);
+    process.on('SIGINT', cleanup);
+
+    // Keep function from returning - this keeps the promise chain alive
+    return new Promise<never>(() => {});
   }
 
   // Wire stdio transport for JSON-RPC health/ping endpoint (AC1)
@@ -109,6 +126,14 @@ function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): void {
   const health = buildHealthResponse(engine, 0);
   console.log(JSON.stringify(health));
 
+  // Handle stdin-end for non-daemon mode (auto-shutdown when stdin closes)
+  process.stdin.on('end', () => {
+    const engineInstance = getEngineInstance();
+    if (engineInstance) {
+      (engineInstance as any).handleStdinEnd();
+    }
+  });
+
   // Keep process alive
   process.stdin.resume();
 }
@@ -116,19 +141,59 @@ function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): void {
 async function cmdServe(daemon: boolean): Promise<void> {
   const config = getEngineConfig();
 
+  // Check for instance conflicts before starting
+  const guard = new InstanceGuard(config.pidFile);
+  try {
+    guard.checkOrThrow();
+  } catch (err) {
+    if (err instanceof ZaiInstanceConflictError) {
+      const response = {
+        jsonrpc: '2.0',
+        error: {
+          code: -32000,
+          message: 'ENGINE_INSTANCE_CONFLICT',
+          data: {
+            existingPid: err.existingPid,
+            existingStartedAt: err.existingStartedAt,
+          },
+        },
+        id: null,
+      };
+      console.log(JSON.stringify(response));
+      process.exit(1);
+    }
+    throw err;
+  }
+
   if (daemon) {
-    const { fork } = await import('node:child_process');
+    const { spawn } = await import('node:child_process');
     const selfPath = fileURLToPath(import.meta.url);
-    const child = fork(selfPath, ['_serve_worker'], {
+    const nodeArgs = [selfPath, '_serve_worker'];
+
+    // Redirect stdout/stderr to engine.log (AC6)
+    const logPath = join(homedir(), '.zaivim', 'logs', 'engine.log');
+    mkdirSync(dirname(logPath), { recursive: true });
+    const logFd = openSync(logPath, 'a');
+
+    const child = spawn(process.execPath, nodeArgs, {
       detached: true,
-      stdio: 'ignore',
+      stdio: ['ignore', logFd, logFd, 'ipc'],
+      cwd: process.cwd(),
     });
     child.unref();
     // child process writes PID file in _serve_worker → startEngine()
     console.log(`zaivim engine started (pid: ${child.pid})`);
+
+    child.on('error', (err) => {
+      console.error(`Failed to start daemon: ${err.message}`);
+      process.exit(1);
+    });
+
+    // Don't wait - let parent exit immediately
+    // Child process should continue running independently
     process.exit(0);
   } else {
-    startEngine(config);
+    await startEngine(config);
   }
 }
 
@@ -162,27 +227,66 @@ function cmdStatus(): void {
 // ---- ping command ----------------------------------------------------------
 
 function cmdPing(): void {
+  // Try to get engine instance first (for foreground mode)
   const engine = getEngineInstance() as EngineAPI | undefined;
   const uptime = engine?.uptime;
+
+  // If no engine instance, check PID file (for daemon mode)
+  if (!engine) {
+    const alive = checkExistingPid(PID_PATH);
+    if (alive.alive && alive.pid && alive.data) {
+      // Engine is running in daemon mode
+      const daemonUptime = Date.now() - alive.data.startedAt;
+      const response = buildPingResponse(engine, VERSION, daemonUptime);
+      console.log(JSON.stringify(response, null, 2));
+      return;
+    }
+  }
+
+  // Either foreground mode with engine instance, or engine not running
   const response = buildPingResponse(engine, VERSION, uptime);
   console.log(JSON.stringify(response, null, 2));
 }
 
 // ---- stop command ----------------------------------------------------------
 
-function cmdStop(): void {
+async function cmdStop(): Promise<void> {
   const result = checkExistingPid(PID_PATH);
   if (!result.alive || !result.pid) {
-    console.log('Engine is not running');
+    const response = { status: 'not_running' };
+    console.log(JSON.stringify(response));
     return;
   }
 
   try {
+    // Send JSON-RPC stop request via stdin to the running engine
+    const stopRequest = JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'stop',
+      id: 1,
+    });
+
+    // For now, send SIGTERM to trigger graceful shutdown
+    // TODO: In future, implement proper JSON-RPC client that connects to engine
     process.kill(result.pid, 'SIGTERM');
-    removePidFile(PID_PATH);
-    console.log(`Engine stopped (pid: ${result.pid})`);
-  } catch {
-    console.error(`Failed to stop engine (pid: ${result.pid})`);
+
+    // Wait a bit for graceful shutdown
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Check if process still exists
+    const stillAlive = checkExistingPid(PID_PATH);
+    if (!stillAlive.alive) {
+      const response = { status: 'stopped', pid: result.pid };
+      console.log(JSON.stringify(response));
+      return;
+    }
+
+    // If still alive after 100ms, it's shutting down gracefully
+    const response = { status: 'stopping', pid: result.pid };
+    console.log(JSON.stringify(response));
+  } catch (err) {
+    const response = { status: 'error', message: (err as Error).message };
+    console.log(JSON.stringify(response));
     process.exit(1);
   }
 }
@@ -200,7 +304,7 @@ function cmdSmokeTest(): void {
 
 // ---- Main entry point ------------------------------------------------------
 
-function main(): void {
+async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
     options: {
       version: { type: 'boolean', short: 'v' },
@@ -225,7 +329,7 @@ function main(): void {
 
   // Internal worker mode for daemon (stdio is /dev/null — skip transport)
   if (command === '_serve_worker') {
-    startEngine(getEngineConfig(), { daemon: true });
+    await startEngine(getEngineConfig(), { daemon: true });
     return;
   }
 
@@ -237,9 +341,15 @@ function main(): void {
     return;
   }
 
+  // Handle smoke-test separately (it's sync)
+  if (command === 'smoke-test') {
+    cmdSmokeTest();
+    return;
+  }
+
   switch (command) {
     case 'serve':
-      cmdServe(values.daemon as boolean);
+      await cmdServe(values.daemon as boolean);
       break;
     case 'status':
       cmdStatus();
@@ -248,7 +358,10 @@ function main(): void {
       cmdPing();
       break;
     case 'stop':
-      cmdStop();
+      cmdStop().catch((err) => {
+        console.error('Stop command failed:', err);
+        process.exit(1);
+      });
       break;
     case 'smoke-test':
       cmdSmokeTest();

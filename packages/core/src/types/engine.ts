@@ -37,3 +37,27 @@ export interface HealthResponse {
   readonly activeSessions: number;
   readonly nextMilestone?: string;
 }
+
+/** Shutdown stages following ADR-23 graded shutdown protocol */
+export type ShutdownStage =
+  | 'drain-requests'
+  | 'drain-agents'
+  | 'persist-sessions'
+  | 'flush-audit'
+  | 'clean-pid'
+  | 'exit';
+
+/** Shutdown options for controlling graceful shutdown behavior */
+export interface ShutdownOptions {
+  readonly force: boolean;
+  readonly reason: string;
+  readonly timeout?: number; // milliseconds, default 10000
+}
+
+/** Shutdown event emitted during lifecycle */
+export interface ShutdownEvent {
+  readonly stage: ShutdownStage;
+  readonly timestamp: number;
+  readonly reason: string;
+  readonly force: boolean;
+}

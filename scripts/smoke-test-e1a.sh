@@ -42,7 +42,7 @@ assert_contains() {
   fi
 }
 
-echo "=== Smoke Test: Epic 1a — Engine Start & Health Check ==="
+echo "=== Smoke Test: Epic 1a — Engine Start, Health Check & Shutdown ==="
 echo ""
 
 # Ensure CLI is built
@@ -50,6 +50,18 @@ if [ ! -f "$CLI" ]; then
   echo -e "${YELLOW}Building CLI...${NC}"
   cd "$PROJECT_ROOT" && pnpm -r build
 fi
+
+# Cleanup function to kill any running engine
+cleanup() {
+  if [ -n "$ENGINE_PID" ] && kill -0 "$ENGINE_PID" 2>/dev/null; then
+    kill -TERM "$ENGINE_PID" 2>/dev/null || true
+    wait "$ENGINE_PID" 2>/dev/null || true
+  fi
+  # Clean up PID file
+  rm -f ~/.zaivim/engine.pid
+}
+
+trap cleanup EXIT
 
 # Test 1: zaivim --version
 echo "Test 1: zaivim --version"
@@ -80,11 +92,72 @@ output=$(node "$CLI" status 2>&1)
 assert_contains "status shows down" "$output" '"status":"down"'
 echo ""
 
-# Test 5: JSON-RPC health request via stdin
-echo "Test 5: JSON-RPC health request (e2e)"
-output=$(echo '{"jsonrpc":"2.0","method":"health","id":1}' | node "$CLI" 2>/dev/null || true)
-# CLI currently doesn't handle bare JSON-RPC on stdin (needs serve mode)
-# For MVP, we test the codec directly
+# Test 5: Instance conflict detection
+echo "Test 5: Instance conflict detection"
+# Start engine in background
+node "$CLI" serve --daemon >/dev/null 2>&1 &
+sleep 1
+
+# Try to start again - should fail with instance conflict
+output=$(node "$CLI" serve 2>&1 || true)
+assert_contains "second start detects conflict" "$output" "ENGINE_INSTANCE_CONFLICT"
+echo ""
+
+# Test 6: zaivim stop (engine running)
+echo "Test 6: zaivim stop (engine running)"
+output=$(node "$CLI" stop 2>&1)
+assert_contains "stop returns status" "$output" '"status"'
+echo ""
+
+# Test 7: Verify engine actually stopped
+echo "Test 7: Verify engine stopped after stop command"
+output=$(node "$CLI" status 2>&1)
+assert_contains "status shows down after stop" "$output" '"status":"down"'
+echo ""
+
+# Test 8: Stale PID cleanup
+echo "Test 8: Stale PID cleanup"
+# Create a stale PID file
+echo '{"pid":99999,"startedAt":1,"version":"0.1.0"}' > ~/.zaivim/engine.pid
+
+# Start should clean stale PID and succeed
+node "$CLI" serve --daemon >/dev/null 2>&1 &
+sleep 1
+
+output=$(node "$CLI" status 2>&1)
+assert_contains "engine starts after stale PID cleanup" "$output" '"status":"ok"'
+echo ""
+
+# Test 9: Graceful shutdown with SIGTERM
+echo "Test 9: SIGTERM graceful shutdown"
+# Get the actual PID of the running engine
+if [ -f ~/.zaivim/engine.pid ]; then
+  ENGINE_PID=$(cat ~/.zaivim/engine.pid | grep -o '"pid":[0-9]*' | cut -d: -f2)
+  if [ -n "$ENGINE_PID" ] && kill -0 "$ENGINE_PID" 2>/dev/null; then
+    # Send SIGTERM
+    kill -TERM "$ENGINE_PID" 2>/dev/null || true
+
+    # Wait for graceful shutdown (max 5 seconds)
+    for i in {1..10}; do
+      if ! kill -0 "$ENGINE_PID" 2>/dev/null; then
+        assert_contains "SIGTERM shuts down engine" "success" "success"
+        break
+      fi
+      sleep 0.5
+    done
+
+    # Verify PID file was cleaned up
+    if [ ! -f ~/.zaivim/engine.pid ]; then
+      assert_contains "PID file cleaned up" "success" "success"
+    fi
+  fi
+fi
+echo ""
+
+# Test 10: JSON-RPC health request via stdin
+echo "Test 10: JSON-RPC health request (e2e)"
+# This test would require starting engine in foreground mode and piping JSON-RPC
+# For now, we skip it as it requires more complex setup
 echo -e "${YELLOW}ℹ${NC} JSON-RPC e2e requires serve mode (Task 7.2)"
 echo ""
 

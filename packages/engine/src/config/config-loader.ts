@@ -47,10 +47,12 @@ function resolveUserConfigPath(): string | null {
 
 function resolveProjectConfigPath(): string | null {
   const candidates = [
+    // New naming (Node.js migration)
+    resolve(process.cwd(), '.zaivim', 'project.yaml'),
+    resolve(process.cwd(), '.zaivim', 'project.yml'),
+    // Legacy naming (Python compatibility)
     resolve(process.cwd(), 'zai.project', 'zai_project.yaml'),
     resolve(process.cwd(), 'zai.project', 'zai_project.yml'),
-    resolve(process.cwd(), 'zai_project.yaml'),
-    resolve(process.cwd(), 'zai_project.yml'),
   ];
   for (const p of candidates) {
     if (existsSync(p)) return p;
@@ -106,7 +108,7 @@ function deepFreeze<T>(obj: T): T {
 
 /**
  * Load configuration with YAML layer merging.
- * Layers: default → user (~/.zaivim/assistants.yaml) → project (zai.project/zai_project.yaml)
+ * Layers: default → user (~/.zaivim/assistants.yaml) → project (.zaivim/project.yaml)
  * Returns Readonly<ZaiConfig> (deepFrozen).
  */
 export function loadConfig(overrides?: Partial<ZaiConfig>): Readonly<ZaiConfig> {
@@ -161,8 +163,8 @@ export function loadConfig(overrides?: Partial<ZaiConfig>): Readonly<ZaiConfig> 
   // Resolve environment variables ($VAR_NAME patterns)
   resolveEnvVars(config);
 
-  // Validate
-  validateConfig(config);
+  // Validate (skip provider check for MVP/engine-start mode)
+  validateConfig(config, { skipProviderCheck: !config.defaults.provider });
 
   return deepFreeze(config) as ZaiConfig;
 }

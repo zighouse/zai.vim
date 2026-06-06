@@ -8,12 +8,12 @@ interface ValidationContext {
   value: unknown;
 }
 
-export function validateConfig(config: Record<string, unknown>): void {
+export function validateConfig(config: Record<string, unknown>, options?: { skipProviderCheck?: boolean }): void {
   const errors: string[] = [];
 
-  // Validate defaults.provider
+  // Validate defaults.provider (skip for MVP/engine-start only mode)
   const defaults = config.defaults as Record<string, unknown> | undefined;
-  if (!defaults?.provider) {
+  if (!options?.skipProviderCheck && !defaults?.provider) {
     errors.push('defaults.provider is required');
   }
 

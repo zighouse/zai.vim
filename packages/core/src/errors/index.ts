@@ -18,6 +18,7 @@ export const ErrorCodes = {
   ENGINE_PROVIDER_ERROR: 'ENGINE_PROVIDER_ERROR',
   ENGINE_SESSION_NOT_FOUND: 'ENGINE_SESSION_NOT_FOUND',
   ENGINE_CONFIG_INVALID: 'ENGINE_CONFIG_INVALID',
+  ENGINE_INSTANCE_CONFLICT: 'ENGINE_INSTANCE_CONFLICT',
 
   // Tools
   TOOLS_INVALID_PARAMS: 'TOOLS_INVALID_PARAMS',
@@ -140,6 +141,33 @@ export class ZaiConfigError extends ZaiError {
   constructor(message: string, detail?: unknown) {
     super(message, 'ENGINE_CONFIG_INVALID', 400, detail);
     this.name = 'ZaiConfigError';
+  }
+}
+
+// ---- Instance errors -------------------------------------------------------
+
+export class ZaiInstanceConflictError extends ZaiError {
+  readonly existingPid: number;
+  readonly existingStartedAt?: number;
+
+  constructor(existingPid: number, existingStartedAt?: number) {
+    super(
+      `Existing instance running (PID: ${existingPid})`,
+      'ENGINE_INSTANCE_CONFLICT',
+      409,
+      { existingPid, existingStartedAt }
+    );
+    this.name = 'ZaiInstanceConflictError';
+    this.existingPid = existingPid;
+    this.existingStartedAt = existingStartedAt;
+  }
+
+  override toJSON() {
+    return {
+      ...super.toJSON(),
+      existingPid: this.existingPid,
+      ...(this.existingStartedAt ? { existingStartedAt: this.existingStartedAt } : {}),
+    };
   }
 }
 

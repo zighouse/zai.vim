@@ -4,12 +4,17 @@
 // Zero external dependencies.
 // =============================================================================
 
+import type { ShutdownOptions } from './engine.js';
+
 // ---- Engine types (Task 1.1) ------------------------------------------------
 export type {
   EngineState,
   EngineConfig,
   EngineStatus,
   HealthResponse,
+  ShutdownStage,
+  ShutdownOptions,
+  ShutdownEvent,
 } from './engine.js';
 
 // ---- Config types (Task 1.2) ------------------------------------------------
@@ -211,7 +216,7 @@ export interface EngineAPI {
   closeSession(id: string): Promise<void>;
   createAgent(persona: PersonaConfig, options?: ForkOptions): AgentHandle;
   getHealth(): EngineHealth;
-  destroy(): Promise<void>;
+  destroy(options?: Partial<ShutdownOptions>): Promise<void>;
 }
 
 export interface EngineHealth {
