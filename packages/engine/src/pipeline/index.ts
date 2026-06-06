@@ -93,6 +93,12 @@ export class Engine implements EngineAPI {
     return this.#sessionStore.get(id);
   }
 
+  listSessions(filter?: { status?: import('@zaivim/core').SessionStatus }): Session[] {
+    const all = this.#sessionStore.list();
+    if (!filter?.status) return all;
+    return all.filter(s => s.status === filter.status);
+  }
+
   async closeSession(id: string): Promise<void> {
     this.#sessionStore.close(id);
   }
