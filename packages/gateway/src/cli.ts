@@ -4,7 +4,7 @@
 
 import { parseArgs } from 'node:util';
 import { createEngine, getEngineInstance, loadConfig, EventBus, ClientManager } from '@zaivim/engine';
-import { buildPingResponse, buildHealthResponse } from '@zaivim/engine';
+import { buildPingResponse } from '@zaivim/engine';
 import { writePidFile, checkExistingPid, removePidFile, readPidFile, InstanceGuard } from '@zaivim/engine';
 import type { EngineConfig, EngineStatus, EngineAPI } from '@zaivim/core';
 import { ZaiConfigError, ZaiInstanceConflictError } from '@zaivim/core';
@@ -88,11 +88,10 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): P
   const transportContext = new TransportContext({ eventBus, clientManager });
 
   // Enforce startup timeout (NFR4)
-  const timer = setTimeout(() => {
+  const startupTimer = setTimeout(() => {
     console.error(`Engine startup timed out after ${config.startupTimeout}ms`);
     process.exit(1);
   }, config.startupTimeout);
-  clearTimeout(timer);
 
   // Write PID file after engine is ready
   writePidFile(config.pidFile, VERSION);
@@ -112,6 +111,8 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): P
   if (opts?.daemon) {
     // Daemon mode: no stdio transport (stdio is /dev/null)
     // Engine runs until SIGTERM
+    clearTimeout(startupTimer);
+
     console.log(`Engine running in daemon mode (pid: ${process.pid})`);
 
     // Keep the event loop alive by not returning
@@ -135,8 +136,8 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): P
   // Wire stdio transport for JSON-RPC with ACL + event support (AC1, AC5, AC6)
   createStdioTransport(engine, config.pidFile, undefined, { transportContext });
 
-  const health = buildHealthResponse(engine, 0);
-  console.log(JSON.stringify(health));
+  // Engine is ready — clear startup timeout
+  clearTimeout(startupTimer);
 
   // Handle stdin-end for non-daemon mode (auto-shutdown when stdin closes)
   process.stdin.on('end', () => {
