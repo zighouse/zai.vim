@@ -227,11 +227,22 @@ export function loadConfig(overridesOrOpts?: Partial<ZaiConfig> | LoadConfigOpti
   if (projectPath) {
     const projRaw = loadConfigFile(projectPath);
     if (projRaw) {
+      // Merge sandbox from project config
       const sandbox = projRaw.sandbox as Record<string, unknown> | undefined;
       if (sandbox) {
         if (sandbox.enabled !== undefined) config.sandbox.enabled = Boolean(sandbox.enabled);
         if (sandbox.type) config.sandbox.type = sandbox.type as 'none' | 'bwrap';
         if (sandbox.work_dir ?? sandbox.workDir) config.sandbox.workDir = String(sandbox.work_dir ?? sandbox.workDir);
+        if (sandbox.timeout !== undefined) config.sandbox.timeout = Number(sandbox.timeout);
+      }
+      // Merge defaults from project config (AC2: project overrides user)
+      const projDefaults = projRaw.defaults as Record<string, unknown> | undefined;
+      if (projDefaults) {
+        if (projDefaults.provider) config.defaults.provider = String(projDefaults.provider);
+        if (projDefaults.model) config.defaults.model = String(projDefaults.model);
+        if (projDefaults.temperature !== undefined) config.defaults.temperature = Number(projDefaults.temperature);
+        if (projDefaults.maxTokens !== undefined) config.defaults.maxTokens = Number(projDefaults.maxTokens);
+        if (projDefaults.language) config.language = String(projDefaults.language);
       }
     }
   }
