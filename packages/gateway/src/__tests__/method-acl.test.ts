@@ -55,6 +55,7 @@ describe('MethodACL', () => {
     const defaultAcl = MethodACL.createDefault();
     expect(defaultAcl.has('health')).toBe(true);
     expect(defaultAcl.has('ping')).toBe(true);
+    expect(defaultAcl.has('metrics')).toBe(true);
     expect(defaultAcl.has('session.create')).toBe(true);
     expect(defaultAcl.has('session.close')).toBe(true);
     expect(defaultAcl.has('session.send')).toBe(true);
@@ -175,6 +176,7 @@ describe('MethodACL default instance', () => {
 
     expect(methods.health).toBe('public');
     expect(methods.ping).toBe('public');
+    expect(methods.metrics).toBe('public');
     expect(methods['session.create']).toBe('session-scoped');
     expect(methods['session.close']).toBe('session-scoped');
     expect(methods['session.send']).toBe('session-scoped');

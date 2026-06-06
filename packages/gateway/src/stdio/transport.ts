@@ -69,6 +69,18 @@ export function createStdioTransport(
     version: engine.version,
   }));
 
+  handlers.set('metrics', () => {
+    const eventBus = opts?.transportContext?.eventBus;
+    return {
+      version: engine.version,
+      uptime: engine.uptime,
+      activeSessions: engine.getHealth().activeSessions,
+      eventListeners: {
+        active: eventBus?.totalActiveListeners ?? 0,
+      },
+    };
+  });
+
   handlers.set('stop', async (params?: unknown) => {
     // Admin token required — checked by ACL middleware
     await engine.destroy({ force: false, reason: 'jsonrpc_stop' });

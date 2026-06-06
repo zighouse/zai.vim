@@ -46,6 +46,7 @@ export class MethodACL {
     const acl = new MethodACL();
     acl.register('health', { access: 'public', description: 'Engine health check' });
     acl.register('ping', { access: 'public', description: 'Engine ping' });
+    acl.register('metrics', { access: 'public', description: 'Engine metrics' });
     acl.register('session.create', { access: 'session-scoped', description: 'Create a new chat session' });
     acl.register('session.close', { access: 'session-scoped', description: 'Close a chat session' });
     acl.register('session.send', { access: 'session-scoped', description: 'Send a message to a session' });
