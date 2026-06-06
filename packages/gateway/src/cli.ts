@@ -121,7 +121,7 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): P
   }
 
   // Wire stdio transport for JSON-RPC health/ping endpoint (AC1)
-  createStdioTransport(engine);
+  createStdioTransport(engine, config.pidFile);
 
   const health = buildHealthResponse(engine, 0);
   console.log(JSON.stringify(health));
@@ -129,9 +129,7 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): P
   // Handle stdin-end for non-daemon mode (auto-shutdown when stdin closes)
   process.stdin.on('end', () => {
     const engineInstance = getEngineInstance();
-    if (engineInstance) {
-      (engineInstance as any).handleStdinEnd();
-    }
+    engineInstance?.handleStdinEnd();
   });
 
   // Keep process alive
@@ -335,8 +333,9 @@ async function main(): Promise<void> {
 
   // JSON-RPC stdio mode: echo '{"jsonrpc":"2.0","method":"health","id":1}' | zaivim
   if (!command && !process.stdin.isTTY) {
-    const engine = createEngine(getEngineConfig());
-    createStdioTransport(engine);
+    const config = getEngineConfig();
+    const engine = createEngine(config);
+    createStdioTransport(engine, config.pidFile);
     // Transport will exit on stdin close
     return;
   }
