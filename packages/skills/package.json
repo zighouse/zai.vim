@@ -1,6 +1,6 @@
 {
   "name": "@zaivim/skills",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": false,
   "description": "zai.vim skills — loader, registry, adapter, hello-skill example",
   "type": "module",

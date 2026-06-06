@@ -1,6 +1,6 @@
 {
   "name": "@zaivim/engine",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": false,
   "description": "zai.vim AI engine — pipeline, provider, agent, session, security, lifecycle",
   "type": "module",
