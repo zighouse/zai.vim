@@ -122,15 +122,22 @@ export class ShutdownSequencer {
   }
 
   /**
-   * Execute a stage with timeout.
-   * If timeout, aborts and continues to next stage.
+   * Execute a stage with actual timeout via Promise.race.
+   * If the stage fn exceeds STAGE_TIMEOUT (2.5s), the promise rejects
+   * and triggers force shutdown. (H1: previous implementation had no timeout.)
    */
   private async withStageTimeout<T>(
     stage: ShutdownStage,
     fn: () => Promise<T>
   ): Promise<T> {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(
+        `Stage "${stage}" timed out after ${STAGE_TIMEOUT}ms`
+      )), STAGE_TIMEOUT);
+    });
+
     try {
-      return await fn();
+      return await Promise.race([fn(), timeoutPromise]);
     } catch (error) {
       console.warn(`Shutdown stage "${stage}" failed or timed out:`, error);
       throw error; // Re-throw to trigger force shutdown
@@ -140,21 +147,26 @@ export class ShutdownSequencer {
   /**
    * Force shutdown when timeout or error occurs.
    * Ensures critical cleanup happens.
+   * Has an overall safety timeout to prevent hanging (H1).
    */
   private async forceShutdown(reason: string): Promise<void> {
     this.#aborted = true;
 
     console.warn('Force shutdown initiated');
 
+    // Overall safety timeout — guarantees we always exit (H1)
+    const safetyTimer = setTimeout(() => {
+      console.error('Force shutdown safety timeout reached — exiting immediately');
+      process.exit(0);
+    }, STAGE_TIMEOUT * 2);
+
     try {
-      // Terminate agents immediately
       await this.#deps.agentPool.terminateAll();
     } catch (err) {
       console.error('Failed to terminate agents:', err);
     }
 
     try {
-      // Best effort persist
       await this.#deps.sessionManager.persistAll();
     } catch (err) {
       console.error('Failed to persist sessions:', err);
@@ -172,8 +184,11 @@ export class ShutdownSequencer {
       console.error('Failed to remove PID file:', err);
     }
 
-    this.#deps.stateMachine.transition('shutdown');
-    this.#deps.stateMachine.transition('terminate');
+    clearTimeout(safetyTimer);
+
+    // Best-effort state transitions (may already be in a later state)
+    try { this.#deps.stateMachine.transition('shutdown'); } catch { /* ok */ }
+    try { this.#deps.stateMachine.transition('terminate'); } catch { /* ok */ }
 
     process.exit(0);
   }
