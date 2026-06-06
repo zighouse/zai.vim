@@ -13,8 +13,9 @@ type MethodHandler = (params: unknown) => unknown;
 /**
  * Create a stdio transport that reads JSON-RPC from stdin and writes to stdout.
  * @param pidPath - Optional PID file path to cross-check daemon state (AC8: pipe mode should not report ok after stop)
+ * @param streams - Optional stream overrides for testing (defaults to process.stdin/stdout)
  */
-export function createStdioTransport(engine: EngineAPI, pidPath?: string): void {
+export function createStdioTransport(engine: EngineAPI, pidPath?: string, streams?: { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream }): void {
   const handlers = new Map<string, MethodHandler>();
 
   // Register built-in methods
@@ -50,14 +51,16 @@ export function createStdioTransport(engine: EngineAPI, pidPath?: string): void 
     return { status: 'stopping' };
   });
 
-  const rl = createInterface({ input: process.stdin });
+  const input = streams?.stdin ?? process.stdin;
+  const output = streams?.stdout ?? process.stdout;
+  const rl = createInterface({ input });
 
-  rl.on('line', (line: string) => {
+  rl.on('line', async (line: string) => {
     const msg = decodeLine(line);
 
     // If decode produced an error, write it out
     if (isError(msg)) {
-      process.stdout.write(encodeLine(msg));
+      output.write(encodeLine(msg));
       return;
     }
 
@@ -68,13 +71,13 @@ export function createStdioTransport(engine: EngineAPI, pidPath?: string): void 
 
       if (handler) {
         try {
-          const result = handler(request.params);
+          const result = await handler(request.params);
           const response = successResponse(request.id, result);
-          process.stdout.write(encodeLine(response));
+          output.write(encodeLine(response));
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : 'Internal error';
           const response = errorResponse(request.id, JSONRPC_ERROR_CODES.INTERNAL_ERROR, errMsg);
-          process.stdout.write(encodeLine(response));
+          output.write(encodeLine(response));
         }
       } else {
         const response = errorResponse(
@@ -82,7 +85,7 @@ export function createStdioTransport(engine: EngineAPI, pidPath?: string): void 
           JSONRPC_ERROR_CODES.METHOD_NOT_FOUND,
           `Method not found: ${request.method}`,
         );
-        process.stdout.write(encodeLine(response));
+        output.write(encodeLine(response));
       }
     }
     // Notifications (no id) are silently handled or ignored in MVP
