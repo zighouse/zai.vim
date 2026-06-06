@@ -2,7 +2,8 @@
 // This is the shared context passed from engine startup to the transport layer.
 
 import type { EventBus, ClientManager } from '@zaivim/engine';
-import { MethodACL, readAdminToken } from '../method-acl.js';
+import { MethodACL } from '../method-acl.js';
+import { readAdminToken } from '../admin-token.js';
 
 export interface TransportContextOptions {
   eventBus: EventBus;

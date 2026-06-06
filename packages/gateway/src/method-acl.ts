@@ -1,10 +1,7 @@
 // @zaivim/gateway — Method-level ACL registry + auth middleware
 // Three access levels: public, session-scoped, admin
 
-import { readFileSync, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-import { generateAdminToken, ADMIN_TOKEN_PATH, ADMIN_TOKEN_LENGTH } from './admin-token.js';
+import { generateAdminToken, ADMIN_TOKEN_PATH, ADMIN_TOKEN_LENGTH, readAdminToken } from './admin-token.js';
 
 export type MethodAccess = 'public' | 'session-scoped' | 'admin';
 
@@ -63,20 +60,6 @@ export interface AuthResult {
   allowed: boolean;
   code?: number;
   message?: string;
-}
-
-/**
- * Read the admin token from ~/.zaivim/.admin-token.
- * Returns undefined if file doesn't exist or can't be read.
- */
-export function readAdminToken(): string | undefined {
-  try {
-    const tokenPath = ADMIN_TOKEN_PATH;
-    if (!existsSync(tokenPath)) return undefined;
-    return readFileSync(tokenPath, 'utf-8').trim();
-  } catch {
-    return undefined;
-  }
 }
 
 /**
