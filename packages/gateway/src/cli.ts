@@ -3,12 +3,14 @@
 // Uses Node 22 util.parseArgs() — zero external dependencies for MVP
 
 import { parseArgs } from 'node:util';
-import { createEngine, getEngineInstance, loadConfig } from '@zaivim/engine';
+import { createEngine, getEngineInstance, loadConfig, EventBus, ClientManager } from '@zaivim/engine';
 import { buildPingResponse, buildHealthResponse } from '@zaivim/engine';
 import { writePidFile, checkExistingPid, removePidFile, readPidFile, InstanceGuard } from '@zaivim/engine';
 import type { EngineConfig, EngineStatus, EngineAPI } from '@zaivim/core';
 import { ZaiConfigError, ZaiInstanceConflictError } from '@zaivim/core';
 import { createStdioTransport } from './stdio/transport.js';
+import { TransportContext } from './stdio/transport-context.js';
+import { generateAdminToken, removeAdminToken } from './admin-token.js';
 import { resolve, dirname, join } from 'node:path';
 import { openSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -77,6 +79,14 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): P
 
   const engine = createEngine(config);
 
+  // Generate admin token for ACL (AC5)
+  const adminToken = generateAdminToken();
+
+  // Create EventBus and ClientManager for event system (AC6, AC7)
+  const eventBus = new EventBus();
+  const clientManager = new ClientManager(eventBus);
+  const transportContext = new TransportContext({ eventBus, clientManager });
+
   // Enforce startup timeout (NFR4)
   const timer = setTimeout(() => {
     console.error(`Engine startup timed out after ${config.startupTimeout}ms`);
@@ -88,6 +98,8 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): P
   writePidFile(config.pidFile, VERSION);
 
   const shutdown = () => {
+    removeAdminToken();
+    transportContext.dispose();
     engine.destroy().then(() => {
       removePidFile(config.pidFile);
       process.exit(0);
@@ -120,8 +132,8 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): P
     return new Promise<never>(() => {});
   }
 
-  // Wire stdio transport for JSON-RPC health/ping endpoint (AC1)
-  createStdioTransport(engine, config.pidFile);
+  // Wire stdio transport for JSON-RPC with ACL + event support (AC1, AC5, AC6)
+  createStdioTransport(engine, config.pidFile, undefined, { transportContext });
 
   const health = buildHealthResponse(engine, 0);
   console.log(JSON.stringify(health));
@@ -358,7 +370,11 @@ async function main(): Promise<void> {
   if (!command && !process.stdin.isTTY) {
     const config = getEngineConfig();
     const engine = createEngine(config);
-    createStdioTransport(engine, config.pidFile);
+    const adminToken = generateAdminToken();
+    const eventBus = new EventBus();
+    const clientManager = new ClientManager(eventBus);
+    const transportContext = new TransportContext({ eventBus, clientManager });
+    createStdioTransport(engine, config.pidFile, undefined, { transportContext });
     // Transport will exit on stdin close
     return;
   }

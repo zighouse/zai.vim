@@ -1,5 +1,6 @@
 // @zaivim/gateway — stdio transport layer
-// Reads lines from stdin → parse → dispatch → write to stdout
+// Reads lines from stdin → parse → ACL check → dispatch → write to stdout
+// Supports event forwarding from EventBus → client stdout via $/notification
 
 import { createInterface } from 'node:readline';
 import { decodeLine, isRequest, isError, successResponse, errorResponse, encodeLine } from './jsonrpc-codec.js';
@@ -7,19 +8,41 @@ import { JSONRPC_ERROR_CODES } from '@zaivim/core';
 import type { JsonRpcRequest, JsonRpcMessage } from '@zaivim/core';
 import type { EngineAPI } from '@zaivim/core';
 import { readPidFile, isProcessAlive } from '@zaivim/engine';
+import { requireAuth, type MethodACL } from '../method-acl.js';
+import { encodeNotification } from './notification-sender.js';
+import type { EventBus, ClientManager } from '@zaivim/engine';
+import type { TransportContext } from './transport-context.js';
 
 type MethodHandler = (params: unknown) => unknown;
 
 /**
- * Create a stdio transport that reads JSON-RPC from stdin and writes to stdout.
- * @param pidPath - Optional PID file path to cross-check daemon state (AC8: pipe mode should not report ok after stop)
- * @param streams - Optional stream overrides for testing (defaults to process.stdin/stdout)
+ * Context for ACL and event system integration.
  */
-export function createStdioTransport(engine: EngineAPI, pidPath?: string, streams?: { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream }): void {
+export interface TransportOptions {
+  acl?: MethodACL;
+  eventBus?: EventBus;
+  clientManager?: ClientManager;
+  transportContext?: TransportContext;
+}
+
+/**
+ * Create a stdio transport that reads JSON-RPC from stdin and writes to stdout.
+ * @param engine - Engine API instance
+ * @param pidPath - Optional PID file path for daemon cross-check
+ * @param streams - Optional stream overrides for testing
+ * @param opts - Optional ACL + event system integration
+ */
+export function createStdioTransport(
+  engine: EngineAPI,
+  pidPath?: string,
+  streams?: { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream },
+  opts?: TransportOptions,
+): void {
   const handlers = new Map<string, MethodHandler>();
+  const acl = opts?.transportContext?.acl ?? opts?.acl;
 
   // Register built-in methods
-  handlers.set('health', () => {
+  handlers.set('health', (params?: unknown) => {
     const health = engine.getHealth();
     let status = health.status;
 
@@ -37,6 +60,7 @@ export function createStdioTransport(engine: EngineAPI, pidPath?: string, stream
       version: engine.version,
       sandboxAvailable: health.sandboxAvailable,
       activeSessions: health.activeSessions,
+      ...(acl ? { methods: acl.listMethods() } : {}),
     };
   });
 
@@ -45,8 +69,8 @@ export function createStdioTransport(engine: EngineAPI, pidPath?: string, stream
     version: engine.version,
   }));
 
-  handlers.set('stop', async () => {
-    // Trigger graceful shutdown via JSON-RPC
+  handlers.set('stop', async (params?: unknown) => {
+    // Admin token required — checked by ACL middleware
     await engine.destroy({ force: false, reason: 'jsonrpc_stop' });
     return { status: 'stopping' };
   });
@@ -54,6 +78,27 @@ export function createStdioTransport(engine: EngineAPI, pidPath?: string, stream
   const input = streams?.stdin ?? process.stdin;
   const output = streams?.stdout ?? process.stdout;
   const rl = createInterface({ input });
+
+  // ---- Event forwarding: EventBus → stdout via $/notification ---------------
+  const ctx = opts?.transportContext;
+  let eventDisposers: Array<() => void> = [];
+
+  if (ctx) {
+    const eventTypes: Array<{ type: string; handler: (data: unknown) => void }> = [
+      { type: 'session.created', handler: (data) => output.write(encodeNotification('session.created', data)) },
+      { type: 'session.closed', handler: (data) => output.write(encodeNotification('session.closed', data)) },
+      { type: 'security.degraded', handler: (data) => output.write(encodeNotification('security.degraded', data)) },
+      { type: 'engine.warning', handler: (data) => output.write(encodeNotification('engine.warning', data)) },
+      { type: 'engine.shutdown', handler: (data) => output.write(encodeNotification('engine.shutdown', data)) },
+    ];
+
+    for (const { type, handler } of eventTypes) {
+      const dispose = ctx.eventBus.on(type as any, handler as any);
+      eventDisposers.push(dispose);
+    }
+  }
+
+  // ---- Main dispatch loop ---------------------------------------------------
 
   rl.on('line', async (line: string) => {
     const msg = decodeLine(line);
@@ -67,7 +112,19 @@ export function createStdioTransport(engine: EngineAPI, pidPath?: string, stream
     // Only handle requests (have id + method)
     if (isRequest(msg)) {
       const request = msg as JsonRpcRequest;
-      const handler = handlers.get(request.method);
+      const method = request.method;
+
+      // ACL check (if ACL is configured)
+      if (acl) {
+        const auth = requireAuth(method, request.params, acl);
+        if (!auth.allowed) {
+          const response = errorResponse(request.id, auth.code ?? -32603, auth.message ?? 'Unauthorized');
+          output.write(encodeLine(response));
+          return;
+        }
+      }
+
+      const handler = handlers.get(method);
 
       if (handler) {
         try {
@@ -83,7 +140,7 @@ export function createStdioTransport(engine: EngineAPI, pidPath?: string, stream
         const response = errorResponse(
           request.id,
           JSONRPC_ERROR_CODES.METHOD_NOT_FOUND,
-          `Method not found: ${request.method}`,
+          `Method not found: ${method}`,
         );
         output.write(encodeLine(response));
       }
@@ -92,6 +149,12 @@ export function createStdioTransport(engine: EngineAPI, pidPath?: string, stream
   });
 
   rl.on('close', () => {
+    // Cleanup event listeners
+    for (const dispose of eventDisposers) {
+      dispose();
+    }
+    eventDisposers = [];
+
     // stdin closed — exit cleanly (pipe mode: echo '...' | zaivim)
     process.exit(0);
   });

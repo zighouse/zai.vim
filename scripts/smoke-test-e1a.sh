@@ -57,8 +57,8 @@ cleanup() {
     kill -TERM "$ENGINE_PID" 2>/dev/null || true
     wait "$ENGINE_PID" 2>/dev/null || true
   fi
-  # Clean up PID file
-  rm -f ~/.zaivim/engine.pid
+  # Clean up PID file and admin token
+  rm -f ~/.zaivim/engine.pid ~/.zaivim/.admin-token
 }
 
 trap cleanup EXIT
@@ -154,8 +154,29 @@ if [ -f ~/.zaivim/engine.pid ]; then
 fi
 echo ""
 
-# Test 10: JSON-RPC health request via stdin (e2e)
-echo "Test 10: JSON-RPC health request (e2e)"
+# Test 10: ACL — public method passes (AC5)
+echo "Test 10: ACL — public method passes (AC5)"
+output=$(echo '{"jsonrpc":"2.0","id":1,"method":"ping"}' | node "$CLI" 2>&1)
+assert_contains "ping succeeds without auth" "$output" '"result"'
+echo ""
+
+# Test 11: ACL — admin method without token rejected (AC5)
+echo "Test 11: ACL — admin method without token rejected (AC5)"
+output=$(echo '{"jsonrpc":"2.0","id":1,"method":"engine.stop"}' | node "$CLI" 2>&1)
+assert_contains "admin method rejected" "$output" '-32001'
+assert_contains "error message unauthorized" "$output" 'Unauthorized'
+echo ""
+
+# Test 12: Health response includes methods field (AC5)
+echo "Test 12: Health response includes methods field"
+output=$(echo '{"jsonrpc":"2.0","id":1,"method":"health"}' | node "$CLI" 2>&1)
+assert_contains "methods field present" "$output" '"methods"'
+assert_contains "public methods listed" "$output" '"public"'
+assert_contains "admin methods listed" "$output" '"admin"'
+echo ""
+
+# Test 13: JSON-RPC health request via stdin (e2e)
+echo "Test 13: JSON-RPC health request (e2e)"
 
 # Ensure clean state before starting daemon
 rm -f ~/.zaivim/engine.pid

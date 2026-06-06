@@ -36,6 +36,7 @@ export interface HealthResponse {
   readonly sandboxAvailable: boolean;
   readonly activeSessions: number;
   readonly nextMilestone?: string;
+  readonly methods?: Record<string, string>;
 }
 
 /** Shutdown stages following ADR-23 graded shutdown protocol */

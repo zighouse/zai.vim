@@ -6,3 +6,4 @@ export * from './session/index.js';
 export * from './config/index.js';
 export * from './security/index.js';
 export * from './lifecycle/index.js';
+export * from './events/index.js';

@@ -17,6 +17,18 @@ export type {
   ShutdownEvent,
 } from './engine.js';
 
+// ---- Event types (Story 1a.2) -----------------------------------------------
+export type {
+  EngineEventMap,
+  EngineEventType,
+  EngineEventData,
+  SessionCreatedEvent,
+  SessionClosedEvent,
+  SecurityDegradedEvent,
+  EngineWarningEvent,
+  EngineShutdownEvent,
+} from './events.js';
+
 // ---- Config types (Task 1.2) ------------------------------------------------
 export type {
   SandboxConfig,
