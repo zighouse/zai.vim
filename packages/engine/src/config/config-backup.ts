@@ -1,7 +1,7 @@
 // @zaivim/engine — Config backup and recovery
 // Creates backups on successful load, restores from backup on corruption, falls back to defaults
 
-import { existsSync, readFileSync, writeFileSync, readdirSync, copyFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, readdirSync, copyFileSync, unlinkSync } from 'node:fs';
 import { resolve, basename } from 'node:path';
 
 const MAX_HISTORY_BACKUPS = 3;
@@ -50,7 +50,6 @@ function pruneHistoryBackups(dir: string, base: string, logger?: (msg: string) =
     // Keep only MAX_HISTORY_BACKUPS
     for (let i = MAX_HISTORY_BACKUPS; i < files.length; i++) {
       try {
-        const { unlinkSync } = require('node:fs') as { unlinkSync: (p: string) => void };
         unlinkSync(resolve(dir, files[i]!));
       } catch {
         // ignore prune failures
