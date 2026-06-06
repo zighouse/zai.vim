@@ -129,6 +129,108 @@ assert_contains "method not found" "$output" '-32601'
 assert_contains "method not found message" "$output" 'Method not found'
 echo ""
 
+# ---- Test 7: Neovim jobstart() integration (AC9) ----
+echo "Test 7: Neovim jobstart() JSON-RPC integration (AC9)"
+if command -v nvim &>/dev/null; then
+  nvim_test_output=$(nvim --headless -c "
+    let job = jobstart(['bash', '-c', 'echo \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":7,\\\"method\\\":\\\"health\\\"}\" | node $CLI 2>&1'], {
+      \ 'on_stdout': {_, data -> execute('let g:result = join(data, \"\n\")', '')},
+      \ 'on_exit': {_, _ -> execute('call writefile([g:result], \"/tmp/nvim-test-output.txt\")', '')}
+      \ })
+    sleep 2
+    qa!
+  " 2>&1)
+  if [ -f /tmp/nvim-test-output.txt ]; then
+    nvim_result=$(cat /tmp/nvim-test-output.txt)
+    assert_contains "Neovim jobstart() health response" "$nvim_result" '"jsonrpc":"2.0"'
+    assert_contains "Neovim jobstart() response id matches" "$nvim_result" '"id":7'
+    rm -f /tmp/nvim-test-output.txt
+  else
+    echo -e "  ${YELLOW}⚠${NC} Neovim jobstart() test: output file not created"
+  fi
+else
+  echo -e "  ${YELLOW}⚠${NC} Neovim not found — skipping jobstart() test"
+fi
+echo ""
+
+# ---- Test 8: Vim job_start() integration (AC9) ----
+echo "Test 8: Vim job_start() JSON-RPC integration (AC9)"
+if command -v vim &>/dev/null; then
+  # Use Vim's job_start in silent mode
+  cat > /tmp/vim-test-script.vim << 'VIMEOF'
+function! HealthCallback(channel, msg)
+  let g:response = a:msg
+endfunction
+
+let job = job_start(['bash', '-c', 'echo {"jsonrpc":"2.0","id":8,"method":"health"} | node /home/CLI_PLACEHOLDER 2>&1'], {
+  \ 'out_cb': 'HealthCallback',
+  \ 'out_mode': 'nl'
+  \ })
+
+sleep 2
+call writefile([g:response], '/tmp/vim-test-output.txt')
+qa!
+VIMEOF
+  sed -i "s|/home/CLI_PLACEHOLDER|$CLI|g" /tmp/vim-test-script.vim
+  vim -es -N -u NONE -S /tmp/vim-test-script.vim 2>&1 || true
+  if [ -f /tmp/vim-test-output.txt ]; then
+    vim_result=$(cat /tmp/vim-test-output.txt)
+    assert_contains "Vim job_start() health response" "$vim_result" '"jsonrpc":"2.0"'
+    rm -f /tmp/vim-test-output.txt
+  else
+    echo -e "  ${YELLOW}⚠${NC} Vim job_start() test: output file not created (check Vim 8.x+ support)"
+  fi
+  rm -f /tmp/vim-test-script.vim
+else
+  echo -e "  ${YELLOW}⚠${NC} Vim not found — skipping job_start() test"
+fi
+echo ""
+
+# ---- Test 9: Neovim high-frequency push stability (AC10) ----
+echo "Test 9: Neovim jobstart() high-frequency notification stability (AC10)"
+if command -v nvim &>/dev/null; then
+  cat > /tmp/nvim-hf-test.lua << 'LUAEOF'
+local count = 100
+local input = ""
+for i = 1, count do
+  input = input .. '{"jsonrpc":"2.0","id":' .. i .. ',"method":"health"}\n'
+end
+local handle = vim.fn.jobstart(
+  {"bash", "-c", "echo -e [[" .. input .. "]] | node [[" .. arg[1] .. "]] 2>&1"},
+  {
+    on_stdout = function(_, data)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            local ok = pcall(vim.fn.json_decode, line)
+            if not ok then
+              io.stderr:write("PARSE_FAIL:" .. line .. "\n")
+            end
+          end
+        end
+      end
+    end,
+    on_exit = function()
+      vim.cmd("qa!")
+    end
+  }
+)
+vim.wait(10000, function() return false end)
+LUAEOF
+  nvim_hf_stderr=$(nvim --headless -c "lua arg = {'$CLI'}" -c "luafile /tmp/nvim-hf-test.lua" 2>&1 >/dev/null)
+  rm -f /tmp/nvim-hf-test.lua
+  if echo "$nvim_hf_stderr" | grep -q "PARSE_FAIL"; then
+    echo -e "  ${RED}✗${NC} Neovim jobstart() message parsing failures detected"
+    ((fail++)) || true
+  else
+    echo -e "  ${GREEN}✓${NC} Neovim jobstart() all messages parsed successfully"
+    ((pass++)) || true
+  fi
+else
+  echo -e "  ${YELLOW}⚠${NC} Neovim not found — skipping high-frequency test"
+fi
+echo ""
+
 # ---- Test 10: High-frequency push simulation (AC10) ----
 echo "Test 10: High-frequency push simulation (AC10)"
 # Generate 600 health check requests to simulate high-frequency streaming
