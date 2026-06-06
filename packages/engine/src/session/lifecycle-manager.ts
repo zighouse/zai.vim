@@ -171,9 +171,27 @@ export class SessionLifecycleManager extends EventEmitter {
 
     // AC5: Race-condition protection — extend if reconnecting
     if (session.reconnecting) {
-      this.#startTtlTimer(sessionId); // Restart with same window (extension)
+      // Extend by reconnectExtensionMs (+10min per AC5), not the full window
+      const timer = setTimeout(() => {
+        this.#handleTtlExtensionExpiry(sessionId);
+      }, this.#reconnectExtensionMs);
+      this.#ttlTimers.set(sessionId, timer);
       return;
     }
+
+    // Session expired — close it
+    this.#store.close(sessionId).catch(() => { /* already closed */ });
+  }
+
+  #handleTtlExtensionExpiry(sessionId: string): void {
+    this.#ttlTimers.delete(sessionId);
+    if (this.#disposed) return;
+    const session = this.#store.get(sessionId);
+    if (!session) return;
+
+    // Still reconnecting after extension? Close anyway to avoid indefinite hold
+    this.#store.close(sessionId).catch(() => { /* already closed */ });
+  }
 
     // Session expired — close it
     this.#store.close(sessionId).catch(() => { /* already closed */ });
