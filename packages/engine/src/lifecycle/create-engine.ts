@@ -49,10 +49,8 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
       },
       eventEmitter: this,
     });
-  }
 
-  /** Transition to running state — called by createEngine after construction */
-  start(): void {
+    // Transition to running state immediately (L1: prevent forgotten start())
     this.registerSignalHandlers();
     this.#stateMachine.transition('ready');
   }
@@ -165,7 +163,6 @@ let instance: EngineImpl | undefined;
 export function createEngine(config: EngineConfig): EngineAPI {
   if (instance) return instance;
   instance = new EngineImpl(config);
-  instance.start();
   return instance;
 }
 
