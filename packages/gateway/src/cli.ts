@@ -195,6 +195,18 @@ async function cmdServe(daemon: boolean): Promise<void> {
   }
 }
 
+/** Find engine daemon PIDs via pgrep (AC4: PID file manually deleted fallback) */
+function findZaivimDaemonPids(): number[] {
+  try {
+    const out = execSync('pgrep -f "gateway/dist/cli\\.js"', { encoding: 'utf-8' });
+    const pids = out.trim().split('\n').filter(Boolean).map(Number);
+    // Exclude current process (zaivim stop itself)
+    return pids.filter((pid) => pid !== process.pid);
+  } catch {
+    return [];
+  }
+}
+
 // ---- status command --------------------------------------------------------
 
 function cmdStatus(): void {
@@ -251,6 +263,17 @@ function cmdPing(): void {
 async function cmdStop(): Promise<void> {
   const result = checkExistingPid(PID_PATH);
   if (!result.alive || !result.pid) {
+    // AC4: PID file missing/manually deleted — try pgrep fallback
+    const pids = findZaivimDaemonPids();
+    if (pids.length > 0) {
+      for (const pid of pids) {
+        process.kill(pid, 'SIGTERM');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const response = { status: 'stopped', pid: pids[0] };
+      console.log(JSON.stringify(response));
+      return;
+    }
     const response = { status: 'not_running' };
     console.log(JSON.stringify(response));
     return;
