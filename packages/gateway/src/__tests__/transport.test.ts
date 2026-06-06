@@ -140,6 +140,72 @@ describe('Transport method handlers', () => {
     const response = JSON.parse(stdoutLines[0]);
     expect(response.error.code).toBe(-32700);
   });
+
+  it('session.create returns sessionId and status', async () => {
+    const engine = createMockEngine();
+    createStdioTransport(engine, undefined, { stdin: stdin as any, stdout: stdout as any });
+
+    stdin.write('{"jsonrpc":"2.0","id":10,"method":"session.create"}\n');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(stdoutLines.length).toBeGreaterThan(0);
+    const response = JSON.parse(stdoutLines[0]);
+    expect(response.result.sessionId).toBe('mock-session');
+    expect(response.result.status).toBe('active');
+    expect(engine.createSession).toHaveBeenCalled();
+  });
+
+  it('session.create forwards projectDir and config', async () => {
+    const engine = createMockEngine();
+    createStdioTransport(engine, undefined, { stdin: stdin as any, stdout: stdout as any });
+
+    stdin.write('{"jsonrpc":"2.0","id":11,"method":"session.create","params":{"projectDir":"/my/project"}}\n');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(engine.createSession).toHaveBeenCalledWith(undefined, '/my/project');
+  });
+
+  it('session.list returns sessions from engine', async () => {
+    const engine = createMockEngine();
+    (engine.listSessions as ReturnType<typeof vi.fn>).mockReturnValue([
+      { id: 's1', status: 'active', createdAt: 1000, projectDir: '/p1', messages: [] },
+    ]);
+    createStdioTransport(engine, undefined, { stdin: stdin as any, stdout: stdout as any });
+
+    stdin.write('{"jsonrpc":"2.0","id":12,"method":"session.list"}\n');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(stdoutLines.length).toBeGreaterThan(0);
+    const response = JSON.parse(stdoutLines[0]);
+    expect(response.result.activeSessions).toBe(1);
+    expect(response.result.sessions).toHaveLength(1);
+    expect(response.result.sessions[0].sessionId).toBe('s1');
+  });
+
+  it('session.close calls engine.closeSession', async () => {
+    const engine = createMockEngine();
+    createStdioTransport(engine, undefined, { stdin: stdin as any, stdout: stdout as any });
+
+    stdin.write('{"jsonrpc":"2.0","id":13,"method":"session.close","params":{"sessionId":"s1"}}\n');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(engine.closeSession).toHaveBeenCalledWith('s1');
+    const response = JSON.parse(stdoutLines[0]);
+    expect(response.result.status).toBe('closed');
+  });
+
+  it('session.pushMessage delegates to engine', async () => {
+    const engine = createMockEngine();
+    (engine.getSession as ReturnType<typeof vi.fn>).mockReturnValue({ messages: [{ id: 'm1' }] });
+    createStdioTransport(engine, undefined, { stdin: stdin as any, stdout: stdout as any });
+
+    stdin.write('{"jsonrpc":"2.0","id":14,"method":"session.pushMessage","params":{"sessionId":"s1","message":{"id":"m1","role":"user","content":"hello"}}}\n');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(engine.pushSessionMessage).toHaveBeenCalled();
+    const response = JSON.parse(stdoutLines[0]);
+    expect(response.result.sessionId).toBe('s1');
+  });
 });
 
 describe('Transport ACL integration', () => {
