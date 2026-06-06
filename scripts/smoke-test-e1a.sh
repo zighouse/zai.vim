@@ -154,11 +154,25 @@ if [ -f ~/.zaivim/engine.pid ]; then
 fi
 echo ""
 
-# Test 10: JSON-RPC health request via stdin
+# Test 10: JSON-RPC health request via stdin (e2e)
 echo "Test 10: JSON-RPC health request (e2e)"
-# This test would require starting engine in foreground mode and piping JSON-RPC
-# For now, we skip it as it requires more complex setup
-echo -e "${YELLOW}ℹ${NC} JSON-RPC e2e requires serve mode (Task 7.2)"
+
+# Ensure clean state before starting daemon
+rm -f ~/.zaivim/engine.pid
+
+# Start daemon for health check
+node "$CLI" serve --daemon >/dev/null 2>&1 &
+sleep 1
+
+# Pipe a JSON-RPC health request — verifies codec + transport dispatch + PID cross-check
+output=$(echo '{"jsonrpc":"2.0","id":1,"method":"health"}' | node "$CLI" 2>&1)
+assert_contains "health response is valid JSON-RPC 2.0" "$output" '"jsonrpc":"2.0"'
+assert_contains "health response echoes request id" "$output" '"id":1'
+assert_contains "health reports ok with daemon running" "$output" '"status":"ok"'
+
+# Stop daemon
+node "$CLI" stop >/dev/null 2>&1 || true
+sleep 0.5
 echo ""
 
 # Summary
