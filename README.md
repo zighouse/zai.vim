@@ -775,13 +775,83 @@ Change prefix example:
 
 ## Project Configuration
 
-Zai supports project-level configuration through a `.zaivim/project.yaml` file (or `project.yaml` for backward compatibility) in your project directory. This allows you to define project-specific settings like sandbox directory and Docker container configuration for the `tool_shell` tool.
+### Python Version Configuration (Legacy)
 
-### Configuration File Location
+The Python version uses a YAML file to configure project-specific settings such as sandbox directories and Docker containers.
 
-The configuration file is searched upward from the current working directory:
-- `.zaivim/project.yaml` (new format)
-- `project.yaml` (legacy format, prints warning)
+**Configuration file location**:
+- Linux/Mac: `zai.project/zai_project.yaml`
+- Windows: In project root directory
+
+**Search path** (searches upward from current directory):
+1. `.zaivim/project.yaml` (new format - recommended)
+2. `zai.project/zai_project.yaml` (legacy format - backward compatible)
+
+The configuration file should contain a list of configuration objects. The first one is used for the current project.
+
+Example `zai.project/zai_project.yaml`:
+```yaml
+- sandbox_home: /path/to/project/sandbox
+  shell_container:
+    # Other Docker SDK parameters can be included
+    # It is used mostly for tool_shell running a docker container, see to run():
+    # https://docker-py.readthedocs.io/en/stable/containers.html
+    image: taskbox:latest            # the docker image to use
+    name: my-project-taskbox         # name of this container
+    Dockerfile: Dockerfile.taskbox   # if the image is not exist, use this dockerfile to create a new one.
+    working_dir: /sandbox            # working dir
+    user: "1000:1000"  # UID:GID as host user, or any user provided in docker image, e.g. "sandbox"
+    volumes:
+      - "/host/path:/container/path:rw"
+      - "/home/for/project/.git:/sandbox/project/.git:ro"
+      - "/ccache/for/project:/ccache/.git:ro"
+    network_mode: "bridge"
+    environment:
+      CCACHE_DIR: "/ccache"
+      CCACHE_MAXSIZE: "10G"
+    mem_limit: "4g"
+    cpu_period: 100000
+    cpu_quota: 50000
+    detach: true
+    auto_remove: true
+    network_mode: "bridge"
+    command: ["tail", "-f", "/dev/null"]
+```
+
+For detailed configuration naming standards and migration from Python to Node.js versions, see:
+- **ADR**: `docs/adr-config-naming.md` - Configuration naming decision record
+- **Migration Guide**: `docs/config-migration-guide.md` - Migration from Python to Node.js version
+
+### Node.js Version Configuration (New)
+
+The Node.js version (`@zaivim/engine`) uses a different configuration structure with two separate configuration files:
+
+**User Configuration** (`~/.zaivim/assistants.yaml`):
+```yaml
+services:
+  openai:
+    api_key: sk-your-api-key
+    models: [gpt-4, gpt-3.5-turbo]
+    type: openai
+    default_model: gpt-4
+
+defaults:
+  provider: openai
+  model: gpt-4
+  temperature: 0.7
+  maxTokens: 4096
+```
+
+**Project Configuration** (`.zaivim/project.yaml`):
+```yaml
+sandbox:
+  enabled: false
+  type: none
+  workDir: /tmp/zaivim-sandbox
+  timeout: 30000
+```
+
+### Configuration Fields (Python)
 
 ### Configuration Structure
 
