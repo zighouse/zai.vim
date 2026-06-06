@@ -17,6 +17,7 @@ export class ClientManager {
   readonly #clients = new Map<string, ClientConnection>();
   readonly #eventBus: EventBus;
   readonly #cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  readonly #clientDisposers = new Map<string, Array<() => void>>();
   #clientCounter = 0;
 
   constructor(eventBus: EventBus) {
@@ -38,7 +39,23 @@ export class ClientManager {
       this.#cleanupTimers.delete(id);
     }
 
+    // Initialize disposer list for this client
+    if (!this.#clientDisposers.has(id)) {
+      this.#clientDisposers.set(id, []);
+    }
+
     return id;
+  }
+
+  /**
+   * Track an EventBus listener disposer for a specific client.
+   * When the client disconnects, all tracked disposers are called.
+   */
+  trackDisposer(clientId: string, disposer: () => void): void {
+    const disposers = this.#clientDisposers.get(clientId);
+    if (disposers) {
+      disposers.push(disposer);
+    }
   }
 
   /**
@@ -46,11 +63,12 @@ export class ClientManager {
    */
   unregister(id: string): void {
     this.#clients.delete(id);
+    this.#clientDisposers.delete(id);
   }
 
   /**
    * Handle client disconnection.
-   * Sets a timer to clean up all event listeners registered by this client.
+   * Cleans up all EventBus listeners registered by this client after a delay.
    */
   handleDisconnect(id: string): void {
     const client = this.#clients.get(id);
@@ -58,6 +76,16 @@ export class ClientManager {
 
     // Start cleanup timer (AC8: 5s listener cleanup)
     const timer = setTimeout(() => {
+      // Clean up all EventBus listeners tracked for this client
+      const disposers = this.#clientDisposers.get(id);
+      if (disposers) {
+        for (const dispose of disposers) {
+          dispose();
+        }
+        this.#clientDisposers.delete(id);
+      }
+
+      // Remove the client from the registry
       this.#cleanupTimers.delete(id);
       this.#clients.delete(id);
     }, CLEANUP_DELAY_MS);
@@ -123,6 +151,13 @@ export class ClientManager {
       clearTimeout(timer);
       this.#cleanupTimers.delete(id);
     }
+    // Clean up all tracked disposers
+    for (const disposers of this.#clientDisposers.values()) {
+      for (const dispose of disposers) {
+        dispose();
+      }
+    }
+    this.#clientDisposers.clear();
   }
 
   /**

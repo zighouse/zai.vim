@@ -84,6 +84,8 @@ export function createStdioTransport(
   let eventDisposers: Array<() => void> = [];
 
   if (ctx) {
+    const clientId = ctx.clientManager.generateId();
+
     const eventTypes: Array<{ type: string; handler: (data: unknown) => void }> = [
       { type: 'session.created', handler: (data) => output.write(encodeNotification('session.created', data)) },
       { type: 'session.closed', handler: (data) => output.write(encodeNotification('session.closed', data)) },
@@ -95,6 +97,7 @@ export function createStdioTransport(
     for (const { type, handler } of eventTypes) {
       const dispose = ctx.eventBus.on(type as any, handler as any);
       eventDisposers.push(dispose);
+      ctx.clientManager.trackDisposer(clientId, dispose);
     }
   }
 
