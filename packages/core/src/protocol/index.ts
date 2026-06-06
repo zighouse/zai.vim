@@ -97,10 +97,10 @@ export function decode(input: string): JsonRpcError | JsonRpcMessage {
   if (raw.jsonrpc !== JSONRPC_VERSION) {
     return {
       jsonrpc: JSONRPC_VERSION,
-      id: null,
+      id: (typeof raw.id === 'string' || typeof raw.id === 'number') ? raw.id : null,
       error: {
         code: JSONRPC_ERROR_CODES.INVALID_REQUEST,
-        message: `Invalid JSON-RPC version: ${String(raw.jsonrpc)}`,
+        message: 'Invalid Request',
       },
     };
   }
