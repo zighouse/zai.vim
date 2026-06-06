@@ -31,7 +31,7 @@ assert_eq() {
 
 assert_contains() {
   local description="$1" haystack="$2" needle="$3"
-  if echo "$haystack" | grep -q "$needle"; then
+  if echo "$haystack" | grep -q -- "$needle"; then
     echo -e "${GREEN}✓${NC} $description"
     ((pass++)) || true
   else
