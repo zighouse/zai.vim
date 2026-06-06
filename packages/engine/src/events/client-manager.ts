@@ -30,6 +30,13 @@ export class ClientManager {
    */
   register(client: ClientConnection): string {
     const id = client.id;
+
+    // Refuse duplicate registration of an active client
+    const existing = this.#clients.get(id);
+    if (existing && existing.isAlive) {
+      throw new Error(`Client with id '${id}' is already registered`);
+    }
+
     this.#clients.set(id, client);
 
     // Cancel any pending cleanup for this ID (reconnect scenario)

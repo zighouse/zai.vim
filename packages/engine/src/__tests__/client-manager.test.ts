@@ -34,6 +34,14 @@ describe('ClientManager', () => {
       const id2 = manager.generateId();
       expect(id1).not.toBe(id2);
     });
+
+    it('refuses duplicate registration of active client', () => {
+      const client1 = createMockClient('dup-1');
+      manager.register(client1);
+
+      const client2 = createMockClient('dup-1'); // same ID, alive
+      expect(() => manager.register(client2)).toThrow(/already registered/);
+    });
   });
 
   describe('broadcast', () => {
@@ -119,13 +127,16 @@ describe('ClientManager', () => {
     });
 
     it('cancels pending cleanup on re-registration', () => {
-      const client = createMockClient('client-re');
-      manager.register(client);
+      const oldClient = createMockClient('client-re');
+      manager.register(oldClient);
       manager.handleDisconnect('client-re');
 
-      // Simulate reconnect by re-registering
-      const sameClient = createMockClient('client-re');
-      manager.register(sameClient);
+      // Mark old client as dead before reconnect
+      Object.defineProperty(oldClient, 'isAlive', { get: () => false });
+
+      // Re-register with same ID (old client is dead, reconnect allowed)
+      const newClient = createMockClient('client-re');
+      manager.register(newClient);
 
       // Advance past cleanup delay
       vi.advanceTimersByTime(5000);
