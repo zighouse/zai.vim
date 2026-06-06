@@ -171,6 +171,12 @@ export function loadConfig(overridesOrOpts?: Partial<ZaiConfig> | LoadConfigOpti
     } catch (err) {
       if (err instanceof ZaiConfigError) {
         const log = opts.logger ?? ((msg: string) => process.stderr.write(msg + '\n'));
+        // Log detailed error info before recovery (AC3: field-level error report)
+        const detail = err.detail as { file?: string; line?: number; column?: number } | undefined;
+        const location = detail?.file
+          ? ` in ${detail.file}${detail.line != null ? `:${detail.line}` : ''}${detail.column != null ? `:${detail.column}` : ''}`
+          : '';
+        log(`Warning: config parse error${location} — ${err.message}`);
         const restored = restoreFromBackup(userPath, log);
         if (restored) {
           userRaw = loadConfigFile(restored);
