@@ -38,11 +38,6 @@ export class ClientManager {
       this.#cleanupTimers.delete(id);
     }
 
-    // Listen for disconnect
-    const dispose = this.#eventBus.on('session.created', () => {
-      // Client disconnect is detected externally (stdin close, WS close)
-    });
-
     return id;
   }
 
