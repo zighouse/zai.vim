@@ -47,12 +47,8 @@ function resolveUserConfigPath(): string | null {
 
 function resolveProjectConfigPath(): string | null {
   const candidates = [
-    // New naming (Node.js migration)
     resolve(process.cwd(), '.zaivim', 'project.yaml'),
     resolve(process.cwd(), '.zaivim', 'project.yml'),
-    // Legacy naming (Python compatibility)
-    resolve(process.cwd(), 'zai.project', 'zai_project.yaml'),
-    resolve(process.cwd(), 'zai.project', 'zai_project.yml'),
   ];
   for (const p of candidates) {
     if (existsSync(p)) return p;
@@ -109,6 +105,7 @@ function deepFreeze<T>(obj: T): T {
 /**
  * Load configuration with YAML layer merging.
  * Layers: default → user (~/.zaivim/assistants.yaml) → project (.zaivim/project.yaml)
+ * Legacy Python paths (zai.project/, zai_project.yaml) require manual migration — see docs/adr-config-naming.md
  * Returns Readonly<ZaiConfig> (deepFrozen).
  */
 export function loadConfig(overrides?: Partial<ZaiConfig>): Readonly<ZaiConfig> {
