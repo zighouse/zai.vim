@@ -3,7 +3,7 @@
 // Uses Node 22 util.parseArgs() — zero external dependencies for MVP
 
 import { parseArgs } from 'node:util';
-import { createEngine, getEngineInstance, loadConfig, EventBus, ClientManager } from '@zaivim/engine';
+import { createEngine, getEngineInstance, loadConfig, tryMigrate, EventBus, ClientManager } from '@zaivim/engine';
 import { buildPingResponse } from '@zaivim/engine';
 import { writePidFile, checkExistingPid, removePidFile, readPidFile, InstanceGuard } from '@zaivim/engine';
 import type { EngineConfig, EngineStatus, EngineAPI } from '@zaivim/core';
@@ -65,7 +65,10 @@ function getEngineConfig(): EngineConfig {
 
 // ---- serve command ---------------------------------------------------------
 
-async function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): Promise<void> {
+async function startEngine(config: EngineConfig, opts?: { daemon?: boolean; yes?: boolean }): Promise<void> {
+  // Run legacy config migration before loading (Story 1a.4 AC5-AC6)
+  tryMigrate({ yes: opts?.yes ?? false });
+
   // Load and validate config (throws ZaiConfigError on error — AC4)
   try {
     loadConfig();
@@ -149,7 +152,7 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean }): P
   process.stdin.resume();
 }
 
-async function cmdServe(daemon: boolean): Promise<void> {
+async function cmdServe(daemon: boolean, yes?: boolean): Promise<void> {
   const config = getEngineConfig();
 
   // Check for instance conflicts before starting
@@ -204,7 +207,7 @@ async function cmdServe(daemon: boolean): Promise<void> {
     // Child process should continue running independently
     process.exit(0);
   } else {
-    await startEngine(config);
+    await startEngine(config, { daemon: false, yes });
   }
 }
 
@@ -419,6 +422,7 @@ async function main(): Promise<void> {
       version: { type: 'boolean', short: 'v' },
       help: { type: 'boolean', short: 'h' },
       daemon: { type: 'boolean', default: false },
+      yes: { type: 'boolean', default: false },
     },
     allowPositionals: true,
     strict: false,
@@ -463,7 +467,7 @@ async function main(): Promise<void> {
 
   switch (command) {
     case 'serve':
-      await cmdServe(values.daemon as boolean);
+      await cmdServe(values.daemon as boolean, values.yes as boolean | undefined);
       break;
     case 'status':
       cmdStatus();
