@@ -2,7 +2,7 @@
 // Token is a 64-char hex string (crypto.randomBytes(32).toString('hex'))
 
 import { randomBytes } from 'node:crypto';
-import { writeFileSync, unlinkSync, mkdirSync, chmodSync, existsSync, readFileSync } from 'node:fs';
+import { writeFileSync, unlinkSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 
@@ -21,7 +21,6 @@ export function generateAdminToken(): string {
     mkdirSync(dir, { recursive: true });
   }
   writeFileSync(ADMIN_TOKEN_PATH, token + '\n', { mode: 0o600 });
-  chmodSync(ADMIN_TOKEN_PATH, 0o600);
   return token;
 }
 
