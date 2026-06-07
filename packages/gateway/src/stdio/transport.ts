@@ -175,6 +175,7 @@ export function createStdioTransport(
       { type: 'session.auto_trimmed', handler: (data) => output.write(encodeNotification('session.auto_trimmed', data)) },
       { type: 'session.persistence.dropped', handler: (data) => output.write(encodeNotification('session.persistence.dropped', data)) },
       { type: 'session.recovered', handler: (data) => output.write(encodeNotification('session.recovered', data)) },
+      { type: 'session.project_context_updated', handler: (data) => output.write(encodeNotification('session.project_context_updated', data)) },
       { type: 'security.degraded', handler: (data) => output.write(encodeNotification('security.degraded', data)) },
       { type: 'engine.warning', handler: (data) => output.write(encodeNotification('engine.warning', data)) },
       { type: 'engine.shutdown', handler: (data) => output.write(encodeNotification('engine.shutdown', data)) },
