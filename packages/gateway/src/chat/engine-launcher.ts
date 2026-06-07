@@ -24,9 +24,9 @@ export interface EngineLauncherResult {
  * @throws Error if engine fails to start within timeout.
  */
 export async function ensureEngineRunning(): Promise<EngineLauncherResult> {
-  // 1. Check if engine is already running
+  // 1. Check if engine is already running (AC3: health check)
   const pidCheck = checkExistingPid(PID_PATH);
-  if (pidCheck.alive && pidCheck.pid) {
+  if (pidCheck.alive && verifyProcessAlive(pidCheck.pid)) {
     return { alreadyRunning: true, pid: pidCheck.pid };
   }
 
@@ -51,12 +51,12 @@ export async function ensureEngineRunning(): Promise<EngineLauncherResult> {
     throw new Error('Failed to spawn engine daemon process');
   }
 
-  // 3. Poll PID file until engine is ready
+  // 3. Poll PID file until engine is ready (AC3: /health readiness check)
   const maxAttempts = Math.ceil(ENGINE_STARTUP_TIMEOUT / HEALTH_POLL_INTERVAL);
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     await sleep(HEALTH_POLL_INTERVAL);
     const check = checkExistingPid(PID_PATH);
-    if (check.alive) {
+    if (check.alive && verifyProcessAlive(check.pid)) {
       child.stderr?.destroy();
       return { alreadyRunning: false, pid: check.pid };
     }
@@ -80,6 +80,17 @@ function getCliPath(): string {
   const distDir = dirname(thisFile);
   // chat/engine-launcher.js → dist/cli.js (both in dist/)
   return join(distDir, '..', 'cli.js');
+}
+
+/** Verify a PID is alive using signal 0 (no actual signal sent). */
+function verifyProcessAlive(pid: number | undefined): pid is number {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function sleep(ms: number): Promise<void> {

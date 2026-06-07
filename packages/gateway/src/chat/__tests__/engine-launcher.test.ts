@@ -1,6 +1,6 @@
 // @zaivim/gateway — Engine launcher tests (AC3)
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock @zaivim/engine module
 vi.mock('@zaivim/engine', () => ({
@@ -32,6 +32,12 @@ const mockSpawn = vi.mocked(spawn);
 describe('ensureEngineRunning', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock process.kill(pid, 0) to succeed for any PID in tests
+    vi.spyOn(process, 'kill').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('returns immediately if engine is already running', async () => {
