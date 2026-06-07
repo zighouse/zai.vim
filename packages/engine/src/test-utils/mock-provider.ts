@@ -14,6 +14,8 @@ export function createMockProvider(opts?: Partial<IProvider>): IProvider {
       thinking: false,
       vision: false,
       maxContextTokens: 128_000,
+      protocol: 'openai-compatible',
+      protocol: 'openai-compatible',
     },
     chat: async function* (_req: ProviderChatRequest, _signal?: AbortSignal) {
       yield { type: 'text' as const, content: 'mock response' };
@@ -41,6 +43,7 @@ export function createMockProviderWithChunks(chunks: ResponseChunk[]): IProvider
       thinking: false,
       vision: false,
       maxContextTokens: 128_000,
+      protocol: 'openai-compatible',
     },
     chat: async function* (_req: ProviderChatRequest, _signal?: AbortSignal) {
       for (const c of chunks) yield c;
