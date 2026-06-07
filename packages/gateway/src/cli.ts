@@ -29,6 +29,7 @@ const SUBCOMMANDS = {
   tui:         'Launch the terminal UI (coming in v0.5.0)',
   skill:       'Manage skills (coming in v0.6.0)',
   import:      'Import configuration from external sources',
+  'project-context': 'Detect and display project context information',
   'smoke-test': 'Run integration smoke tests',
 } as const;
 
@@ -51,6 +52,7 @@ Examples:
   zaivim ping               Check engine status
   zaivim status             Show detailed engine info
   zaivim stop               Stop running daemon
+  zaivim project-context    Show detected project context
 `);
 }
 
@@ -403,6 +405,33 @@ async function cmdStop(): Promise<void> {
   }
 }
 
+// ---- project-context command -----------------------------------------------
+
+async function cmdProjectContext(dir?: string): Promise<void> {
+  // Try engine instance first (foreground mode)
+  const engine = getEngineInstance() as EngineAPI | undefined;
+
+  if (engine) {
+    const ctx = await engine.detectProjectContext(dir);
+    console.log(JSON.stringify(ctx, null, 2));
+    return;
+  }
+
+  // Check daemon mode via PID file
+  const alive = checkExistingPid(PID_PATH);
+  if (alive.alive) {
+    // Engine is running in daemon mode — user should use RPC
+    console.error('Engine is running in daemon mode. Use JSON-RPC: echo \'{"jsonrpc":"2.0","method":"project-context","id":1}\' | zaivim');
+    process.exit(1);
+  }
+
+  // No engine running: run detection directly
+  const { findProjectRoot, scanProjectMeta } = await import('@zaivim/engine');
+  const { root, detected } = findProjectRoot(dir);
+  const ctx = await scanProjectMeta(root, detected);
+  console.log(JSON.stringify(ctx, null, 2));
+}
+
 // ---- smoke-test command ----------------------------------------------------
 
 function cmdSmokeTest(): void {
@@ -483,6 +512,9 @@ async function main(): Promise<void> {
       break;
     case 'session':
       await cmdSession(positionals.slice(1), values);
+      break;
+    case 'project-context':
+      await cmdProjectContext(positionals[1]);
       break;
     case 'smoke-test':
       cmdSmokeTest();

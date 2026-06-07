@@ -12,6 +12,7 @@ import type {
   PersonaConfig,
   PipelineConfig,
   ChatResult,
+  ProjectContext,
 } from '@zaivim/core';
 import { ZaiNetworkError } from '@zaivim/core';
 import { assembleContext, PIPELINE_DEFAULTS } from './context-assembler.js';
@@ -30,6 +31,7 @@ export interface ChatDeps {
   readonly persona?: PersonaConfig;
   readonly emit?: (event: string, data: Record<string, unknown>) => void;
   readonly onMessagePushed?: (sessionId: string) => void;
+  readonly projectContext?: ProjectContext;
 }
 
 type EmitFn = (event: string, data: Record<string, unknown>) => void;
@@ -62,12 +64,13 @@ export async function* chat(
   sessionStore.pushMessage(session.id, message);
   onMessagePushed?.(session.id);
 
-  // 2. Assemble context (history + system prompt + token trimming)
+  // 2. Assemble context (history + system prompt + project context + token trimming)
   const { messages: contextMessages } = assembleContext(session, persona, {
     maxContextTokens: config.maxContextTokens ?? PIPELINE_DEFAULTS.maxContextTokens,
     sessionId: session.id,
     emit,
     formatAttachments,
+    projectContext: deps.projectContext,
   });
 
   // 3. Check provider streaming capability

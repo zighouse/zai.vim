@@ -1,7 +1,8 @@
 // @zaivim/engine — Context assembler
 // Loads message history from SessionStore, estimates tokens, trims if needed.
 
-import type { Message, Session, PersonaConfig, FileAttachment } from '@zaivim/core';
+import type { Message, Session, PersonaConfig, FileAttachment, ProjectContext } from '@zaivim/core';
+import { formatProjectContext, truncateProjectContext, MAX_PROJECT_CONTEXT_CHARS } from './project-detector.js';
 
 export const PIPELINE_DEFAULTS = {
   maxToolCallRounds: 20,
@@ -9,6 +10,7 @@ export const PIPELINE_DEFAULTS = {
   tokenEstimateCharsPerToken: 4,
   keepRecentMessages: 10,
   toolCallTimeout: 120_000,
+  maxProjectContextChars: MAX_PROJECT_CONTEXT_CHARS,
 } as const;
 
 /**
@@ -134,6 +136,8 @@ export interface ContextAssemblerOptions {
   readonly emit?: (event: string, data: Record<string, unknown>) => void;
   readonly sessionId: string;
   readonly formatAttachments?: (attachments: readonly FileAttachment[]) => string;
+  readonly projectContext?: ProjectContext;
+  readonly maxProjectContextChars?: number;
 }
 
 /**
@@ -178,7 +182,24 @@ export function assembleContext(
     ? { id: 'system', role: 'system', content: persona.systemPrompt }
     : null;
 
-  const allMessages = systemMsg ? [systemMsg, ...injected] : injected;
+  // Inject project context block after system prompt (AC4)
+  let projectContextMsg: Message | null = null;
+  if (options?.projectContext) {
+    const formatted = formatProjectContext(options.projectContext);
+    const maxChars = options?.maxProjectContextChars ?? PIPELINE_DEFAULTS.maxProjectContextChars;
+    const truncated = truncateProjectContext(formatted, maxChars);
+    if (truncated.length > 0) {
+      projectContextMsg = { id: 'project-context', role: 'system', content: truncated };
+    }
+  }
+
+  const allMessages = systemMsg
+    ? projectContextMsg
+      ? [systemMsg, projectContextMsg, ...injected]
+      : [systemMsg, ...injected]
+    : projectContextMsg
+      ? [projectContextMsg, ...injected]
+      : injected;
 
   // Estimate tokens and trim if needed
   const tokenEstimate = estimateMessagesTokens(allMessages);

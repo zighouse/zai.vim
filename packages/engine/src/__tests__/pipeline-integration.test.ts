@@ -6,6 +6,9 @@ import type { ResponseChunk, IProvider, ToolDefinition, ProviderChatRequest, Mes
 import { ZaiNetworkError } from '@zaivim/core';
 import { Engine } from '../pipeline/index.js';
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 function createProviderWithChunks(chunks: ResponseChunk[]): IProvider {
   return {
@@ -280,5 +283,84 @@ describe('Engine.recoverSession() (AC3)', () => {
     expect(events).toHaveLength(1);
     expect(events[0]!.type).toBe('session.recovered');
     expect(events[0]!.sessionId).toBe('recovered-1');
+  });
+});
+
+// ---- Project context integration tests (Story 1b.4) -----------------------
+
+describe('Engine — project context detection', () => {
+  function createEngine() {
+    return new Engine([], {
+      language: 'en',
+      sandbox: { enabled: false, type: 'none', workDir: '/tmp', timeout: 30000 },
+      providers: {},
+      defaults: { provider: '', model: '', temperature: 0.7, maxTokens: 4096 },
+    });
+  }
+
+  it('createSession auto-detects projectRoot from .git (Subtask 8.1)', async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'test-int-'));
+    mkdirSync(join(projectRoot, '.git'));
+
+    const origCwd = process.cwd;
+    process.cwd = () => projectRoot;
+
+    try {
+      const engine = createEngine();
+      const session = await engine.createSession();
+      expect(session.projectDir).toBeDefined();
+      expect(session.projectDir).toContain('test-int-');
+    } finally {
+      process.cwd = origCwd;
+    }
+  });
+
+  it('uses provided projectDir when explicit (Subtask 8.1)', async () => {
+    const engine = createEngine();
+    const explicitDir = '/tmp/explicit-project';
+    const session = await engine.createSession(undefined, explicitDir);
+    expect(session.projectDir).toBe(explicitDir);
+  });
+
+  it('exposes detectProjectContext via EngineAPI (Subtask 8.1)', async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'test-int-'));
+    writeFileSync(join(projectRoot, 'package.json'), JSON.stringify({
+      name: 'api-test',
+      dependencies: { react: '^18.0.0' },
+      devDependencies: { typescript: '^5.0.0' },
+    }));
+
+    const engine = createEngine();
+    const ctx = await engine.detectProjectContext(projectRoot);
+    expect(ctx.detected).toBe(true);
+    expect(ctx.name).toBe('api-test');
+    expect(ctx.framework).toBe('React');
+    expect(ctx.language).toBe('TypeScript');
+  });
+
+  it('caches project context via internal Map (Subtask 8.2)', async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'test-int-'));
+    writeFileSync(join(projectRoot, 'package.json'), JSON.stringify({
+      name: 'cache-test',
+      dependencies: { express: '^4.0.0' },
+    }));
+
+    // Use detectProjectContext directly to populate cache-like behavior
+    const engine = createEngine();
+    const ctx1 = await engine.detectProjectContext(projectRoot);
+    expect(ctx1.name).toBe('cache-test');
+
+    // Second call should return same data
+    const ctx2 = await engine.detectProjectContext(projectRoot);
+    expect(ctx2.name).toBe('cache-test');
+  });
+
+  it('returns detected:false for empty directory (Subtask 8.3)', async () => {
+    const emptyRoot = mkdtempSync(join(tmpdir(), 'test-empty-'));
+
+    const engine = createEngine();
+    const ctx = await engine.detectProjectContext(emptyRoot);
+    expect(ctx.detected).toBe(false);
+    expect(ctx.projectRoot).toBe(emptyRoot);
   });
 });

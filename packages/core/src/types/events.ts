@@ -40,6 +40,7 @@ export interface EngineEventMap {
   'session.auto_trimmed': SessionAutoTrimmedEvent;
   'session.persistence.dropped': SessionPersistenceDroppedEvent;
   'session.recovered': SessionRecoveredEvent;
+  'session.project_context_updated': import('./index.js').ProjectContextUpdatedEvent;
   'security.degraded': SecurityDegradedEvent;
   'engine.warning': EngineWarningEvent;
   'engine.shutdown': EngineShutdownEvent;

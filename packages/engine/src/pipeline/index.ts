@@ -14,6 +14,7 @@ import type {
   ToolDefinition,
   Message,
   ResponseChunk,
+  ProjectContext,
 } from '@zaivim/core';
 import { EventEmitter } from 'node:events';
 import { type ISecurityProvider, type ISessionStore, ZaiSessionNotFoundError } from '@zaivim/core';
@@ -26,6 +27,8 @@ import { AsyncGeneratorAgent } from '../agent/index.js';
 import type { AgentDeps } from '../agent/index.js';
 import { chat as pipelineChat } from './chat.js';
 import type { ChatDeps } from './chat.js';
+import { findProjectRoot, scanProjectMeta, type ProjectRootResult } from './project-detector.js';
+import { stat } from 'node:fs/promises';
 
 export { chat } from './chat.js';
 export { assembleContext, estimateTokens, trimContext, PIPELINE_DEFAULTS } from './context-assembler.js';
@@ -33,6 +36,8 @@ export { executeToolCall, executeToolCalls, validateToolCalls } from './tool-exe
 export { classifyProviderError } from './error-classifier.js';
 export { NullSecurityProvider } from './null-security.js';
 export { resolveAttachments, formatAttachments } from './file-attachment.js';
+export { findProjectRoot, scanProjectMeta, formatProjectContext, truncateProjectContext, MAX_PROJECT_CONTEXT_CHARS } from './project-detector.js';
+export type { ProjectRootResult } from './project-detector.js';
 
 export class Engine implements EngineAPI {
   readonly version = '0.0.1';
@@ -51,6 +56,10 @@ export class Engine implements EngineAPI {
   #tools: ToolDefinition[];
   #agentDeps: AgentDeps;
   #destroyed = false;
+  /** Project context cache — keyed by session ID (Story 1b.4) */
+  readonly #projectContextCache = new Map<string, ProjectContext>();
+  /** Timestamp of last mtime check per session */
+  readonly #projectMtimeCache = new Map<string, number>();
 
   constructor(tools?: ToolDefinition[], configOverrides?: Partial<ZaiConfig>, sessionStore?: ISessionStore) {
     this.#config = loadConfig(configOverrides);
@@ -111,7 +120,8 @@ export class Engine implements EngineAPI {
     const config = configOverrides
       ? loadConfig(configOverrides)
       : this.#config;
-    return this.#sessionStore.create(config);
+    const resolvedProjectDir = projectDir ?? findProjectRoot().root;
+    return this.#sessionStore.create(config, resolvedProjectDir);
   }
 
   getSession(id: string): Session | undefined {
@@ -172,6 +182,34 @@ export class Engine implements EngineAPI {
       this.events.emit(event, data);
     };
 
+    // Project context: async detect on first chat() call, cache per session (AC4)
+    let projectContext = this.#projectContextCache.get(sessionId);
+    if (!projectContext) {
+      // Fire-and-forget async detection (non-blocking — session.projectDir is already set)
+      const projectDir = session.projectDir;
+      if (projectDir) {
+        const { findProjectRoot, scanProjectMeta } = await import('./project-detector.js');
+        const { root, detected } = findProjectRoot(projectDir);
+        scanProjectMeta(root, detected).then(ctx => {
+          this.#setProjectContextCache(sessionId, ctx);
+          // Also record scan time for mtime-based update detection
+          this.#projectMtimeCache.set(sessionId, Date.now());
+        }).catch(() => {
+          // Silent — detection failure should not block chat
+        });
+      }
+      // Use a minimal context until async scan completes
+      projectContext = {
+        projectRoot: projectDir ?? process.cwd(),
+        detected: false,
+        detectedAt: Date.now(),
+      };
+      this.#setProjectContextCache(sessionId, projectContext);
+    } else {
+      // Subsequent calls: async check mtime for project context updates (AC5)
+      this.#checkProjectContextUpdate(sessionId, projectContext, emit).catch(() => {});
+    }
+
     const deps: ChatDeps = {
       sessionStore: this.#sessionStore,
       provider,
@@ -179,6 +217,7 @@ export class Engine implements EngineAPI {
       security: this.#securityProvider,
       emit,
       onMessagePushed: (sid: string) => this.#lifecycleManager.checkMessageLimit(sid),
+      projectContext,
     };
 
     yield* pipelineChat(session, message, deps, signal);
@@ -210,6 +249,18 @@ export class Engine implements EngineAPI {
     };
   }
 
+  // ---- Project context detection (Story 1b.4) -------------------------------
+
+  async detectProjectContext(dir?: string): Promise<ProjectContext> {
+    const { root, detected } = findProjectRoot(dir);
+    return scanProjectMeta(root, detected);
+  }
+
+  /** Invalidate project context cache for a session (internal). */
+  #setProjectContextCache(sessionId: string, ctx: ProjectContext): void {
+    this.#projectContextCache.set(sessionId, ctx);
+  }
+
   // ---- Destroy ----
 
   async destroy(options?: Partial<import('@zaivim/core').ShutdownOptions>): Promise<void> {
@@ -220,6 +271,54 @@ export class Engine implements EngineAPI {
         this.#sessionStore.close(session.id);
       }
     }
+  }
+
+  /** Check if project context needs updating via mtime comparison (AC5). */
+  async #checkProjectContextUpdate(
+    sessionId: string,
+    currentCtx: ProjectContext,
+    emit: (event: string, data: Record<string, unknown>) => void,
+  ): Promise<void> {
+    // Skip mtime check when no project metadata was detected
+    if (!currentCtx.detected) return;
+
+    const markers = ['package.json', 'pnpm-workspace.yaml'];
+    let latestMtime = this.#projectMtimeCache.get(sessionId) ?? 0;
+    let changed = false;
+
+    for (const marker of markers) {
+      try {
+        const st = await stat(marker.startsWith('pnpm') ? marker : marker);
+        const mtimeMs = st.mtimeMs;
+        if (mtimeMs > latestMtime) {
+          latestMtime = mtimeMs;
+          changed = true;
+        }
+      } catch {
+        // File not found — not a marker for this project
+      }
+    }
+
+    if (!changed) return;
+
+    // Background rescan — non-blocking, does not await
+    this.#rescanAndUpdate(sessionId, currentCtx.projectRoot, emit).catch(() => {});
+  }
+
+  /** Background re-scan and cache update on mtime change. */
+  async #rescanAndUpdate(
+    sessionId: string,
+    projectRoot: string,
+    emit: (event: string, data: Record<string, unknown>) => void,
+  ): Promise<void> {
+    const { scanProjectMeta } = await import('./project-detector.js');
+    const newCtx = await scanProjectMeta(projectRoot, true);
+    this.#setProjectContextCache(sessionId, newCtx);
+    this.#projectMtimeCache.set(sessionId, Date.now());
+    emit('session.project_context_updated', {
+      sessionId,
+      context: newCtx,
+    });
   }
 
   #ensureNotDestroyed(): void {

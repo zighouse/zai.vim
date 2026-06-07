@@ -269,12 +269,37 @@ export interface SkillAdapter {
   cleanup?(): Promise<void>;
 }
 
+// ---- Project context types (Story 1b.4) -------------------------------------
+
+export type PackageManager = 'pnpm' | 'yarn' | 'npm' | 'unknown';
+
+export interface ProjectContext {
+  readonly projectRoot: string;
+  readonly detected: boolean;
+  readonly name?: string;
+  readonly language?: string;
+  readonly packageManager?: PackageManager;
+  readonly framework?: string;
+  readonly moduleSystem?: 'esm' | 'cjs';
+  readonly nodeVersion?: string;
+  readonly monorepo?: boolean;
+  readonly packages?: readonly string[];
+  readonly configFiles?: readonly string[];
+  readonly detectedAt?: number;
+}
+
+export interface ProjectContextUpdatedEvent {
+  readonly sessionId: string;
+  readonly context: ProjectContext;
+}
+
 // ---- Engine API types ------------------------------------------------------
 
 export interface EngineAPI {
   readonly version: string;
   readonly uptime: number;
   createSession(config?: Partial<import('./config.js').ZaiConfig>, projectDir?: string): Promise<Session>;
+  detectProjectContext(dir?: string): Promise<ProjectContext>;
   getSession(id: string): Session | undefined;
   listSessions(filter?: { status?: SessionStatus; limit?: number; offset?: number; sortBy?: 'createdAt' | 'lastActivityAt'; sortOrder?: 'asc' | 'desc' }): SessionSummary[];
   closeSession(id: string): Promise<void>;

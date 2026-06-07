@@ -1,7 +1,7 @@
 // @zaivim/engine — createEngine() singleton factory
 // MVP: global singleton. Second call returns existing instance.
 
-import type { EngineAPI, EngineConfig, EngineHealth, ShutdownOptions, Session, SessionSummary, ZaiConfig, Message, ResponseChunk } from '@zaivim/core';
+import type { EngineAPI, EngineConfig, EngineHealth, ShutdownOptions, Session, SessionSummary, ZaiConfig, Message, ResponseChunk, ProjectContext } from '@zaivim/core';
 import { ZaiSessionNotFoundError } from '@zaivim/core';
 import { EventEmitter } from 'node:events';
 import { EngineStateMachine } from './state-machine.js';
@@ -122,6 +122,12 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
     const session = this.#sessionStore.create(config, projectDir);
     this.emit('session.created', { sessionId: session.id });
     return session;
+  }
+
+  async detectProjectContext(dir?: string): Promise<ProjectContext> {
+    const { findProjectRoot, scanProjectMeta } = await import('../pipeline/project-detector.js');
+    const { root, detected } = findProjectRoot(dir);
+    return scanProjectMeta(root, detected);
   }
 
   getSession(id: string): Session | undefined {

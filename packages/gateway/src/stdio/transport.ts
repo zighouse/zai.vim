@@ -87,6 +87,14 @@ export function createStdioTransport(
     return { status: 'stopping' };
   });
 
+  // ---- Project context (Story 1b.4) ----
+
+  handlers.set('project-context', async (params?: unknown) => {
+    const p = params as Record<string, unknown> | undefined;
+    const dir = p?.dir as string | undefined;
+    return engine.detectProjectContext(dir);
+  });
+
   // ---- Session methods (Story 1a.3) ----
 
   handlers.set('session.create', async (params?: unknown) => {
