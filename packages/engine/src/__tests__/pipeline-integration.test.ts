@@ -2,9 +2,10 @@
 // Tests Engine.chat() end-to-end with real Engine + mock provider.
 
 import { describe, it, expect, vi } from 'vitest';
-import type { ResponseChunk, IProvider, ToolDefinition, ProviderChatRequest, Message } from '@zaivim/core';
+import type { ResponseChunk, IProvider, ToolDefinition, ProviderChatRequest, Message, ISessionStore, Session, ZaiConfig } from '@zaivim/core';
 import { ZaiNetworkError } from '@zaivim/core';
 import { Engine } from '../pipeline/index.js';
+import { randomUUID } from 'node:crypto';
 
 function createProviderWithChunks(chunks: ResponseChunk[]): IProvider {
   return {
@@ -192,6 +193,20 @@ describe('Engine.listSessions() — pagination (AC4)', () => {
     expect(active).toHaveLength(1);
     expect(active[0]!.id).toBe(s2.id);
   });
+
+  it('listSessions({limit:0}) returns empty array', async () => {
+    const engine = new Engine([], {
+      language: 'en',
+      sandbox: { enabled: false, type: 'none', workDir: '/tmp', timeout: 30000 },
+      providers: {},
+      defaults: { provider: '', model: '', temperature: 0.7, maxTokens: 4096 },
+    });
+
+    await engine.createSession();
+    await engine.createSession();
+
+    expect(engine.listSessions({ limit: 0 })).toHaveLength(0);
+  });
 });
 
 describe('Engine — multi-session isolation (AC1)', () => {
@@ -225,5 +240,45 @@ describe('Engine.recoverSession() (AC3)', () => {
     });
 
     await expect(engine.recoverSession('non-existent')).rejects.toThrow('Session not found');
+  });
+
+  it('emits session.recovered event on successful recovery', async () => {
+    const recoveredSession: Session = {
+      id: 'recovered-1',
+      messages: [{ id: 'm1', role: 'user', content: 'historical', seq: 1 }],
+      createdAt: Date.now() - 86400000,
+      config: {} as ZaiConfig,
+      status: 'active',
+    };
+
+    const mockStore: ISessionStore = {
+      create: () => recoveredSession,
+      get: () => undefined,
+      close: async () => {},
+      list: () => [],
+      pushMessage: () => {},
+      queryByProject: () => [],
+      persistAll: async () => {},
+      recoverFromDisk: async () => [recoveredSession],
+      activeCount: 0,
+    };
+
+    const engine = new Engine([], {
+      language: 'en',
+      sandbox: { enabled: false, type: 'none', workDir: '/tmp', timeout: 30000 },
+      providers: {},
+      defaults: { provider: '', model: '', temperature: 0.7, maxTokens: 4096 },
+    }, mockStore);
+
+    const events: Array<{ type: string; sessionId: string }> = [];
+    engine.events.on('session.recovered', (data: Record<string, unknown>) => {
+      events.push({ type: data.type as string, sessionId: data.sessionId as string });
+    });
+
+    const session = await engine.recoverSession('recovered-1');
+    expect(session.id).toBe('recovered-1');
+    expect(events).toHaveLength(1);
+    expect(events[0]!.type).toBe('session.recovered');
+    expect(events[0]!.sessionId).toBe('recovered-1');
   });
 });
