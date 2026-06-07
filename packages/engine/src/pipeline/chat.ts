@@ -400,6 +400,9 @@ async function* callProviderWithRetryAndFallback(
             delayMs,
           });
         },
+        onRateLimited: (retryAfterMs) => {
+          providerRegistry?.reportRateLimit(primaryProvider.name, retryAfterMs);
+        },
       },
     );
 
@@ -438,6 +441,9 @@ async function* callProviderWithRetryAndFallback(
               maxAttempts,
               delayMs,
             });
+          },
+          onRateLimited: (retryAfterMs) => {
+            providerRegistry?.reportRateLimit(fallback.name, retryAfterMs);
           },
         },
       );

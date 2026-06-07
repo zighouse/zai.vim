@@ -25,6 +25,8 @@ export const DEFAULT_RETRY_CONFIG: RetryConfig = {
 
 export interface RetryCallbacks {
   onRetry?: (attempt: number, maxAttempts: number, delayMs: number) => void;
+  /** Called when a 429 rate limit error is received with retryAfterMs */
+  onRateLimited?: (retryAfterMs: number) => void;
 }
 
 /**
@@ -146,8 +148,11 @@ export async function* retryWithBackoff<T>(
       const classified = classifyRetryError(err);
       const delay = calculateDelay(attempt, config, classified?.retryAfterMs);
 
-      // Notify callback
+      // Notify callbacks
       callbacks?.onRetry?.(attempt + 1, config.maxRetries, Math.round(delay));
+      if (classified?.retryAfterMs !== undefined) {
+        callbacks?.onRateLimited?.(classified.retryAfterMs);
+      }
 
       // Wait with abort support
       await abortableSleep(delay, signal);
