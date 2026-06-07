@@ -15,7 +15,7 @@ import type {
   ProjectContext,
 } from '@zaivim/core';
 import { ZaiNetworkError } from '@zaivim/core';
-import { assembleContext, PIPELINE_DEFAULTS } from './context-assembler.js';
+import { assembleContext, trimContext, PIPELINE_DEFAULTS } from './context-assembler.js';
 import { formatAttachments } from './file-attachment.js';
 import { executeToolCalls, validateToolCalls } from './tool-executor.js';
 import type { ToolCallRequest } from './tool-executor.js';
@@ -477,7 +477,6 @@ async function handleContextLengthExceeded(
   signal: AbortSignal | undefined,
   emit: EmitFn,
 ): Promise<{ chunks: ResponseChunk[]; removedCount: number } | null> {
-  const { trimContext } = await import('./context-assembler.js');
 
   // Trim 50% of token budget from middle history (AC10)
   const tokenBudget = Math.floor(workingMessages.length * 0.5);

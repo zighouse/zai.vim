@@ -159,6 +159,4 @@ export async function* retryWithBackoff<T>(
     }
   }
 
-  // Should not reach here, but just in case
-  throw lastError;
 }
