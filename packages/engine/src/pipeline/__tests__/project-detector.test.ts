@@ -475,4 +475,39 @@ describe('assembleContext with project context', () => {
     const systemMsgs = result.messages.filter(m => m.role === 'system');
     expect(systemMsgs.length).toBe(1); // only persona system prompt
   });
+
+  it('should preserve project context msg when token trimming drops history', () => {
+    // Create a session with enough messages to trigger trimming
+    const longMsg = 'A'.repeat(200); // ~50 tokens per message
+    const messages: Message[] = [];
+    for (let i = 0; i < 50; i++) {
+      messages.push({ id: `m-${i}`, role: 'user', content: longMsg, seq: i });
+    }
+
+    const session = makeSession(messages);
+    const persona = { name: 'test', systemPrompt: 'You are helpful.' };
+    const projectContext = {
+      projectRoot: '/tmp/p',
+      detected: true,
+      name: 'my-project',
+      language: 'TypeScript' as const,
+    };
+
+    // Set a very low budget to force trimming of history messages
+    const result = assembleContext(session, persona, {
+      sessionId: 'test',
+      maxContextTokens: 10, // ~40 chars budget, forces heavy trimming
+      projectContext,
+      formatAttachments: () => '',
+    });
+
+    expect(result.trimmed).toBeGreaterThan(0);
+
+    // Both persona system prompt and project context must survive
+    const systemMsgs = result.messages.filter(m => m.role === 'system');
+    const sysContents = systemMsgs.map(m => m.content);
+    expect(sysContents.some(c => c.includes('You are helpful.'))).toBe(true);
+    expect(sysContents.some(c => c.includes('my-project'))).toBe(true);
+    expect(sysContents.some(c => c.includes('--- Project Context ---'))).toBe(true);
+  });
 });
