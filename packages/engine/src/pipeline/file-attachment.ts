@@ -49,19 +49,19 @@ export async function resolveAttachments(
   const results: FileAttachment[] = [];
 
   for (const filePath of paths) {
-    // Security: path must be within projectDir
-    const resolved = path.resolve(filePath);
+    // Security: path must be within projectDir (resolve symlinks first)
     const projectResolved = path.resolve(options.projectDir);
-    if (!resolved.startsWith(projectResolved + path.sep) && resolved !== projectResolved) {
-      throw new Error(`File path outside project directory: ${filePath}`);
-    }
-
-    let content: string;
+    let realPath: string;
     try {
-      content = await fsp.readFile(resolved, 'utf-8');
+      realPath = await fsp.realpath(path.resolve(filePath));
     } catch (err) {
       throw new Error(`Failed to read file: ${filePath} — ${err instanceof Error ? err.message : String(err)}`);
     }
+    if (!realPath.startsWith(projectResolved + path.sep) && realPath !== projectResolved) {
+      throw new Error(`File path outside project directory: ${filePath}`);
+    }
+
+    let content = await fsp.readFile(realPath, 'utf-8');
 
     const buf = Buffer.from(content, 'utf-8');
     const truncated = buf.length > maxBytes;
