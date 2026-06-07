@@ -159,7 +159,15 @@ export async function* chat(
       } catch (err) {
         // AbortError: propagate (user cancelled)
         if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
-          // AC6: session remains active; don't persist partial response
+          // AC6: measure propagation latency — warn if > 100ms
+          const propagationMs = Math.round(performance.now() - startTime);
+          if (propagationMs > 100) {
+            emit('perf.abort_propagation', {
+              sessionId: session.id,
+              propagationMs,
+            });
+          }
+          // Session remains active; partial response is NOT persisted (AC11)
           return;
         }
 
