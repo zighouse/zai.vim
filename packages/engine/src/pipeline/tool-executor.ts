@@ -39,10 +39,16 @@ export async function executeToolCall(
   const timeout = options.timeout ?? 120_000;
   const start = Date.now();
 
+  // Combine caller's AbortSignal with a timeout signal (AC14)
+  const timeoutSignal = AbortSignal.timeout(timeout);
+  const combinedSignal = options.signal
+    ? AbortSignal.any([options.signal, timeoutSignal])
+    : timeoutSignal;
+
   const ctx: ToolContext = {
     sessionId: options.sessionId,
     sandbox: options.sandbox,
-    signal: options.signal ?? AbortSignal.timeout(timeout),
+    signal: combinedSignal,
     security: options.security,
     audit: options.audit,
   };
