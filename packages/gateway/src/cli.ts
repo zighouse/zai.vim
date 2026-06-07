@@ -12,7 +12,6 @@ import { createStdioTransport } from './stdio/transport.js';
 import { TransportContext } from './stdio/transport-context.js';
 import { generateAdminToken, removeAdminToken } from './admin-token.js';
 import { createChatRepl, printStreamChunk } from './chat/repl.js';
-import { ensureEngineRunning } from './chat/engine-launcher.js';
 import { createMarkdownRenderer } from './chat/markdown-renderer.js';
 import { resolve, dirname, join } from 'node:path';
 import { openSync, mkdirSync } from 'node:fs';
@@ -461,6 +460,39 @@ interface ChatOpts {
   projectDir?: string;
 }
 
+/**
+ * Get or create an in-process engine instance for CLI chat.
+ * - If a foreground engine is already running in this process, returns it.
+ * - If a daemon engine is running, errors — chat needs in-process access.
+ * - If no engine is running, creates one in-process for the chat session.
+ */
+function getChatEngine(): EngineAPI {
+  const existing = getEngineInstance() as EngineAPI | undefined;
+  if (existing) return existing;
+
+  // Check if a daemon is running (we can't connect to it in-process)
+  const pidCheck = checkExistingPid(PID_PATH);
+  if (pidCheck.alive) {
+    console.error('Engine is running in daemon mode. Interactive chat requires a foreground engine.');
+    console.error('Run "zaivim serve --daemon stop" or use "zaivim serve" in another terminal.');
+    process.exit(1);
+  }
+
+  // No engine running — create one in-process for chat
+  try {
+    const config = getEngineConfig();
+    const engine = createEngine(config);
+    return engine as EngineAPI;
+  } catch (err) {
+    if (err instanceof ZaiConfigError) {
+      console.error(`\x1b[31mConfiguration error: ${err.message}\x1b[0m`);
+    } else {
+      console.error(`\x1b[31mFailed to start engine: ${(err as Error).message}\x1b[0m`);
+    }
+    process.exit(1);
+  }
+}
+
 async function cmdChat(args: string[]): Promise<void> {
   // Parse chat-specific flags from args
   const opts: ChatOpts = {};
@@ -480,23 +512,8 @@ async function cmdChat(args: string[]): Promise<void> {
     return;
   }
 
-  // Interactive mode: ensure engine is running
-  try {
-    await ensureEngineRunning();
-  } catch (err) {
-    console.error(`\x1b[31m${(err as Error).message}\x1b[0m`);
-    process.exit(1);
-  }
-
-  // Get engine instance (started by ensureEngineRunning or already running)
-  const engine = getEngineInstance() as EngineAPI | undefined;
-  if (!engine) {
-    // Engine auto-started in daemon mode — we need a local engine instance
-    // For daemon mode, we create a lightweight client-side engine
-    console.error('Engine is running in daemon mode. Interactive chat requires foreground engine.');
-    console.error('Run "zaivim serve" in another terminal, then try again.');
-    process.exit(1);
-  }
+  // Interactive mode: get or create an in-process engine for chat
+  const engine = getChatEngine();
 
   // Create or restore session
   let sessionId: string;
@@ -551,19 +568,7 @@ async function cmdChat(args: string[]): Promise<void> {
 
 /** JSON pipe mode: stdin JSON-RPC → engine → stdout NDJSON. */
 async function runJsonPipeMode(opts: ChatOpts): Promise<void> {
-  // Ensure engine is running
-  try {
-    await ensureEngineRunning();
-  } catch (err) {
-    process.stderr.write(`\x1b[31m${(err as Error).message}\x1b[0m\n`);
-    process.exit(1);
-  }
-
-  const engine = getEngineInstance() as EngineAPI | undefined;
-  if (!engine) {
-    process.stderr.write('Engine not available.\n');
-    process.exit(1);
-  }
+  const engine = getChatEngine();
 
   const session = await engine.createSession(undefined, opts.projectDir);
   const mdRenderer = createMarkdownRenderer();
