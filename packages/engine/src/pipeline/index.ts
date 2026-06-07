@@ -141,6 +141,8 @@ export class Engine implements EngineAPI {
     const sessions = await this.#sessionStore.recoverFromDisk();
     const session = sessions.find(s => s.id === id);
     if (!session) throw new ZaiSessionNotFoundError(id);
+    this.#auditor.log(id, 'session.recovered', { recoveredCount: session.messages.length });
+    this.events.emit('session.recovered', { type: 'session.recovered', sessionId: id, recoveredCount: session.messages.length, skippedLines: 0 });
     return session;
   }
 
