@@ -399,4 +399,80 @@ describe('chat() pipeline', () => {
       }));
     });
   });
+
+  describe('context_length_exceeded auto-trim retry (AC10)', () => {
+    it('should auto-trim on context_length_exceeded and retry successfully', async () => {
+      let callCount = 0;
+      const provider: IProvider = {
+        name: 'ctx-trim-test',
+        models: ['model-1'],
+        capabilities: { streaming: true, toolUse: false, caching: false, thinking: false, vision: false, maxContextTokens: 128_000 },
+        async *chat() {
+          callCount++;
+          if (callCount <= 1) {
+            throw new ZaiNetworkError(
+              'context_length_exceeded: maximum context length exceeded',
+              'ENGINE_PROVIDER_ERROR',
+              400,
+            );
+          }
+          yield { type: 'text', content: 'after-trim' };
+          yield { type: 'done', finishReason: 'stop' };
+        },
+      };
+
+      const emit = vi.fn();
+      const { deps, sessionStore, createSession } = setup({ provider, emit, config: { maxRetries: 0 } });
+      const session = createSession();
+
+      // Seed with enough messages so trim has something to remove
+      for (let i = 0; i < 20; i++) {
+        sessionStore.pushMessage(session.id, {
+          id: `seed-${i}`,
+          role: 'user',
+          content: 'A'.repeat(50),
+        });
+      }
+
+      const chunks = await collectChunks(chat(session, makeUserMessage('Hi'), deps));
+
+      expect(chunks.some(c => c.type === 'text' && c.content === 'after-trim')).toBe(true);
+      expect(emit).toHaveBeenCalledWith('context.auto_trimmed', expect.objectContaining({
+        sessionId: session.id,
+        removedCount: expect.any(Number),
+      }));
+    });
+
+    it('should yield error when trim retry also fails', async () => {
+      const provider: IProvider = {
+        name: 'ctx-fail-test',
+        models: ['model-1'],
+        capabilities: { streaming: true, toolUse: false, caching: false, thinking: false, vision: false, maxContextTokens: 128_000 },
+        async *chat() {
+          throw new ZaiNetworkError(
+            'context_length_exceeded: maximum context length exceeded',
+            'ENGINE_PROVIDER_ERROR',
+            400,
+          );
+        },
+      };
+
+      const emit = vi.fn();
+      const { deps, sessionStore, createSession } = setup({ provider, emit, config: { maxRetries: 0 } });
+      const session = createSession();
+
+      for (let i = 0; i < 20; i++) {
+        sessionStore.pushMessage(session.id, {
+          id: `seed-${i}`,
+          role: 'user',
+          content: 'A'.repeat(50),
+        });
+      }
+
+      const chunks = await collectChunks(chat(session, makeUserMessage('Hi'), deps));
+
+      const errorChunk = chunks.find(c => c.type === 'error' && c.code === 'PIPELINE_CONTEXT_LENGTH_EXCEEDED');
+      expect(errorChunk).toBeDefined();
+    });
+  });
 });
