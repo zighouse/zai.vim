@@ -89,6 +89,8 @@ export async function* chat(
   // Track whether the pipeline completed normally (not aborted/interrupted)
   // Used by the finally block to decide if the AI response should be persisted (AC11)
   let completed = false;
+  // Track tool calls from the final provider round for mixed text+tool_call responses (M5)
+  let finalRoundToolCalls: ToolCallRequest[] = [];
 
   try {
     while (round < maxToolCallRounds) {
@@ -202,7 +204,12 @@ export async function* chat(
         return;
       }
 
-      // 6. No tool calls: done
+      // 6. Save tool calls from this round for final message metadata
+      if (toolCalls.length > 0) {
+        finalRoundToolCalls = toolCalls;
+      }
+
+      // 7. No tool calls: done
       if (toolCalls.length === 0) break;
 
       // 7. Validate tool calls (AC13: SSE injection protection)
@@ -270,7 +277,7 @@ export async function* chat(
     completed = true;
   } finally {
     // 11. Persist complete AI response (AC11: only complete responses persist)
-    // The finally block ensures we don't leak partial responses:
+    // The finally block ensures partial responses are never persisted:
     //   - Normal completion → completed=true → persist
     //   - Consumer break/return/cancel → completed=false → skip
     //   - AbortError/Provider error → return before completed=true → skip
@@ -279,6 +286,10 @@ export async function* chat(
         id: `resp-${Date.now()}`,
         role: 'assistant',
         content: fullContent,
+        // Include tool call metadata when provider mixed text + tool_calls (M5)
+        ...(finalRoundToolCalls.length > 0
+          ? { toolCalls: finalRoundToolCalls.map(tc => ({ id: tc.id, name: tc.name, arguments: tc.arguments })) }
+          : {}),
       };
       // Fire-and-forget persistence
       sessionStore.pushMessage(session.id, assistantMessage);
