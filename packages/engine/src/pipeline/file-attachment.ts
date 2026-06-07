@@ -63,9 +63,10 @@ export async function resolveAttachments(
       throw new Error(`Failed to read file: ${filePath} — ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    const truncated = Buffer.byteLength(content, 'utf-8') > maxBytes;
+    const buf = Buffer.from(content, 'utf-8');
+    const truncated = buf.length > maxBytes;
     if (truncated) {
-      content = content.slice(0, maxBytes) + '\n[truncated]';
+      content = buf.subarray(0, maxBytes).toString('utf-8') + '\n[truncated]';
     }
 
     results.push({
