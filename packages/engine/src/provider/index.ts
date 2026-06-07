@@ -7,9 +7,11 @@ import type {
   ProviderChatRequest,
   ResponseChunk,
   ProviderCapabilities,
+  ProviderStatus,
   Message,
 } from '@zaivim/core';
 import { ZaiNetworkError } from '@zaivim/core';
+import { validateProviderConfig } from './validation.js';
 
 // ---- Provider Capabilities (declarative) ----------------------------------
 
@@ -49,6 +51,9 @@ export interface ProviderConfig {
   baseURL: string;
   models: readonly string[];
   defaultModel: string;
+  status?: ProviderStatus;
+  protocol?: 'openai-compatible' | 'anthropic-native';
+  lastChecked?: number;
 }
 
 export class OpenAICompatibleProvider implements IProvider {
@@ -225,12 +230,20 @@ function safeParseJsonLine(line: string): Record<string, unknown> | null {
 
 export class ProviderRegistry {
   #providers: Map<string, IProvider> = new Map();
+  #providerStatus: Map<string, ProviderStatus> = new Map();
   #defaultName: string;
 
   constructor(providers: Map<string, ProviderConfig>, defaultName: string) {
     this.#defaultName = defaultName;
+
     for (const [name, cfg] of providers) {
-      this.#providers.set(name, new OpenAICompatibleProvider(cfg));
+      const result = validateProviderConfig(cfg);
+      if (result.valid) {
+        this.#providers.set(name, new OpenAICompatibleProvider(cfg));
+        this.#providerStatus.set(name, 'untested');
+      } else {
+        this.#providerStatus.set(name, 'unavailable');
+      }
     }
   }
 
@@ -253,6 +266,50 @@ export class ProviderRegistry {
 
   listNames(): string[] {
     return [...this.#providers.keys()];
+  }
+
+  getProviderStatus(name: string): ProviderStatus {
+    const status = this.#providerStatus.get(name);
+    if (status === undefined) {
+      throw new ZaiNetworkError(
+        `Provider "${name}" not found`,
+        'ENGINE_PROVIDER_ERROR',
+        404,
+      );
+    }
+    return status;
+  }
+
+  /** E9 stub — runtime provider switching (returns false until E9 implementation) */
+  switchProvider(_name: string): boolean {
+    return false;
+  }
+
+  /** Returns names of providers with status 'available' or 'untested' */
+  listAvailableProviders(): string[] {
+    return [...this.#providerStatus.entries()]
+      .filter(([, status]) => status === 'available' || status === 'untested')
+      .map(([name]) => name);
+  }
+
+  /** Get next available provider as fallback (excludes the given provider) */
+  getFallback(excludeName: string): IProvider | undefined {
+    for (const name of this.listAvailableProviders()) {
+      if (name !== excludeName) {
+        return this.#providers.get(name);
+      }
+    }
+    return undefined;
+  }
+
+  /** Mark provider as unavailable with a reason */
+  markUnavailable(name: string, _reason: string): void {
+    this.#providerStatus.set(name, 'unavailable');
+  }
+
+  /** Mark provider as available after successful lazy validation */
+  markAvailable(name: string): void {
+    this.#providerStatus.set(name, 'available');
   }
 }
 

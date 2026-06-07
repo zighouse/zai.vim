@@ -43,6 +43,7 @@ export type {
 export type {
   SandboxConfig,
   ProviderConfig,
+  ProviderStatus,
   DefaultConfig,
   AuditConstants,
   ApprovalConstants,
@@ -208,6 +209,7 @@ export interface ProviderCapabilities {
   readonly thinking: boolean;
   readonly vision: boolean;
   readonly maxContextTokens: number;
+  readonly protocol?: 'openai-compatible' | 'anthropic-native';
 }
 
 // ---- Skill types -----------------------------------------------------------

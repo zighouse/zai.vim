@@ -7,3 +7,4 @@ export type { ModelConfig } from './config-compat.js';
 export { createConfigBackup, restoreFromBackup, getDefaultConfig } from './config-backup.js';
 export { detectLegacyFormat, generateDiffPreview, tryMigrate } from './config-migrator.js';
 export type { MigrateOptions } from './config-migrator.js';
+export { redactSensitiveInfo } from './redact.js';

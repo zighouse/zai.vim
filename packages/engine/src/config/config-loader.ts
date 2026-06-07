@@ -113,12 +113,16 @@ function parseProviderConfig(raw: Record<string, unknown>): Record<string, Provi
     const c = cfg as Record<string, unknown>;
     const models = normalizeModelField(c.models);
     const modelNames = models.map((m) => m.name);
+    const protocol = c.protocol;
     providers[name] = {
       type: String(c.type ?? 'openai'),
       apiKey: String(c.api_key ?? c.apiKey ?? ''),
       baseURL: String(c.base_url ?? c.baseURL ?? ''),
       models: modelNames,
       defaultModel: String(c.default_model ?? c.defaultModel ?? modelNames[0] ?? ''),
+      ...(protocol === 'openai-compatible' || protocol === 'anthropic-native'
+        ? { protocol }
+        : {}),
     };
   }
   return providers;

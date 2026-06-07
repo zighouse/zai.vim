@@ -11,6 +11,9 @@ export interface SandboxConfig {
   readonly timeout: number;
 }
 
+/** Provider status: available (validated), unavailable (config or network error), untested (syntax ok, not yet verified) */
+export type ProviderStatus = 'available' | 'unavailable' | 'untested';
+
 /** Provider configuration */
 export interface ProviderConfig {
   readonly type: string;
@@ -18,8 +21,9 @@ export interface ProviderConfig {
   readonly baseURL: string;
   readonly models: readonly string[];
   readonly defaultModel: string;
-  /** Config-time availability status (set when env var is missing) */
-  readonly status?: 'available' | 'unavailable';
+  readonly status?: ProviderStatus;
+  readonly protocol?: 'openai-compatible' | 'anthropic-native';
+  readonly lastChecked?: number;
 }
 
 /** Default model settings */

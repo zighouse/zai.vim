@@ -232,4 +232,45 @@ describe('loadConfig full pipeline', () => {
     expect(config.providers.restored.apiKey).toBe('sk-restored');
     expect(logs.some((l) => l.includes('corrupted') || l.includes('backup'))).toBe(true);
   });
+
+  // ---- Story 1b.1: Protocol parsing and layer merge ----
+
+  it('parses protocol field from provider config (Story 1b.1 AC8)', () => {
+    writeYamlConfig(resolve(tempHome, '.zaivim', 'config.yaml'), {
+      providers: {
+        deepseek: {
+          type: 'openai',
+          apiKey: 'sk-test',
+          baseURL: 'https://api.deepseek.com',
+          models: ['deepseek-chat'],
+          defaultModel: 'deepseek-chat',
+          protocol: 'openai-compatible',
+        },
+      },
+      defaults: { provider: 'deepseek', model: 'deepseek-chat', temperature: 0.7, maxTokens: 4096 },
+    });
+
+    const config = loadConfig({ configHomeDir: tempHome });
+    expect(config.providers.deepseek.protocol).toBe('openai-compatible');
+  });
+
+  it('ignores invalid protocol values (Story 1b.1 AC8)', () => {
+    writeYamlConfig(resolve(tempHome, '.zaivim', 'config.yaml'), {
+      providers: {
+        test: {
+          type: 'openai',
+          apiKey: 'sk-test',
+          baseURL: 'https://api.test.com',
+          models: ['test-model'],
+          defaultModel: 'test-model',
+          protocol: 'invalid-protocol',
+        },
+      },
+      defaults: { provider: 'test', model: 'test-model', temperature: 0.7, maxTokens: 4096 },
+    });
+
+    const config = loadConfig({ configHomeDir: tempHome });
+    // Invalid protocol should be ignored (not included in config)
+    expect(config.providers.test.protocol).toBeUndefined();
+  });
 });
