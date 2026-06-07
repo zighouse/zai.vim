@@ -24,6 +24,7 @@ export interface ProviderConfig {
   readonly status?: ProviderStatus;
   readonly protocol?: 'openai-compatible' | 'anthropic-native';
   readonly lastChecked?: number;
+  readonly allowHttp?: boolean;
 }
 
 /** Default model settings */

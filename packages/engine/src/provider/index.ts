@@ -54,6 +54,8 @@ export interface ProviderConfig {
   status?: ProviderStatus;
   protocol?: 'openai-compatible' | 'anthropic-native';
   lastChecked?: number;
+  /** Allow HTTP connections (default: only HTTPS). AC13 Red Team requirement. */
+  allowHttp?: boolean;
 }
 
 /** Callbacks for lazy validation results (first chat() call) */
@@ -88,7 +90,25 @@ export class OpenAICompatibleProvider implements IProvider {
     signal?: AbortSignal,
   ): AsyncIterable<ResponseChunk> {
     const model = request.model ?? this.#config.defaultModel;
-    const url = `${this.#config.baseURL}/v1/chat/completions`;
+
+    // HTTPS enforcement (AC13: Red Team — SSE 注入防护)
+    const baseURL = this.#config.baseURL;
+    if (!baseURL.startsWith('https://') && !baseURL.startsWith('http://')) {
+      throw new ZaiNetworkError(
+        `Provider ${this.name}: baseURL must start with https:// or http://`,
+        'ENGINE_PROVIDER_ERROR',
+        400,
+      );
+    }
+    if (baseURL.startsWith('http://') && !this.#config.allowHttp) {
+      throw new ZaiNetworkError(
+        `HTTPS required for provider ${this.name}. Set allowHttp: true to allow HTTP connections.`,
+        'ENGINE_PROVIDER_ERROR',
+        403,
+      );
+    }
+
+    const url = `${baseURL}/v1/chat/completions`;
     const temperature = request.temperature ?? 0.7;
     const maxTokens = request.maxTokens ?? 4096;
 

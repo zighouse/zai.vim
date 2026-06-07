@@ -73,6 +73,7 @@ export class Engine implements EngineAPI {
         baseURL: cfg.baseURL,
         models: cfg.models,
         defaultModel: cfg.defaultModel,
+        allowHttp: cfg.allowHttp,
       };
     }
 
