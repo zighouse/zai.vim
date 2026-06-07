@@ -271,37 +271,6 @@ async function scanMonorepoPackages(root: string): Promise<string[]> {
   return result;
 }
 
-// ---- scanDirectoryStructure -------------------------------------------------
-// AC3: Limited structure scan (root + 1 level, 50 entries max, skip dirs filtered).
-
-export async function scanDirectoryStructure(root: string): Promise<string[]> {
-  const result: string[] = [];
-  let count = 0;
-
-  try {
-    const entries = await readdir(root, { withFileTypes: true });
-
-    for (const entry of entries) {
-      if (count >= SCAN_FILE_LIMIT) {
-        result.push('[truncated]');
-        break;
-      }
-
-      if (SKIP_DIRS.has(entry.name)) continue;
-
-      if (entry.isFile()) {
-        result.push(entry.name);
-        count++;
-      } else if (entry.isDirectory()) {
-        result.push(`${entry.name}/`);
-        count++;
-      }
-    }
-  } catch { /* root inaccessible */ }
-
-  return result;
-}
-
 // ---- withTimeout ------------------------------------------------------------
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
