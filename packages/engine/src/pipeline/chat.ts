@@ -229,7 +229,11 @@ export async function* chat(
           } else if (classified.recoverable) {
             // Mark degraded after all retries exhausted
             providerRegistry?.markDegraded(provider.name, classified.message);
-            emit('provider.status', { status: 'degraded', provider: provider.name });
+            emit('provider.status', {
+              status: 'degraded',
+              provider: provider.name,
+              ...(providerRegistry ? { availableProviders: providerRegistry.listAvailableProviders().filter(n => n !== provider.name) } : {}),
+            });
           }
 
           // context_length_exceeded auto-trim retry (AC10)
@@ -449,13 +453,21 @@ async function* callProviderWithRetryAndFallback(
         foundWorkingFallback = true;
       } catch (fallbackErr) {
         providerRegistry.markDegraded(fallback.name, 'Fallback retries exhausted');
-        emit('provider.status', { status: 'degraded', provider: fallback.name });
+        emit('provider.status', {
+          status: 'degraded',
+          provider: fallback.name,
+          availableProviders: providerRegistry.listAvailableProviders().filter(n => n !== fallback.name),
+        });
         lastError = fallbackErr;
       }
     }
 
     if (!foundWorkingFallback) {
-      emit('provider.status', { status: 'degraded', provider: primaryProvider.name });
+      emit('provider.status', {
+        status: 'degraded',
+        provider: primaryProvider.name,
+        availableProviders: providerRegistry.listAvailableProviders().filter(n => n !== primaryProvider.name),
+      });
       throw lastError;
     }
   } finally {
