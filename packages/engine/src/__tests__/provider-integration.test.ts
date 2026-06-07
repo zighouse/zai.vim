@@ -214,3 +214,83 @@ describe('Task 6.5: Provider lifecycle integration (AC1, AC6)', () => {
     delete process.env.TEST_KEY;
   });
 });
+
+// ---- Story 1b.5: Provider status management & rate limiting ----
+
+describe('Story 1b.5: Provider status management', () => {
+  it('should mark provider as degraded', () => {
+    process.env.TEST_KEY = 'sk-test';
+    const registry = createProviderRegistry({
+      test: { type: 'openai', apiKey: 'sk-test', baseURL: 'https://api.test.com', models: ['m1'], defaultModel: 'm1' },
+    }, 'test');
+
+    registry.markDegraded('test', 'connection timeout');
+    expect(registry.getProviderStatus('test')).toBe('degraded');
+    expect(registry.getProviderError('test')).toBe('connection timeout');
+  });
+
+  it('should recover degraded provider to available', () => {
+    process.env.TEST_KEY = 'sk-test';
+    const registry = createProviderRegistry({
+      test: { type: 'openai', apiKey: 'sk-test', baseURL: 'https://api.test.com', models: ['m1'], defaultModel: 'm1' },
+    }, 'test');
+
+    registry.markDegraded('test', 'timeout');
+    expect(registry.getProviderStatus('test')).toBe('degraded');
+
+    registry.markAvailable('test');
+    expect(registry.getProviderStatus('test')).toBe('available');
+    expect(registry.getProviderError('test')).toBeUndefined();
+  });
+
+  it('should include degraded providers in fallback candidates', () => {
+    process.env.TEST_KEY = 'sk-test';
+    const registry = createProviderRegistry({
+      primary: { type: 'openai', apiKey: 'sk-test', baseURL: 'https://api.primary.com', models: ['m1'], defaultModel: 'm1' },
+      backup: { type: 'openai', apiKey: 'sk-test', baseURL: 'https://api.backup.com', models: ['m1'], defaultModel: 'm1' },
+    }, 'primary');
+
+    registry.markDegraded('primary', 'retries exhausted');
+    // degraded primary should still be listed as available for fallback purposes
+    const available = registry.listAvailableProviders();
+    expect(available).toContain('primary');
+    expect(available).toContain('backup');
+  });
+
+  delete process.env.TEST_KEY;
+});
+
+describe('Story 1b.5: Rate limit coordination', () => {
+  it('should report rate limit state', () => {
+    process.env.TEST_KEY = 'sk-test';
+    const registry = createProviderRegistry({
+      test: { type: 'openai', apiKey: 'sk-test', baseURL: 'https://api.test.com', models: ['m1'], defaultModel: 'm1' },
+    }, 'test');
+
+    expect(registry.getRateLimitState('test')).toBeUndefined();
+
+    registry.reportRateLimit('test', 2000);
+    const state = registry.getRateLimitState('test')!;
+    expect(state).toBeDefined();
+    expect(state.limited).toBe(true);
+    expect(state.retryAfterMs).toBe(2000);
+  });
+
+  it('should acquire and release rate slots', async () => {
+    process.env.TEST_KEY = 'sk-test';
+    const registry = createProviderRegistry({
+      test: { type: 'openai', apiKey: 'sk-test', baseURL: 'https://api.test.com', models: ['m1'], defaultModel: 'm1' },
+    }, 'test');
+
+    // No rate limit — should pass immediately
+    await registry.acquireRateSlot('test', 'session-1');
+    registry.releaseRateSlot('test', 'session-1');
+
+    // Report rate limit with very short window
+    registry.reportRateLimit('test', 5);
+    await registry.acquireRateSlot('test', 'session-2');
+    registry.releaseRateSlot('test', 'session-2');
+  });
+
+  delete process.env.TEST_KEY;
+});

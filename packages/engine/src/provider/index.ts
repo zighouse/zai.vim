@@ -141,10 +141,22 @@ export class OpenAICompatibleProvider implements IProvider {
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
+      const detail: Record<string, unknown> = {};
+      // Extract Retry-After header for 429 responses
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After');
+        if (retryAfter) {
+          const parsed = Number(retryAfter);
+          if (!Number.isNaN(parsed) && parsed > 0) {
+            detail.retryAfterMs = parsed * 1000; // seconds → ms
+          }
+        }
+      }
       throw new ZaiNetworkError(
         `Provider ${this.name} returned ${response.status}: ${text}`,
         'ENGINE_PROVIDER_ERROR',
         response.status,
+        Object.keys(detail).length > 0 ? detail : undefined,
       );
     }
 
@@ -275,10 +287,18 @@ function safeParseJsonLine(line: string): Record<string, unknown> | null {
 
 // ---- Provider Registry -----------------------------------------------------
 
+export interface RateLimitState {
+  limited: boolean;
+  retryAfterMs: number;
+  queuedSessions: Set<string>;
+  resumedAt: number;
+}
+
 export class ProviderRegistry {
   #providers: Map<string, IProvider> = new Map();
   #providerStatus: Map<string, ProviderStatus> = new Map();
   #providerErrors: Map<string, string> = new Map();
+  #rateLimitCounter: Map<string, RateLimitState> = new Map();
   #defaultName: string;
 
   constructor(providers: Map<string, ProviderConfig>, defaultName: string) {
@@ -353,10 +373,10 @@ export class ProviderRegistry {
     return this.#providerErrors.get(name);
   }
 
-  /** Returns names of providers with status 'available' or 'untested' */
+  /** Returns names of providers with status 'available', 'untested', or 'degraded' */
   listAvailableProviders(): string[] {
     return [...this.#providerStatus.entries()]
-      .filter(([, status]) => status === 'available' || status === 'untested')
+      .filter(([, status]) => status === 'available' || status === 'untested' || status === 'degraded')
       .map(([name]) => name);
   }
 
@@ -376,10 +396,74 @@ export class ProviderRegistry {
     this.#providerErrors.set(name, reason);
   }
 
-  /** Mark provider as available after successful lazy validation */
+  /** Mark provider as available after successful lazy validation or successful response */
   markAvailable(name: string): void {
     this.#providerStatus.set(name, 'available');
     this.#providerErrors.delete(name);
+  }
+
+  /** Mark provider as degraded (transient failure, auto-recoverable) */
+  markDegraded(name: string, reason: string): void {
+    this.#providerStatus.set(name, 'degraded');
+    this.#providerErrors.set(name, reason);
+  }
+
+  // ---- Rate limit coordination (Story 1b.5 Task 4) -------------------------
+
+  /** Check if provider is currently rate-limited. Returns current state or undefined. */
+  getRateLimitState(providerName: string): RateLimitState | undefined {
+    return this.#rateLimitCounter.get(providerName);
+  }
+
+  /** Mark provider as rate-limited after receiving 429 */
+  reportRateLimit(providerName: string, retryAfterMs: number): void {
+    const existing = this.#rateLimitCounter.get(providerName);
+    if (existing) {
+      existing.limited = true;
+      existing.retryAfterMs = retryAfterMs;
+      existing.resumedAt = Date.now() + retryAfterMs;
+    } else {
+      this.#rateLimitCounter.set(providerName, {
+        limited: true,
+        retryAfterMs,
+        queuedSessions: new Set(),
+        resumedAt: Date.now() + retryAfterMs,
+      });
+    }
+  }
+
+  /** Acquire a rate slot for a session. Queues if provider is rate-limited. */
+  async acquireRateSlot(providerName: string, sessionId: string): Promise<void> {
+    const state = this.#rateLimitCounter.get(providerName);
+    if (!state || !state.limited) return;
+
+    const now = Date.now();
+    if (now >= state.resumedAt) {
+      state.limited = false;
+      state.queuedSessions.clear();
+      return;
+    }
+
+    // Still limited — queue this session
+    state.queuedSessions.add(sessionId);
+    const waitMs = state.resumedAt - now;
+    await new Promise(resolve => setTimeout(resolve, waitMs));
+    state.queuedSessions.delete(sessionId);
+
+    // If no more queued sessions and time has passed, clear limit
+    if (state.queuedSessions.size === 0 && Date.now() >= state.resumedAt) {
+      state.limited = false;
+    }
+  }
+
+  /** Release a rate slot after request completes */
+  releaseRateSlot(providerName: string, sessionId: string): void {
+    const state = this.#rateLimitCounter.get(providerName);
+    if (!state) return;
+    state.queuedSessions.delete(sessionId);
+    if (state.queuedSessions.size === 0 && Date.now() >= state.resumedAt) {
+      state.limited = false;
+    }
   }
 }
 

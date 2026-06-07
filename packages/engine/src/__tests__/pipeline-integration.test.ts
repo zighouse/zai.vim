@@ -364,3 +364,145 @@ describe('Engine — project context detection', () => {
     expect(ctx.projectRoot).toBe(emptyRoot);
   });
 });
+
+// ---- Story 1b.5: Retry/Fallback integration tests ----
+
+describe('Story 1b.5: Retry and fallback integration', () => {
+  function createFailingThenSuccessProvider(name: string, failCount: number, status: number): IProvider {
+    let call = 0;
+    return {
+      name,
+      models: ['mock-model'],
+      capabilities: { streaming: true, toolUse: false, caching: false, thinking: false, vision: false, maxContextTokens: 128_000 },
+      async *chat() {
+        call++;
+        if (call <= failCount) {
+          throw new ZaiNetworkError(`Server error (${status})`, 'ENGINE_PROVIDER_ERROR', status);
+        }
+        yield { type: 'text', content: `success-after-${failCount}-retries` };
+        yield { type: 'done', finishReason: 'stop' };
+      },
+    };
+  }
+
+  const FAST_RETRY = { maxRetries: 3, baseDelayMs: 1, maxDelayMs: 4, backoffFactor: 2 };
+
+  it('should retry 5xx and succeed through pipeline (AC1)', async () => {
+    const { chat } = await import('../pipeline/chat.js');
+    const { InMemorySessionStoreFull } = await import('../session/memory-store.js');
+    const { createProviderRegistry } = await import('../provider/index.js');
+
+    const provider = createFailingThenSuccessProvider('test-provider', 2, 500);
+    const sessionStore = new InMemorySessionStoreFull();
+    const session = sessionStore.create({
+      language: 'en',
+      sandbox: { enabled: false, type: 'none', workDir: '/tmp', timeout: 30000 },
+      providers: {},
+      defaults: { provider: '', model: '', temperature: 0.7, maxTokens: 4096 },
+    });
+    const registry = createProviderRegistry({
+      'test-provider': { type: 'openai', apiKey: 'sk-test', baseURL: 'https://api.test.com', models: ['m1'], defaultModel: 'm1' },
+    }, 'test-provider');
+
+    const emit = vi.fn();
+    const chunks = await collectChunks(chat(session, { id: 'msg-1', role: 'user', content: 'Hi' }, {
+      sessionStore,
+      provider,
+      tools: [],
+      emit,
+      config: FAST_RETRY,
+      providerRegistry: registry,
+    }));
+
+    expect(chunks.some(c => c.type === 'text')).toBe(true);
+    // Should have emitted retry events
+    const retryEvents = emit.mock.calls.filter(c => c[0] === 'provider.retry');
+    expect(retryEvents.length).toBe(2);
+  });
+
+  it('should fallback to alternative provider on retry exhaustion (AC5)', async () => {
+    const { chat } = await import('../pipeline/chat.js');
+    const { InMemorySessionStoreFull } = await import('../session/memory-store.js');
+    const { createProviderRegistry } = await import('../provider/index.js');
+
+    const primaryProvider = createFailingThenSuccessProvider('primary', 99, 500);
+    const fallbackProvider: IProvider = {
+      name: 'fallback',
+      models: ['mock-model'],
+      capabilities: { streaming: true, toolUse: false, caching: false, thinking: false, vision: false, maxContextTokens: 128_000 },
+      async *chat() {
+        yield { type: 'text', content: 'fallback-success' };
+        yield { type: 'done', finishReason: 'stop' };
+      },
+    };
+
+    const sessionStore = new InMemorySessionStoreFull();
+    const session = sessionStore.create({
+      language: 'en',
+      sandbox: { enabled: false, type: 'none', workDir: '/tmp', timeout: 30000 },
+      providers: {},
+      defaults: { provider: '', model: '', temperature: 0.7, maxTokens: 4096 },
+    });
+
+    const emit = vi.fn();
+    const chunks = await collectChunks(chat(session, { id: 'msg-1', role: 'user', content: 'Hi' }, {
+      sessionStore,
+      provider: primaryProvider,
+      tools: [],
+      emit,
+      config: FAST_RETRY,
+      providerRegistry: {
+        getFallback: () => fallbackProvider,
+        markDegraded: vi.fn(),
+        markAvailable: vi.fn(),
+        getProviderStatus: () => 'degraded' as const,
+        acquireRateSlot: async () => {},
+        releaseRateSlot: () => {},
+      } as any,
+    }));
+
+    expect(chunks.some(c => c.type === 'text' && (c as any).content === 'fallback-success')).toBe(true);
+    expect(emit).toHaveBeenCalledWith('provider.fallback', expect.objectContaining({
+      from: 'primary',
+      to: 'fallback',
+    }));
+  });
+
+  it('should emit provider.status degraded when no fallback available (AC4)', async () => {
+    const { chat } = await import('../pipeline/chat.js');
+    const { InMemorySessionStoreFull } = await import('../session/memory-store.js');
+
+    const provider = createFailingThenSuccessProvider('only-provider', 99, 500);
+    const sessionStore = new InMemorySessionStoreFull();
+    const session = sessionStore.create({
+      language: 'en',
+      sandbox: { enabled: false, type: 'none', workDir: '/tmp', timeout: 30000 },
+      providers: {},
+      defaults: { provider: '', model: '', temperature: 0.7, maxTokens: 4096 },
+    });
+
+    const emit = vi.fn();
+    const chunks = await collectChunks(chat(session, { id: 'msg-1', role: 'user', content: 'Hi' }, {
+      sessionStore,
+      provider,
+      tools: [],
+      emit,
+      config: FAST_RETRY,
+      providerRegistry: {
+        getFallback: () => undefined,
+        markDegraded: vi.fn(),
+        markAvailable: vi.fn(),
+        getProviderStatus: () => 'untested' as const,
+        acquireRateSlot: async () => {},
+        releaseRateSlot: () => {},
+      } as any,
+    }));
+
+    const errorChunk = chunks.find(c => c.type === 'error');
+    expect(errorChunk).toBeDefined();
+    expect(emit).toHaveBeenCalledWith('provider.status', expect.objectContaining({
+      status: 'degraded',
+      provider: 'only-provider',
+    }));
+  });
+});

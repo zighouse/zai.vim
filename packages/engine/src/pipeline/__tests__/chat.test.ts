@@ -217,7 +217,7 @@ describe('chat() pipeline', () => {
     };
 
     const emit = vi.fn();
-    const { deps, createSession } = setup({ provider, emit });
+    const { deps, createSession } = setup({ provider, emit, config: { maxRetries: 1, baseDelayMs: 1, maxDelayMs: 1, backoffFactor: 1 } });
     const session = createSession();
     const chunks = await collectChunks(chat(session, makeUserMessage('Hi'), deps));
 
@@ -280,5 +280,123 @@ describe('chat() pipeline', () => {
     const updated = sessionStore.get(session.id);
     expect(updated).toBeDefined();
     expect(updated!.messages.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // ---- Story 1b.5: Provider retry, fallback, and status management ----
+
+  describe('provider retry events (AC1)', () => {
+    it('should emit provider.retry events on 5xx errors', async () => {
+      let call = 0;
+      const provider: IProvider = {
+        name: 'retry-test',
+        models: ['model-1'],
+        capabilities: { streaming: true, toolUse: false, caching: false, thinking: false, vision: false, maxContextTokens: 128_000 },
+        async *chat() {
+          call++;
+          if (call <= 2) throw new ZaiNetworkError('Server error', 'ENGINE_PROVIDER_ERROR', 500);
+          yield { type: 'text', content: 'recovered' };
+          yield { type: 'done', finishReason: 'stop' };
+        },
+      };
+
+      const emit = vi.fn();
+      const { deps, createSession } = setup({
+        provider,
+        emit,
+        config: { maxRetries: 3, baseDelayMs: 1, maxDelayMs: 1, backoffFactor: 1 },
+      });
+      const session = createSession();
+      const chunks = await collectChunks(chat(session, makeUserMessage('Hi'), deps));
+
+      expect(chunks.some(c => c.type === 'text' && c.content === 'recovered')).toBe(true);
+      expect(emit).toHaveBeenCalledWith('provider.retry', expect.objectContaining({
+        provider: 'retry-test',
+        attempt: 1,
+        maxAttempts: 3,
+      }));
+      expect(emit).toHaveBeenCalledWith('provider.retry', expect.objectContaining({
+        provider: 'retry-test',
+        attempt: 2,
+        maxAttempts: 3,
+      }));
+    });
+  });
+
+  describe('auth failed notification (AC2)', () => {
+    it('should emit provider.auth_failed on 401 error', async () => {
+      const provider: IProvider = {
+        name: 'auth-test',
+        models: ['model-1'],
+        capabilities: { streaming: true, toolUse: false, caching: false, thinking: false, vision: false, maxContextTokens: 128_000 },
+        async *chat() {
+          throw new ZaiNetworkError('Invalid API key', 'ENGINE_PROVIDER_ERROR', 401);
+        },
+      };
+
+      const emit = vi.fn();
+      const { deps, createSession } = setup({ provider, emit, config: { maxRetries: 0 } });
+      const session = createSession();
+      const chunks = await collectChunks(chat(session, makeUserMessage('Hi'), deps));
+
+      const errorChunk = chunks.find(c => c.type === 'error');
+      expect(errorChunk).toBeDefined();
+      expect(emit).toHaveBeenCalledWith('provider.auth_failed', expect.objectContaining({
+        provider: 'auth-test',
+        hint: expect.stringContaining('apiKey'),
+      }));
+    });
+
+    it('should emit provider.model_not_found on 404 error', async () => {
+      const provider: IProvider = {
+        name: 'model-test',
+        models: ['model-1'],
+        capabilities: { streaming: true, toolUse: false, caching: false, thinking: false, vision: false, maxContextTokens: 128_000 },
+        async *chat() {
+          throw new ZaiNetworkError('Model not found', 'ENGINE_PROVIDER_ERROR', 404);
+        },
+      };
+
+      const emit = vi.fn();
+      const { deps, createSession } = setup({ provider, emit, config: { maxRetries: 0 } });
+      const session = createSession();
+      const chunks = await collectChunks(chat(session, makeUserMessage('Hi'), deps));
+
+      const errorChunk = chunks.find(c => c.type === 'error');
+      expect(errorChunk).toBeDefined();
+      expect(emit).toHaveBeenCalledWith('provider.model_not_found', expect.objectContaining({
+        provider: 'model-test',
+      }));
+    });
+  });
+
+  describe('stream interrupted — no retry (AC9)', () => {
+    it('should not retry when chunks already delivered', async () => {
+      let callCount = 0;
+      const provider: IProvider = {
+        name: 'interrupt-test',
+        models: ['model-1'],
+        capabilities: { streaming: true, toolUse: false, caching: false, thinking: false, vision: false, maxContextTokens: 128_000 },
+        async *chat() {
+          callCount++;
+          yield { type: 'text', content: 'partial' };
+          throw new ZaiNetworkError('ECONNRESET', 'ENGINE_PROVIDER_ERROR', 502);
+        },
+      };
+
+      const emit = vi.fn();
+      const { deps, createSession } = setup({
+        provider,
+        emit,
+        config: { maxRetries: 3, baseDelayMs: 1, maxDelayMs: 1, backoffFactor: 1 },
+      });
+      const session = createSession();
+      const chunks = await collectChunks(chat(session, makeUserMessage('Hi'), deps));
+
+      expect(chunks.some(c => c.type === 'text' && c.content === 'partial')).toBe(true);
+      expect(callCount).toBe(1); // No retry
+      expect(emit).toHaveBeenCalledWith('chat.interrupted', expect.objectContaining({
+        sessionId: session.id,
+      }));
+    });
   });
 });

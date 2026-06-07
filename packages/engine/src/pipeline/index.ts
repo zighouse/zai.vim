@@ -218,6 +218,8 @@ export class Engine implements EngineAPI {
       emit,
       onMessagePushed: (sid: string) => this.#lifecycleManager.checkMessageLimit(sid),
       projectContext,
+      providerRegistry: this.#agentDeps.providerRegistry,
+      sessionId,
     };
 
     yield* pipelineChat(session, message, deps, signal);

@@ -33,6 +33,49 @@ export interface EngineShutdownEvent {
   force: boolean;
 }
 
+// ---- Provider events (Story 1b.5) ----------------------------------------
+
+export interface ProviderRetryEvent {
+  provider: string;
+  attempt: number;
+  maxAttempts: number;
+  delayMs: number;
+}
+
+export interface ProviderRecoveredEvent {
+  provider: string;
+}
+
+export interface ProviderAuthFailedEvent {
+  provider: string;
+  hint: string;
+}
+
+export interface ProviderModelNotFoundEvent {
+  provider: string;
+}
+
+export interface ProviderRateLimitedEvent {
+  provider: string;
+  retryAfterMs: number;
+  queuedSessions: number;
+}
+
+export interface ProviderFallbackEvent {
+  from: string;
+  to: string;
+}
+
+export interface ProviderStatusEvent {
+  status: 'degraded' | 'available';
+  provider: string;
+}
+
+export interface ContextAutoTrimmedEvent {
+  sessionId: string;
+  removedCount: number;
+}
+
 export interface EngineEventMap {
   'session.created': SessionCreatedEvent;
   'session.closed': SessionClosedEvent;
@@ -44,6 +87,14 @@ export interface EngineEventMap {
   'security.degraded': SecurityDegradedEvent;
   'engine.warning': EngineWarningEvent;
   'engine.shutdown': EngineShutdownEvent;
+  'provider.retry': ProviderRetryEvent;
+  'provider.recovered': ProviderRecoveredEvent;
+  'provider.auth_failed': ProviderAuthFailedEvent;
+  'provider.model_not_found': ProviderModelNotFoundEvent;
+  'provider.rate_limited': ProviderRateLimitedEvent;
+  'provider.fallback': ProviderFallbackEvent;
+  'provider.status': ProviderStatusEvent;
+  'context.auto_trimmed': ContextAutoTrimmedEvent;
 }
 
 export type EngineEventType = keyof EngineEventMap;

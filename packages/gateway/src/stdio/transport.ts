@@ -179,6 +179,14 @@ export function createStdioTransport(
       { type: 'security.degraded', handler: (data) => output.write(encodeNotification('security.degraded', data)) },
       { type: 'engine.warning', handler: (data) => output.write(encodeNotification('engine.warning', data)) },
       { type: 'engine.shutdown', handler: (data) => output.write(encodeNotification('engine.shutdown', data)) },
+      { type: 'provider.retry', handler: (data) => output.write(encodeNotification('provider.retry', data)) },
+      { type: 'provider.recovered', handler: (data) => output.write(encodeNotification('provider.recovered', data)) },
+      { type: 'provider.auth_failed', handler: (data) => output.write(encodeNotification('provider.auth_failed', data)) },
+      { type: 'provider.model_not_found', handler: (data) => output.write(encodeNotification('provider.model_not_found', data)) },
+      { type: 'provider.rate_limited', handler: (data) => output.write(encodeNotification('provider.rate_limited', data)) },
+      { type: 'provider.fallback', handler: (data) => output.write(encodeNotification('provider.fallback', data)) },
+      { type: 'provider.status', handler: (data) => output.write(encodeNotification('provider.status', data)) },
+      { type: 'context.auto_trimmed', handler: (data) => output.write(encodeNotification('context.auto_trimmed', data)) },
     ];
 
     for (const { type, handler } of eventTypes) {

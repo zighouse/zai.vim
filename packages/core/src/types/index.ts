@@ -236,6 +236,10 @@ export interface PipelineConfig {
   readonly maxToolCallRounds?: number;
   readonly maxContextTokens?: number;
   readonly toolCallTimeout?: number;
+  readonly maxRetries?: number;
+  readonly baseDelayMs?: number;
+  readonly maxDelayMs?: number;
+  readonly backoffFactor?: number;
 }
 
 export interface ChatResult {

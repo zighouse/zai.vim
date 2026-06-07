@@ -11,6 +11,10 @@ export const PIPELINE_DEFAULTS = {
   keepRecentMessages: 10,
   toolCallTimeout: 120_000,
   maxProjectContextChars: MAX_PROJECT_CONTEXT_CHARS,
+  maxRetries: 3,
+  baseDelayMs: 1000,
+  maxDelayMs: 8000,
+  backoffFactor: 2,
 } as const;
 
 /**

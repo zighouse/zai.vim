@@ -1,5 +1,5 @@
 // @zaivim/engine — Pipeline chat() main function
-// End-to-end streaming pipeline: context assembly → provider call → tool execution loop → streaming response.
+// End-to-end streaming pipeline: context assembly → provider call → retry → fallback → tool execution loop → streaming response.
 
 import type {
   Session,
@@ -21,6 +21,9 @@ import { executeToolCalls, validateToolCalls } from './tool-executor.js';
 import type { ToolCallRequest } from './tool-executor.js';
 import { classifyProviderError } from './error-classifier.js';
 import { NullSecurityProvider } from './null-security.js';
+import { retryWithBackoff, DEFAULT_RETRY_CONFIG } from './retry.js';
+import type { RetryConfig } from './retry.js';
+import type { ProviderRegistry } from '../provider/index.js';
 
 export interface ChatDeps {
   readonly sessionStore: ISessionStore;
@@ -32,13 +35,15 @@ export interface ChatDeps {
   readonly emit?: (event: string, data: Record<string, unknown>) => void;
   readonly onMessagePushed?: (sessionId: string) => void;
   readonly projectContext?: ProjectContext;
+  readonly providerRegistry?: ProviderRegistry;
+  readonly sessionId?: string;
 }
 
 type EmitFn = (event: string, data: Record<string, unknown>) => void;
 
 /**
  * Main pipeline chat function.
- * Yields ResponseChunks as they arrive from the provider, with tool call loop support.
+ * Yields ResponseChunks as they arrive from the provider, with retry, fallback, and tool call loop support.
  */
 export async function* chat(
   session: Session,
@@ -55,10 +60,19 @@ export async function* chat(
     persona,
     emit = (() => {}),
     onMessagePushed,
+    providerRegistry,
+    sessionId = session.id,
   } = deps;
 
   const maxToolCallRounds = config.maxToolCallRounds ?? PIPELINE_DEFAULTS.maxToolCallRounds;
   const toolCallTimeout = config.toolCallTimeout ?? PIPELINE_DEFAULTS.toolCallTimeout;
+
+  const retryConfig: RetryConfig = {
+    maxRetries: config.maxRetries ?? PIPELINE_DEFAULTS.maxRetries,
+    baseDelayMs: config.baseDelayMs ?? PIPELINE_DEFAULTS.baseDelayMs,
+    maxDelayMs: config.maxDelayMs ?? PIPELINE_DEFAULTS.maxDelayMs,
+    backoffFactor: config.backoffFactor ?? PIPELINE_DEFAULTS.backoffFactor,
+  };
 
   // 1. Append user message to session
   sessionStore.pushMessage(session.id, message);
@@ -95,7 +109,6 @@ export async function* chat(
   const workingMessages = [...contextMessages];
 
   // Track whether the pipeline completed normally (not aborted/interrupted)
-  // Used by the finally block to decide if the AI response should be persisted (AC11)
   let completed = false;
   // Track tool calls from the final provider round for mixed text+tool_call responses (M5)
   let finalRoundToolCalls: ToolCallRequest[] = [];
@@ -115,9 +128,19 @@ export async function* chat(
       let chunksDelivered = 0;
       let prevChunkTime = 0;
 
-      // 5. Call provider, yield chunks
+      // 5. Call provider with retry + fallback
       try {
-        for await (const chunk of provider.chat(request, signal)) {
+        const chunks = callProviderWithRetryAndFallback(
+          provider,
+          request,
+          retryConfig,
+          signal,
+          emit,
+          providerRegistry,
+          sessionId,
+        );
+
+        for await (const chunk of chunks) {
           signal?.throwIfAborted();
 
           // Chunk interval monitoring (AC3)
@@ -166,10 +189,12 @@ export async function* chat(
           totalChunks++;
           chunksDelivered++;
         }
+
+        // Provider succeeded — mark available (AC8)
+        providerRegistry?.markAvailable(provider.name);
       } catch (err) {
         // AbortError: propagate (user cancelled)
         if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
-          // AC6: measure propagation latency — warn if > 100ms
           const propagationMs = Math.round(performance.now() - startTime);
           if (propagationMs > 100) {
             emit('perf.abort_propagation', {
@@ -177,15 +202,14 @@ export async function* chat(
               propagationMs,
             });
           }
-          // Session remains active; partial response is NOT persisted (AC11)
           return;
         }
 
-        // Provider error: classify and yield error chunk
+        // Provider error after retry exhaustion + fallback failure
         if (err instanceof ZaiNetworkError) {
           const classified = classifyProviderError(err);
 
-          // Stream interrupted notification (AC7)
+          // Stream interrupted notification (AC9)
           if (chunksDelivered > 0) {
             emit('chat.interrupted', {
               sessionId: session.id,
@@ -194,22 +218,67 @@ export async function* chat(
             });
           }
 
-          // Provider status notification
-          if (classified.recoverable) {
+          // Auth/model error notifications (AC2)
+          if (classified.code === 'ENGINE_PROVIDER_AUTH_FAILED') {
+            emit('provider.auth_failed', {
+              provider: provider.name,
+              hint: `API key may have expired. Run 'zaivim config set provider.${provider.name}.apiKey <new-key>' to update without restart.`,
+            });
+          } else if (classified.code === 'ENGINE_PROVIDER_MODEL_NOT_FOUND') {
+            emit('provider.model_not_found', { provider: provider.name });
+          } else if (classified.recoverable) {
+            // Mark degraded after all retries exhausted
+            providerRegistry?.markDegraded(provider.name, classified.message);
             emit('provider.status', { status: 'degraded', provider: provider.name });
           }
 
-          yield { type: 'error', code: classified.code, message: classified.message };
+          // context_length_exceeded auto-trim retry (AC10)
+          if (classified.code === 'PIPELINE_CONTEXT_LENGTH_EXCEEDED') {
+            const trimResult = await handleContextLengthExceeded(
+              workingMessages,
+              provider,
+              request,
+              session.id,
+              signal,
+              emit,
+            );
+            if (trimResult) {
+              for (const chunk of trimResult.chunks) {
+                if (chunk.type === 'text') {
+                  fullContent += chunk.content;
+                }
+                if (chunk.type === 'tool_call') {
+                  toolCalls.push({
+                    id: chunk.id,
+                    name: chunk.name,
+                    arguments: chunk.arguments,
+                  });
+                }
+                if (chunk.type === 'done') {
+                  finishReason = chunk.finishReason;
+                }
+                yield chunk;
+                totalChunks++;
+                chunksDelivered++;
+              }
+              providerRegistry?.markAvailable(provider.name);
+            } else {
+              yield { type: 'error', code: 'PIPELINE_CONTEXT_LENGTH_EXCEEDED', message: classified.message };
+              return;
+            }
+          } else {
+            yield { type: 'error', code: classified.code, message: classified.message };
+            return;
+          }
+        } else {
+          // Unknown error: yield generic error chunk
+          yield {
+            type: 'error',
+            code: 'ENGINE_PROVIDER_ERROR',
+            message: err instanceof Error ? err.message : String(err),
+          };
           return;
         }
-
-        // Unknown error: yield generic error chunk
-        yield {
-          type: 'error',
-          code: 'ENGINE_PROVIDER_ERROR',
-          message: err instanceof Error ? err.message : String(err),
-        };
-        return;
       }
 
       // 6. Save tool calls from this round for final message metadata
@@ -285,23 +354,140 @@ export async function* chat(
     completed = true;
   } finally {
     // 11. Persist complete AI response (AC11: only complete responses persist)
-    // The finally block ensures partial responses are never persisted:
-    //   - Normal completion → completed=true → persist
-    //   - Consumer break/return/cancel → completed=false → skip
-    //   - AbortError/Provider error → return before completed=true → skip
     if (fullContent && completed) {
       const assistantMessage: Message = {
         id: `resp-${Date.now()}`,
         role: 'assistant',
         content: fullContent,
-        // Include tool call metadata when provider mixed text + tool_calls (M5)
         ...(finalRoundToolCalls.length > 0
           ? { toolCalls: finalRoundToolCalls.map(tc => ({ id: tc.id, name: tc.name, arguments: tc.arguments })) }
           : {}),
       };
-      // Fire-and-forget persistence
       sessionStore.pushMessage(session.id, assistantMessage);
     }
+  }
+}
+
+/**
+ * Call provider with retry and fallback logic.
+ * Wraps provider.chat() in retryWithBackoff, then tries fallback providers on exhaustion.
+ */
+async function* callProviderWithRetryAndFallback(
+  primaryProvider: IProvider,
+  request: { messages: Message[]; sessionId: string; temperature: number; maxTokens: number },
+  retryConfig: RetryConfig,
+  signal: AbortSignal | undefined,
+  emit: EmitFn,
+  providerRegistry: ProviderRegistry | undefined,
+  sessionId: string,
+): AsyncIterable<ResponseChunk> {
+  try {
+    // Rate limit coordination — check before calling provider
+    if (providerRegistry) {
+      await providerRegistry.acquireRateSlot(primaryProvider.name, sessionId);
+    }
+
+    yield* retryWithBackoff(
+      () => primaryProvider.chat(request, signal),
+      retryConfig,
+      signal,
+      {
+        onRetry: (attempt, maxAttempts, delayMs) => {
+          emit('provider.retry', {
+            provider: primaryProvider.name,
+            attempt,
+            maxAttempts,
+            delayMs,
+          });
+        },
+      },
+    );
+
+    // Success — emit recovered if provider was previously degraded
+    if (providerRegistry?.getProviderStatus(primaryProvider.name) === 'degraded') {
+      emit('provider.recovered', { provider: primaryProvider.name });
+    }
+  } catch (primaryErr) {
+    // Retry exhausted — try fallback providers
+    if (!providerRegistry) throw primaryErr;
+
+    const fallback = providerRegistry.getFallback(primaryProvider.name);
+    if (!fallback) {
+      // No fallback — mark degraded and report
+      providerRegistry.markDegraded(primaryProvider.name, 'All retries exhausted');
+      emit('provider.status', {
+        status: 'degraded',
+        provider: primaryProvider.name,
+      });
+      throw primaryErr;
+    }
+
+    // Try fallback provider
+    emit('provider.fallback', { from: primaryProvider.name, to: fallback.name });
+
+    try {
+      yield* retryWithBackoff(
+        () => fallback.chat(request, signal),
+        retryConfig,
+        signal,
+        {
+          onRetry: (attempt, maxAttempts, delayMs) => {
+            emit('provider.retry', {
+              provider: fallback.name,
+              attempt,
+              maxAttempts,
+              delayMs,
+            });
+          },
+        },
+      );
+
+      providerRegistry.markAvailable(fallback.name);
+    } catch (fallbackErr) {
+      // Fallback also failed
+      providerRegistry.markDegraded(primaryProvider.name, 'Primary and fallback both failed');
+      providerRegistry.markDegraded(fallback.name, 'Fallback retries exhausted');
+      throw primaryErr; // Throw original error
+    }
+  } finally {
+    if (providerRegistry) {
+      providerRegistry.releaseRateSlot(primaryProvider.name, sessionId);
+    }
+  }
+}
+
+/**
+ * Handle context_length_exceeded by trimming context and retrying once.
+ * Returns chunks + removed count, or null if trim retry also fails.
+ */
+async function handleContextLengthExceeded(
+  workingMessages: Message[],
+  provider: IProvider,
+  request: { messages: Message[]; sessionId: string; temperature: number; maxTokens: number },
+  sessionId: string,
+  signal: AbortSignal | undefined,
+  emit: EmitFn,
+): Promise<{ chunks: ResponseChunk[]; removedCount: number } | null> {
+  const { trimContext } = await import('./context-assembler.js');
+
+  // Trim 50% of token budget from middle history (AC10)
+  const tokenBudget = Math.floor(workingMessages.length * 0.5);
+  const { messages: trimmed, removed } = trimContext(workingMessages, tokenBudget);
+
+  if (removed === 0) return null;
+
+  const trimmedRequest = { ...request, messages: trimmed };
+
+  try {
+    const chunks: ResponseChunk[] = [];
+    for await (const chunk of provider.chat(trimmedRequest, signal)) {
+      chunks.push(chunk);
+    }
+
+    emit('context.auto_trimmed', { sessionId, removedCount: removed });
+    return { chunks, removedCount: removed };
+  } catch {
+    return null;
   }
 }
 

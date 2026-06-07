@@ -12,7 +12,7 @@ export interface SandboxConfig {
 }
 
 /** Provider status: available (validated), unavailable (config or network error), untested (syntax ok, not yet verified) */
-export type ProviderStatus = 'available' | 'unavailable' | 'untested';
+export type ProviderStatus = 'available' | 'unavailable' | 'untested' | 'degraded';
 
 /** Provider configuration */
 export interface ProviderConfig {
