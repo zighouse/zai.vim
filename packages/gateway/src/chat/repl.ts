@@ -134,6 +134,7 @@ export async function createChatRepl(opts: ReplOptions): Promise<ReplResult> {
       if (line.endsWith('\\')) {
         fullMessage = await collectMultiline(
           rl,
+          output,
           () => collectingMultiline,
           (v) => { collectingMultiline = v; },
           line,
@@ -216,20 +217,23 @@ export function printStreamChunk(
   }
 }
 
-/** Collect multiline input (lines ending with \). */
+/** Collect multiline input (lines ending with \). Shows continuation prompt. */
 async function collectMultiline(
   rl: readline.Interface,
+  output: NodeJS.WritableStream,
   getCollectingFlag: () => boolean,
   setCollectingFlag: (v: boolean) => void,
   firstLine: string,
 ): Promise<string> {
   const lines: string[] = [firstLine.slice(0, -1)]; // Remove trailing \
   setCollectingFlag(true);
+  output.write('> '); // AC6: continuation prompt
 
   return new Promise((resolve) => {
     const collect = (line: string) => {
       if (line.trimEnd().endsWith('\\')) {
         lines.push(line.trimEnd().slice(0, -1));
+        output.write('> '); // AC6: continuation prompt for each \ line
       } else {
         lines.push(line);
         rl.removeListener('line', collect);
