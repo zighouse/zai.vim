@@ -3,7 +3,7 @@
 // Story 1b.1 Tasks 2, 3, 4: AC1, AC2, AC3, AC5, AC6, AC7
 // =============================================================================
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   validateProviderConfig,
   validateProviderCompatibility,
@@ -12,8 +12,10 @@ import {
 import {
   ProviderRegistry,
   createProviderRegistry,
+  OpenAICompatibleProvider,
   type ProviderConfig,
 } from '../provider/index.js';
+import { ZaiNetworkError } from '@zaivim/core';
 
 // ---- Task 2.2: validateProviderConfig() (AC6) --------------------------------
 
@@ -246,6 +248,125 @@ describe('validateProviderCompatibility (Story 1b.1 AC7)', () => {
     };
     const result = validateProviderCompatibility(chunk);
     expect(result.valid).toBe(true);
+  });
+});
+
+// ---- Task 4.2: Lazy validation in chat() (AC7) -------------------------------
+
+describe('Lazy validation in chat() (Story 1b.1 AC7)', () => {
+  function createMockFetch(sseChunks: string[]): typeof globalThis.fetch {
+    return vi.fn().mockImplementation(async () => {
+      const encoder = new TextEncoder();
+      let chunkIndex = 0;
+      return {
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: async () => {
+              if (chunkIndex >= sseChunks.length) {
+                return { done: true, value: undefined as unknown as Uint8Array };
+              }
+              return { done: false, value: encoder.encode(sseChunks[chunkIndex++]!) };
+            },
+            releaseLock: () => {},
+            cancel: () => {},
+          }),
+        },
+      } as Response;
+    });
+  }
+
+  it('calls onValid when first chunk has correct SSE format', async () => {
+    const mockFetch = createMockFetch([
+      'data: {"choices":[{"delta":{"content":"Hi"},"finish_reason":null}]}\n\n',
+      'data: [DONE]\n\n',
+    ]);
+
+    const onValid = vi.fn();
+    const onInvalid = vi.fn();
+
+    const provider = new OpenAICompatibleProvider(
+      {
+        name: 'test',
+        type: 'openai',
+        apiKey: 'sk-test',
+        baseURL: 'https://api.test.com',
+        models: ['test-model'],
+        defaultModel: 'test-model',
+      },
+      { onValid, onInvalid },
+      mockFetch as unknown as typeof globalThis.fetch,
+    );
+
+    const chunks: unknown[] = [];
+    for await (const chunk of provider.chat({ messages: [], sessionId: 'test' })) {
+      chunks.push(chunk);
+    }
+
+    expect(onValid).toHaveBeenCalledTimes(1);
+    expect(onInvalid).not.toHaveBeenCalled();
+    expect(chunks.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('calls onInvalid and throws when first chunk has wrong format', async () => {
+    const mockFetch = createMockFetch([
+      'data: {"unexpected":"format"}\n\n',
+    ]);
+
+    const onValid = vi.fn();
+    const onInvalid = vi.fn();
+
+    const provider = new OpenAICompatibleProvider(
+      {
+        name: 'test',
+        type: 'openai',
+        apiKey: 'sk-test',
+        baseURL: 'https://api.test.com',
+        models: ['test-model'],
+        defaultModel: 'test-model',
+      },
+      { onValid, onInvalid },
+      mockFetch as unknown as typeof globalThis.fetch,
+    );
+
+    await expect(async () => {
+      for await (const _chunk of provider.chat({ messages: [], sessionId: 'test' })) {
+        // consume
+      }
+    }).rejects.toThrow(ZaiNetworkError);
+
+    expect(onInvalid).toHaveBeenCalledTimes(1);
+    expect(onValid).not.toHaveBeenCalled();
+  });
+
+  it('does not run validation on subsequent chat() calls', async () => {
+    const mockFetch = createMockFetch([
+      'data: {"choices":[{"delta":{"content":"Hi"},"finish_reason":null}]}\n\n',
+      'data: [DONE]\n\n',
+    ]);
+
+    const onValid = vi.fn();
+
+    const provider = new OpenAICompatibleProvider(
+      {
+        name: 'test',
+        type: 'openai',
+        apiKey: 'sk-test',
+        baseURL: 'https://api.test.com',
+        models: ['test-model'],
+        defaultModel: 'test-model',
+      },
+      { onValid, onInvalid: vi.fn() },
+      mockFetch as unknown as typeof globalThis.fetch,
+    );
+
+    // First call — validates
+    for await (const _ of provider.chat({ messages: [], sessionId: 'test' })) { /* consume */ }
+    expect(onValid).toHaveBeenCalledTimes(1);
+
+    // Second call — should NOT re-validate
+    for await (const _ of provider.chat({ messages: [], sessionId: 'test' })) { /* consume */ }
+    expect(onValid).toHaveBeenCalledTimes(1); // still 1
   });
 });
 

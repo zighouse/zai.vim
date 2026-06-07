@@ -11,7 +11,7 @@ import type {
   Message,
 } from '@zaivim/core';
 import { ZaiNetworkError } from '@zaivim/core';
-import { validateProviderConfig } from './validation.js';
+import { validateProviderConfig, validateProviderCompatibility } from './validation.js';
 
 // ---- Provider Capabilities (declarative) ----------------------------------
 
@@ -56,17 +56,28 @@ export interface ProviderConfig {
   lastChecked?: number;
 }
 
+/** Callbacks for lazy validation results (first chat() call) */
+export interface ValidationCallbacks {
+  onValid: () => void;
+  onInvalid: (reason: string) => void;
+}
+
 export class OpenAICompatibleProvider implements IProvider {
   readonly name: string;
   readonly models: readonly string[];
   readonly capabilities: ProviderCapabilities;
 
   #config: ProviderConfig;
+  #validated = false;
+  #validationCallbacks?: ValidationCallbacks;
+  #fetch: typeof globalThis.fetch;
 
-  constructor(config: ProviderConfig) {
+  constructor(config: ProviderConfig, validationCallbacks?: ValidationCallbacks, fetchFn?: typeof globalThis.fetch) {
     this.name = config.name;
     this.models = config.models;
     this.#config = config;
+    this.#validationCallbacks = validationCallbacks;
+    this.#fetch = fetchFn ?? globalThis.fetch.bind(globalThis);
 
     const caps = PROVIDER_CAPABILITIES[config.name] ?? PROVIDER_CAPABILITIES[config.type] ?? PROVIDER_CAPABILITIES['openai']!;
     this.capabilities = caps;
@@ -91,7 +102,7 @@ export class OpenAICompatibleProvider implements IProvider {
 
     let response: Response;
     try {
-      response = await fetch(url, {
+      response = await this.#fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -156,6 +167,21 @@ export class OpenAICompatibleProvider implements IProvider {
 
           const chunk = safeParseJsonLine(data);
           if (!chunk) continue;
+
+          // Lazy validation on first SSE chunk (AC7)
+          if (!this.#validated) {
+            this.#validated = true;
+            const valResult = validateProviderCompatibility(chunk as Record<string, unknown>);
+            if (!valResult.valid) {
+              this.#validationCallbacks?.onInvalid(valResult.reason ?? 'unknown format error');
+              throw new ZaiNetworkError(
+                `Provider ${this.name} format incompatible: ${valResult.reason}`,
+                'ENGINE_PROVIDER_ERROR',
+                502,
+              );
+            }
+            this.#validationCallbacks?.onValid();
+          }
 
           const choices = chunk.choices as Record<string, unknown>[] | undefined;
           const choice = choices?.[0] as Record<string, unknown> | undefined;
@@ -231,6 +257,7 @@ function safeParseJsonLine(line: string): Record<string, unknown> | null {
 export class ProviderRegistry {
   #providers: Map<string, IProvider> = new Map();
   #providerStatus: Map<string, ProviderStatus> = new Map();
+  #providerErrors: Map<string, string> = new Map();
   #defaultName: string;
 
   constructor(providers: Map<string, ProviderConfig>, defaultName: string) {
@@ -239,10 +266,25 @@ export class ProviderRegistry {
     for (const [name, cfg] of providers) {
       const result = validateProviderConfig(cfg);
       if (result.valid) {
-        this.#providers.set(name, new OpenAICompatibleProvider(cfg));
+        this.#providers.set(name, new OpenAICompatibleProvider(
+          cfg,
+          {
+            onValid: () => {
+              this.#providerStatus.set(name, 'available');
+              this.#providerErrors.delete(name);
+            },
+            onInvalid: (reason) => {
+              this.#providerStatus.set(name, 'unavailable');
+              this.#providerErrors.set(name, reason);
+            },
+          },
+        ));
         this.#providerStatus.set(name, 'untested');
       } else {
         this.#providerStatus.set(name, 'unavailable');
+        if (result.reason) {
+          this.#providerErrors.set(name, result.reason);
+        }
       }
     }
   }
@@ -285,6 +327,11 @@ export class ProviderRegistry {
     return false;
   }
 
+  /** Get the error reason for an unavailable provider, or undefined if none */
+  getProviderError(name: string): string | undefined {
+    return this.#providerErrors.get(name);
+  }
+
   /** Returns names of providers with status 'available' or 'untested' */
   listAvailableProviders(): string[] {
     return [...this.#providerStatus.entries()]
@@ -303,13 +350,15 @@ export class ProviderRegistry {
   }
 
   /** Mark provider as unavailable with a reason */
-  markUnavailable(name: string, _reason: string): void {
+  markUnavailable(name: string, reason: string): void {
     this.#providerStatus.set(name, 'unavailable');
+    this.#providerErrors.set(name, reason);
   }
 
   /** Mark provider as available after successful lazy validation */
   markAvailable(name: string): void {
     this.#providerStatus.set(name, 'available');
+    this.#providerErrors.delete(name);
   }
 }
 
