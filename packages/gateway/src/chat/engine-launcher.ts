@@ -32,13 +32,22 @@ export async function ensureEngineRunning(): Promise<EngineLauncherResult> {
 
   // 2. Auto-start engine in daemon mode
   const cliPath = getCliPath();
+  let stderrChunks: string[] = [];
   const child = spawn(process.execPath, [cliPath, 'serve', '--daemon'], {
     detached: true,
-    stdio: 'ignore',
+    stdio: ['ignore', 'ignore', 'pipe'],
   });
+
+  // Capture stderr so we can surface config/startup errors on timeout
+  child.stderr?.on('data', (data: Buffer) => {
+    const text = data.toString('utf-8');
+    stderrChunks.push(text);
+  });
+
   child.unref();
 
   if (!child.pid) {
+    child.stderr?.destroy();
     throw new Error('Failed to spawn engine daemon process');
   }
 
@@ -48,13 +57,19 @@ export async function ensureEngineRunning(): Promise<EngineLauncherResult> {
     await sleep(HEALTH_POLL_INTERVAL);
     const check = checkExistingPid(PID_PATH);
     if (check.alive) {
+      child.stderr?.destroy();
       return { alreadyRunning: false, pid: check.pid };
     }
   }
 
+  // Timeout — surface captured stderr to help the user diagnose
+  child.stderr?.destroy();
+  const stderrOutput = stderrChunks.join('').trim();
+  const detail = stderrOutput
+    ? `\nEngine stderr:\n${stderrOutput}`
+    : '\nTry running "zaivim serve --daemon" manually to see the full error.';
   throw new Error(
-    `Engine startup timed out after ${ENGINE_STARTUP_TIMEOUT}ms. ` +
-    'Try running "zaivim serve --daemon" manually.',
+    `Engine startup timed out after ${ENGINE_STARTUP_TIMEOUT}ms.${detail}`,
   );
 }
 

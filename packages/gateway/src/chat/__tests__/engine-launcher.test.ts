@@ -13,11 +13,18 @@ vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
 }));
 
+import { type EventEmitter } from 'node:events';
 import { checkExistingPid } from '@zaivim/engine';
 import { spawn } from 'node:child_process';
 
 // Import after mocks are set up
 const { ensureEngineRunning } = await import('../engine-launcher.js');
+
+function makeMockStderr(): EventEmitter {
+  const ee = new (require('node:events').EventEmitter)() as EventEmitter;
+  (ee as any).destroy = vi.fn();
+  return ee;
+}
 
 const mockCheckExistingPid = vi.mocked(checkExistingPid);
 const mockSpawn = vi.mocked(spawn);
@@ -43,7 +50,7 @@ describe('ensureEngineRunning', () => {
       .mockReturnValueOnce({ alive: false, pid: null, data: null }) // poll 1
       .mockReturnValueOnce({ alive: true, pid: 54321, data: null }); // poll 2
 
-    const mockChild = { unref: vi.fn(), pid: 11111 };
+    const mockChild = { unref: vi.fn(), pid: 11111, stderr: makeMockStderr() };
     mockSpawn.mockReturnValue(mockChild as any);
 
     const result = await ensureEngineRunning();
@@ -53,7 +60,7 @@ describe('ensureEngineRunning', () => {
     expect(mockSpawn).toHaveBeenCalledWith(
       process.execPath,
       expect.arrayContaining([expect.stringContaining('cli.js'), 'serve', '--daemon']),
-      expect.objectContaining({ detached: true, stdio: 'ignore' }),
+      expect.objectContaining({ detached: true, stdio: ['ignore', 'ignore', 'pipe'] }),
     );
   });
 
@@ -64,7 +71,7 @@ describe('ensureEngineRunning', () => {
     // The function will poll for 3s, so we accept the slow test
     // or we can reduce the polling behavior.
     mockCheckExistingPid.mockReturnValue({ alive: false, pid: null, data: null });
-    const mockChild = { unref: vi.fn(), pid: 11111 };
+    const mockChild = { unref: vi.fn(), pid: 11111, stderr: makeMockStderr() };
     mockSpawn.mockReturnValue(mockChild as any);
 
     // Use a race to avoid test running forever if logic changes
