@@ -28,6 +28,7 @@ import type { AgentDeps } from '../agent/index.js';
 import { chat as pipelineChat } from './chat.js';
 import type { ChatDeps } from './chat.js';
 import { findProjectRoot, scanProjectMeta, type ProjectRootResult } from './project-detector.js';
+import { join } from 'node:path';
 import { stat } from 'node:fs/promises';
 
 export { chat } from './chat.js';
@@ -288,7 +289,7 @@ export class Engine implements EngineAPI {
 
     for (const marker of markers) {
       try {
-        const st = await stat(marker.startsWith('pnpm') ? marker : marker);
+        const st = await stat(join(currentCtx.projectRoot, marker));
         const mtimeMs = st.mtimeMs;
         if (mtimeMs > latestMtime) {
           latestMtime = mtimeMs;
