@@ -7,7 +7,7 @@ export const PIPELINE_DEFAULTS = {
   maxToolCallRounds: 20,
   maxContextTokens: 102_400, // 128k * 80% (ADR-18)
   tokenEstimateCharsPerToken: 4,
-  keepRecentMessages: 500,
+  keepRecentMessages: 10,
   toolCallTimeout: 120_000,
 } as const;
 
