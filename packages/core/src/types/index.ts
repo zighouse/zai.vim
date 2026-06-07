@@ -75,7 +75,7 @@ export interface Message {
 
 export type ResponseChunk =
   | { type: 'text'; content: string }
-  | { type: 'tool_call'; name: string; arguments: Record<string, unknown> }
+  | { type: 'tool_call'; id: string; name: string; arguments: Record<string, unknown> }
   | { type: 'tool_result'; toolCallId: string; content: string }
   | { type: 'error'; code: string; message: string }
   | { type: 'done'; finishReason: string };
@@ -212,6 +212,26 @@ export interface ProviderCapabilities {
   readonly protocol?: 'openai-compatible' | 'anthropic-native';
 }
 
+// ---- Pipeline types ---------------------------------------------------------
+
+export interface PipelineChatRequest {
+  readonly sessionId: string;
+  readonly message: Message;
+  readonly signal?: AbortSignal;
+}
+
+export interface PipelineConfig {
+  readonly maxToolCallRounds?: number;
+  readonly maxContextTokens?: number;
+  readonly toolCallTimeout?: number;
+}
+
+export interface ChatResult {
+  readonly chunks: number;
+  readonly finishReason: string;
+  readonly firstTokenLatencyMs: number;
+}
+
 // ---- Skill types -----------------------------------------------------------
 
 export interface SkillInput {
@@ -248,6 +268,7 @@ export interface EngineAPI {
   closeSession(id: string): Promise<void>;
   pushSessionMessage(sessionId: string, msg: Message): void;
   createAgent(persona: PersonaConfig, options?: ForkOptions): AgentHandle;
+  chat(sessionId: string, message: Message, signal?: AbortSignal): AsyncIterable<ResponseChunk>;
   getHealth(): EngineHealth;
   destroy(options?: Partial<ShutdownOptions>): Promise<void>;
 }

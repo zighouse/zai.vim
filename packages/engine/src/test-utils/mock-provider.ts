@@ -15,7 +15,6 @@ export function createMockProvider(opts?: Partial<IProvider>): IProvider {
       vision: false,
       maxContextTokens: 128_000,
       protocol: 'openai-compatible',
-      protocol: 'openai-compatible',
     },
     chat: async function* (_req: ProviderChatRequest, _signal?: AbortSignal) {
       yield { type: 'text' as const, content: 'mock response' };

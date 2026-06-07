@@ -1,7 +1,7 @@
 // @zaivim/engine — createEngine() singleton factory
 // MVP: global singleton. Second call returns existing instance.
 
-import type { EngineAPI, EngineConfig, EngineHealth, ShutdownOptions, Session, ZaiConfig, Message } from '@zaivim/core';
+import type { EngineAPI, EngineConfig, EngineHealth, ShutdownOptions, Session, ZaiConfig, Message, ResponseChunk } from '@zaivim/core';
 import { EventEmitter } from 'node:events';
 import { EngineStateMachine } from './state-machine.js';
 import { removePidFile } from './pid-file.js';
@@ -142,6 +142,11 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
 
   createAgent(): never {
     throw new Error('Not implemented in this story');
+  }
+
+  async *chat(_sessionId: string, _message: Message, _signal?: AbortSignal): AsyncIterable<ResponseChunk> {
+    // Lifecycle engine delegates to pipeline module; stub until pipeline integration
+    yield { type: 'error', code: 'ENGINE_PROVIDER_ERROR', message: 'chat() not yet integrated in lifecycle engine' };
   }
 
   getHealth(): EngineHealth {

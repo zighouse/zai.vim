@@ -15,7 +15,7 @@ import type {
 import type { ISecurityProvider } from '@zaivim/core';
 import { randomUUID } from 'node:crypto';
 import type { ProviderRegistry } from '../provider/index.js';
-import type { SessionStore } from '../session/index.js';
+import type { ISessionStore } from '@zaivim/core';
 
 // ---- Agent lifecycle state machine (inline, separate from EngineStateMachine) ----
 
@@ -48,7 +48,7 @@ class AgentLifecycleSM {
 
 export interface AgentDeps {
   providerRegistry: ProviderRegistry;
-  sessionStore: SessionStore;
+  sessionStore: ISessionStore;
   securityProvider: ISecurityProvider;
   tools?: ToolDefinition[];
   signal?: AbortSignal;
@@ -59,7 +59,7 @@ export class AsyncGeneratorAgent implements AgentHandle {
   readonly persona: PersonaConfig;
 
   #providerRegistry: ProviderRegistry;
-  #sessionStore: SessionStore;
+  #sessionStore: ISessionStore;
   #securityProvider: ISecurityProvider;
   #tools: ToolDefinition[];
   #stateMachine: AgentLifecycleSM;
@@ -108,7 +108,7 @@ export class AsyncGeneratorAgent implements AgentHandle {
         });
       }
 
-      this.#sessionStore.appendMessage(sessionId, {
+      this.#sessionStore.pushMessage(sessionId, {
         ...message,
         id: message.id || randomUUID(),
         createdAt: Date.now(),

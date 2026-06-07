@@ -122,7 +122,7 @@ function harness(): void {
 
   // ---- ResponseChunk — discriminated union ----
   const cText: ResponseChunk = { type: 'text', content: '' };
-  const cTool: ResponseChunk = { type: 'tool_call', name: '', arguments: {} };
+  const cTool: ResponseChunk = { type: 'tool_call', id: '', name: '', arguments: {} };
   const cResult: ResponseChunk = { type: 'tool_result', toolCallId: '', content: '' };
   const cErr: ResponseChunk = { type: 'error', code: '', message: '' };
   const cDone: ResponseChunk = { type: 'done', finishReason: 'stop' };

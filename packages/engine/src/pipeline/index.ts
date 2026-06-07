@@ -11,14 +11,24 @@ import type {
   PersonaConfig,
   ForkOptions,
   ToolDefinition,
+  Message,
+  ResponseChunk,
 } from '@zaivim/core';
 import { type ISecurityProvider } from '@zaivim/core';
 import { loadConfig } from '../config/index.js';
-import { InMemorySessionStore } from '../session/index.js';
+import { InMemorySessionStoreFull } from '../session/index.js';
 import { SandboxManager, SecurityProvider, Auditor } from '../security/index.js';
 import { createProviderRegistry } from '../provider/index.js';
 import { AsyncGeneratorAgent } from '../agent/index.js';
 import type { AgentDeps } from '../agent/index.js';
+import { chat as pipelineChat } from './chat.js';
+import type { ChatDeps } from './chat.js';
+
+export { chat } from './chat.js';
+export { assembleContext, estimateTokens, trimContext, PIPELINE_DEFAULTS } from './context-assembler.js';
+export { executeToolCall, executeToolCalls, validateToolCalls } from './tool-executor.js';
+export { classifyProviderError } from './error-classifier.js';
+export { NullSecurityProvider } from './null-security.js';
 
 export class Engine implements EngineAPI {
   readonly version = '0.0.1';
@@ -27,7 +37,7 @@ export class Engine implements EngineAPI {
   get uptime(): number { return Date.now() - this.#startedAt; }
 
   #config: ZaiConfig;
-  #sessionStore: InMemorySessionStore;
+  #sessionStore: InMemorySessionStoreFull;
   #securityProvider: ISecurityProvider;
   #sandbox: SandboxManager;
   #auditor: Auditor;
@@ -38,7 +48,7 @@ export class Engine implements EngineAPI {
   constructor(tools?: ToolDefinition[], configOverrides?: Partial<ZaiConfig>) {
     this.#config = loadConfig(configOverrides);
 
-    this.#sessionStore = new InMemorySessionStore();
+    this.#sessionStore = new InMemorySessionStoreFull();
     this.#auditor = new Auditor();
     this.#sandbox = new SandboxManager(
       this.#config.sandbox.enabled,
@@ -100,11 +110,45 @@ export class Engine implements EngineAPI {
   }
 
   async closeSession(id: string): Promise<void> {
-    this.#sessionStore.close(id);
+    await this.#sessionStore.close(id);
   }
 
   pushSessionMessage(sessionId: string, msg: import('@zaivim/core').Message): void {
-    this.#sessionStore.appendMessage(sessionId, msg);
+    this.#sessionStore.pushMessage(sessionId, msg);
+  }
+
+  // ---- Chat (Pipeline) ----
+
+  async *chat(sessionId: string, message: Message, signal?: AbortSignal): AsyncIterable<ResponseChunk> {
+    this.#ensureNotDestroyed();
+
+    const session = this.#sessionStore.get(sessionId);
+    if (!session) {
+      yield { type: 'error', code: 'ENGINE_SESSION_NOT_FOUND', message: `Session not found: ${sessionId}` };
+      return;
+    }
+
+    let provider: import('@zaivim/core').IProvider;
+    try {
+      provider = this.#agentDeps.providerRegistry.defaultProvider;
+    } catch {
+      yield { type: 'error', code: 'ENGINE_PROVIDER_ERROR', message: 'No provider configured' };
+      return;
+    }
+
+    const emit = (event: string, data: Record<string, unknown>) => {
+      this.#auditor.log(sessionId, event, data);
+    };
+
+    const deps: ChatDeps = {
+      sessionStore: this.#sessionStore,
+      provider,
+      tools: this.#tools,
+      security: this.#securityProvider,
+      emit,
+    };
+
+    yield* pipelineChat(session, message, deps, signal);
   }
 
   // ---- Agent management ----

@@ -211,6 +211,7 @@ export class OpenAICompatibleProvider implements IProvider {
                 }
                 yield {
                   type: 'tool_call',
+                  id: String(tc.id ?? ''),
                   name: String(fn.name ?? ''),
                   arguments: args,
                 };
