@@ -380,10 +380,11 @@ export class ProviderRegistry {
       .map(([name]) => name);
   }
 
-  /** Get next available provider as fallback (excludes the given provider) */
-  getFallback(excludeName: string): IProvider | undefined {
+  /** Get next available provider as fallback (excludes the given providers) */
+  getFallback(excludeNames: string | string[]): IProvider | undefined {
+    const excludes = Array.isArray(excludeNames) ? excludeNames : [excludeNames];
     for (const name of this.listAvailableProviders()) {
-      if (name !== excludeName) {
+      if (!excludes.includes(name)) {
         return this.#providers.get(name);
       }
     }

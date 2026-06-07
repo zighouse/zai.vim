@@ -411,49 +411,52 @@ async function* callProviderWithRetryAndFallback(
       emit('provider.recovered', { provider: primaryProvider.name });
     }
   } catch (primaryErr) {
-    // Retry exhausted — try fallback providers
+    // Retry exhausted — try fallback providers recursively (AC5)
     if (!providerRegistry) throw primaryErr;
 
-    const fallback = providerRegistry.getFallback(primaryProvider.name);
-    if (!fallback) {
-      // No fallback — mark degraded and report
-      providerRegistry.markDegraded(primaryProvider.name, 'All retries exhausted');
-      emit('provider.status', {
-        status: 'degraded',
-        provider: primaryProvider.name,
-      });
-      throw primaryErr;
+    const excluded = [primaryProvider.name];
+    let lastError = primaryErr;
+    let foundWorkingFallback = false;
+
+    while (!foundWorkingFallback) {
+      const fallback = providerRegistry.getFallback(excluded);
+      if (!fallback) break;
+
+      excluded.push(fallback.name);
+      emit('provider.fallback', { from: primaryProvider.name, to: fallback.name });
+
+      try {
+        yield* retryWithBackoff(
+          () => fallback.chat(request, signal),
+          retryConfig,
+          signal,
+          {
+            onRetry: (attempt, maxAttempts, delayMs) => {
+              emit('provider.retry', {
+                provider: fallback.name,
+                attempt,
+                maxAttempts,
+                delayMs,
+              });
+            },
+            onRateLimited: (retryAfterMs) => {
+              providerRegistry?.reportRateLimit(fallback.name, retryAfterMs);
+            },
+          },
+        );
+
+        providerRegistry.markAvailable(fallback.name);
+        foundWorkingFallback = true;
+      } catch (fallbackErr) {
+        providerRegistry.markDegraded(fallback.name, 'Fallback retries exhausted');
+        emit('provider.status', { status: 'degraded', provider: fallback.name });
+        lastError = fallbackErr;
+      }
     }
 
-    // Try fallback provider
-    emit('provider.fallback', { from: primaryProvider.name, to: fallback.name });
-
-    try {
-      yield* retryWithBackoff(
-        () => fallback.chat(request, signal),
-        retryConfig,
-        signal,
-        {
-          onRetry: (attempt, maxAttempts, delayMs) => {
-            emit('provider.retry', {
-              provider: fallback.name,
-              attempt,
-              maxAttempts,
-              delayMs,
-            });
-          },
-          onRateLimited: (retryAfterMs) => {
-            providerRegistry?.reportRateLimit(fallback.name, retryAfterMs);
-          },
-        },
-      );
-
-      providerRegistry.markAvailable(fallback.name);
-    } catch (fallbackErr) {
-      // Fallback also failed
-      providerRegistry.markDegraded(primaryProvider.name, 'Primary and fallback both failed');
-      providerRegistry.markDegraded(fallback.name, 'Fallback retries exhausted');
-      throw primaryErr; // Throw original error
+    if (!foundWorkingFallback) {
+      emit('provider.status', { status: 'degraded', provider: primaryProvider.name });
+      throw lastError;
     }
   } finally {
     if (providerRegistry) {
