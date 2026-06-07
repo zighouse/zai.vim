@@ -164,8 +164,11 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
   }
 
   async *chat(_sessionId: string, _message: Message, _signal?: AbortSignal): AsyncIterable<ResponseChunk> {
-    // Lifecycle engine delegates to pipeline module; stub until pipeline integration
-    yield { type: 'error', code: 'ENGINE_PROVIDER_ERROR', message: 'chat() not yet integrated in lifecycle engine' };
+    // This Engine implementation (EngineImpl) is the lifecycle/daemon engine used by
+    // the gateway for session CRUD and process management. The streaming chat pipeline
+    // lives in @zaivim/engine/pipeline (Engine class in pipeline/index.ts).
+    // These are intentionally separate: the lifecycle engine is not meant to host chat().
+    throw new Error('chat() is not available on the lifecycle engine. Use the pipeline Engine from @zaivim/engine/pipeline.');
   }
 
   getHealth(): EngineHealth {
