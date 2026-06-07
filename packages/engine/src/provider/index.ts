@@ -380,13 +380,15 @@ export class ProviderRegistry {
       .map(([name]) => name);
   }
 
-  /** Get next available provider as fallback (excludes the given providers) */
+  /** Get next available provider as fallback (excludes the given providers and rate-limited ones) */
   getFallback(excludeNames: string | string[]): IProvider | undefined {
     const excludes = Array.isArray(excludeNames) ? excludeNames : [excludeNames];
     for (const name of this.listAvailableProviders()) {
-      if (!excludes.includes(name)) {
-        return this.#providers.get(name);
-      }
+      if (excludes.includes(name)) continue;
+      // Skip rate-limited providers to avoid immediate failure
+      const rateState = this.#rateLimitCounter.get(name);
+      if (rateState?.limited && Date.now() < rateState.resumedAt) continue;
+      return this.#providers.get(name);
     }
     return undefined;
   }
