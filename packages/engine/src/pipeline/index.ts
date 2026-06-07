@@ -189,7 +189,6 @@ export class Engine implements EngineAPI {
       // Fire-and-forget async detection (non-blocking — session.projectDir is already set)
       const projectDir = session.projectDir;
       if (projectDir) {
-        const { findProjectRoot, scanProjectMeta } = await import('./project-detector.js');
         const { root, detected } = findProjectRoot(projectDir);
         scanProjectMeta(root, detected).then(ctx => {
           this.#setProjectContextCache(sessionId, ctx);
@@ -312,7 +311,6 @@ export class Engine implements EngineAPI {
     projectRoot: string,
     emit: (event: string, data: Record<string, unknown>) => void,
   ): Promise<void> {
-    const { scanProjectMeta } = await import('./project-detector.js');
     const newCtx = await scanProjectMeta(projectRoot, true);
     this.#setProjectContextCache(sessionId, newCtx);
     this.#projectMtimeCache.set(sessionId, Date.now());
