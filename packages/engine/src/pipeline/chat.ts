@@ -14,7 +14,7 @@ import type {
   ChatResult,
 } from '@zaivim/core';
 import { ZaiNetworkError } from '@zaivim/core';
-import { assembleContext, PIPELINE_DEFAULTS, estimateTokens } from './context-assembler.js';
+import { assembleContext, PIPELINE_DEFAULTS } from './context-assembler.js';
 import { executeToolCalls, validateToolCalls } from './tool-executor.js';
 import type { ToolCallRequest } from './tool-executor.js';
 import { classifyProviderError } from './error-classifier.js';
@@ -86,169 +86,181 @@ export async function* chat(
   // Working copy of messages for this conversation turn
   const workingMessages = [...contextMessages];
 
-  while (round < maxToolCallRounds) {
-    signal?.throwIfAborted();
+  // Track whether the pipeline completed normally (not aborted/interrupted)
+  // Used by the finally block to decide if the AI response should be persisted (AC11)
+  let completed = false;
 
-    const request = {
-      messages: workingMessages,
-      sessionId: session.id,
-      temperature: persona?.temperature ?? session.config?.defaults?.temperature ?? 0.7,
-      maxTokens: persona?.maxTokens ?? session.config?.defaults?.maxTokens ?? 4096,
-    };
+  try {
+    while (round < maxToolCallRounds) {
+      signal?.throwIfAborted();
 
-    const toolCalls: ToolCallRequest[] = [];
-    let chunksDelivered = 0;
+      const request = {
+        messages: workingMessages,
+        sessionId: session.id,
+        temperature: persona?.temperature ?? session.config?.defaults?.temperature ?? 0.7,
+        maxTokens: persona?.maxTokens ?? session.config?.defaults?.maxTokens ?? 4096,
+      };
 
-    // 5. Call provider, yield chunks
-    try {
-      for await (const chunk of provider.chat(request, signal)) {
-        signal?.throwIfAborted();
+      const toolCalls: ToolCallRequest[] = [];
+      let chunksDelivered = 0;
 
-        // First token latency measurement (AC2)
-        if (!firstToken && chunk.type === 'text') {
-          firstToken = true;
-          const latency = performance.now() - startTime;
-          emit('perf.first_token', {
-            sessionId: session.id,
-            latencyMs: Math.round(latency),
-          });
+      // 5. Call provider, yield chunks
+      try {
+        for await (const chunk of provider.chat(request, signal)) {
+          signal?.throwIfAborted();
+
+          // First token latency measurement (AC2)
+          if (!firstToken && chunk.type === 'text') {
+            firstToken = true;
+            const latency = performance.now() - startTime;
+            emit('perf.first_token', {
+              sessionId: session.id,
+              latencyMs: Math.round(latency),
+            });
+          }
+
+          // Collect tool calls for execution
+          if (chunk.type === 'tool_call') {
+            toolCalls.push({
+              id: chunk.id,
+              name: chunk.name,
+              arguments: chunk.arguments,
+            });
+          }
+
+          // Accumulate text content for persistence
+          if (chunk.type === 'text') {
+            fullContent += chunk.content;
+          }
+
+          // Track done reason
+          if (chunk.type === 'done') {
+            finishReason = chunk.finishReason;
+          }
+
+          yield chunk;
+          totalChunks++;
+          chunksDelivered++;
+        }
+      } catch (err) {
+        // AbortError: propagate (user cancelled)
+        if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
+          // AC6: session remains active; don't persist partial response
+          return;
         }
 
-        // Collect tool calls for execution
-        if (chunk.type === 'tool_call') {
-          toolCalls.push({
-            id: chunk.id,
-            name: chunk.name,
-            arguments: chunk.arguments,
-          });
+        // Provider error: classify and yield error chunk
+        if (err instanceof ZaiNetworkError) {
+          const classified = classifyProviderError(err);
+
+          // Stream interrupted notification (AC7)
+          if (chunksDelivered > 0) {
+            emit('chat.interrupted', {
+              sessionId: session.id,
+              chunksDelivered,
+              reason: err.message,
+            });
+          }
+
+          // Provider status notification
+          if (classified.recoverable) {
+            emit('provider.status', { status: 'degraded', provider: provider.name });
+          }
+
+          yield { type: 'error', code: classified.code, message: classified.message };
+          return;
         }
 
-        // Accumulate text content for persistence
-        if (chunk.type === 'text') {
-          fullContent += chunk.content;
-        }
+        // Unknown error: yield generic error chunk
+        yield {
+          type: 'error',
+          code: 'ENGINE_PROVIDER_ERROR',
+          message: err instanceof Error ? err.message : String(err),
+        };
+        return;
+      }
 
-        // Track done reason
-        if (chunk.type === 'done') {
-          finishReason = chunk.finishReason;
-        }
+      // 6. No tool calls: done
+      if (toolCalls.length === 0) break;
 
-        yield chunk;
+      // 7. Validate tool calls (AC13: SSE injection protection)
+      const { valid, errors } = validateToolCalls(toolCalls, tools);
+      for (const errChunk of errors) {
+        yield errChunk;
         totalChunks++;
-        chunksDelivered++;
-      }
-    } catch (err) {
-      // AbortError: propagate (user cancelled)
-      if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
-        return;
       }
 
-      // Provider error: classify and yield error chunk
-      if (err instanceof ZaiNetworkError) {
-        const classified = classifyProviderError(err);
-
-        // Stream interrupted notification (AC7)
-        if (chunksDelivered > 0) {
-          emit('chat.interrupted', {
-            sessionId: session.id,
-            chunksDelivered,
-            reason: err.message,
-          });
-        }
-
-        // Provider status notification
-        if (classified.recoverable) {
-          emit('provider.status', { status: 'degraded', provider: provider.name });
-        }
-
-        yield { type: 'error', code: classified.code, message: classified.message };
-        return;
+      if (valid.length === 0) {
+        // All tool calls invalid, let AI decide next step
+        break;
       }
 
-      // Unknown error: yield generic error chunk
+      // 8. Execute valid tool calls
+      const toolResults = await executeToolCalls(valid, tools, {
+        sessionId: session.id,
+        sandbox: session.config?.sandbox?.workDir ?? '/tmp',
+        signal,
+        security,
+        audit: (action, detail) => emit('tool.audit', { action, ...detail }),
+        timeout: toolCallTimeout,
+        emit,
+      });
+
+      // 9. Yield tool_result chunks and add to working messages
+      for (let i = 0; i < toolResults.length; i++) {
+        const resultMsg = toolResults[i]!;
+        const tc = valid[i]!;
+
+        const toolResultChunk: ResponseChunk = {
+          type: 'tool_result',
+          toolCallId: tc.id,
+          content: resultMsg.content,
+        };
+        yield toolResultChunk;
+        totalChunks++;
+
+        // Add assistant tool_call message to working context
+        const assistantMsg: Message = {
+          id: `tc-${tc.id}`,
+          role: 'assistant',
+          content: '',
+          toolCalls: [{ id: tc.id, name: tc.name, arguments: tc.arguments }],
+        };
+        workingMessages.push(assistantMsg);
+        workingMessages.push(resultMsg);
+
+        // Persist to session (fire-and-forget)
+        sessionStore.pushMessage(session.id, resultMsg);
+      }
+
+      round++;
+    }
+
+    // 10. Max rounds exceeded
+    if (round >= maxToolCallRounds) {
       yield {
         type: 'error',
-        code: 'ENGINE_PROVIDER_ERROR',
-        message: err instanceof Error ? err.message : String(err),
+        code: 'PIPELINE_MAX_TOOL_ROUNDS_EXCEEDED',
+        message: `Exceeded max tool call rounds: ${maxToolCallRounds}`,
       };
-      return;
     }
 
-    // 6. No tool calls: done
-    if (toolCalls.length === 0) break;
-
-    // 7. Validate tool calls (AC13: SSE injection protection)
-    const { valid, errors } = validateToolCalls(toolCalls, tools);
-    for (const errChunk of errors) {
-      yield errChunk;
-      totalChunks++;
-    }
-
-    if (valid.length === 0) {
-      // All tool calls invalid, let AI decide next step
-      break;
-    }
-
-    // 8. Execute valid tool calls
-    const toolResults = await executeToolCalls(valid, tools, {
-      sessionId: session.id,
-      sandbox: session.config?.sandbox?.workDir ?? '/tmp',
-      signal,
-      security,
-      audit: (action, detail) => emit('tool.audit', { action, ...detail }),
-      timeout: toolCallTimeout,
-      emit,
-    });
-
-    // 9. Yield tool_result chunks and add to working messages
-    for (let i = 0; i < toolResults.length; i++) {
-      const resultMsg = toolResults[i]!;
-      const tc = valid[i]!;
-
-      const toolResultChunk: ResponseChunk = {
-        type: 'tool_result',
-        toolCallId: tc.id,
-        content: resultMsg.content,
-      };
-      yield toolResultChunk;
-      totalChunks++;
-
-      // Add assistant tool_call message to working context
-      const assistantMsg: Message = {
-        id: `tc-${tc.id}`,
+    completed = true;
+  } finally {
+    // 11. Persist complete AI response (AC11: only complete responses persist)
+    // The finally block ensures we don't leak partial responses:
+    //   - Normal completion → completed=true → persist
+    //   - Consumer break/return/cancel → completed=false → skip
+    //   - AbortError/Provider error → return before completed=true → skip
+    if (fullContent && completed) {
+      const assistantMessage: Message = {
+        id: `resp-${Date.now()}`,
         role: 'assistant',
-        content: '',
-        toolCalls: [{ id: tc.id, name: tc.name, arguments: tc.arguments }],
+        content: fullContent,
       };
-      workingMessages.push(assistantMsg);
-      workingMessages.push(resultMsg);
-
-      // Persist to session (fire-and-forget)
-      sessionStore.pushMessage(session.id, resultMsg);
+      // Fire-and-forget persistence
+      sessionStore.pushMessage(session.id, assistantMessage);
     }
-
-    round++;
-  }
-
-  // 10. Max rounds exceeded
-  if (round >= maxToolCallRounds) {
-    yield {
-      type: 'error',
-      code: 'PIPELINE_MAX_TOOL_ROUNDS_EXCEEDED',
-      message: `Exceeded max tool call rounds: ${maxToolCallRounds}`,
-    };
-  }
-
-  // 11. Persist complete AI response (AC11: only complete responses)
-  // The fullContent accumulated during streaming represents the complete text response
-  if (fullContent) {
-    const assistantMessage: Message = {
-      id: `resp-${Date.now()}`,
-      role: 'assistant',
-      content: fullContent,
-    };
-    // Fire-and-forget persistence
-    sessionStore.pushMessage(session.id, assistantMessage);
   }
 }
 
