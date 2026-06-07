@@ -53,6 +53,7 @@ export async function createChatRepl(opts: ReplOptions): Promise<ReplResult> {
   const mdRenderer: MarkdownRenderer | null = renderMarkdown ? createMarkdownRenderer() : null;
   let abortController: AbortController | null = null;
   let isStreaming = false;
+  let collectingMultiline = false;
 
   const rl = readline.createInterface({
     input,
@@ -101,6 +102,9 @@ export async function createChatRepl(opts: ReplOptions): Promise<ReplResult> {
     });
 
     rl.on('line', async (rawLine: string) => {
+      // During multiline collection, defer to the collect handler
+      if (collectingMultiline) return;
+
       const line = rawLine.trim();
 
       // Empty line — re-prompt
@@ -127,7 +131,12 @@ export async function createChatRepl(opts: ReplOptions): Promise<ReplResult> {
       // Check for line continuation (trailing \)
       let fullMessage = line;
       if (line.endsWith('\\')) {
-        fullMessage = await collectMultiline(rl, line);
+        fullMessage = await collectMultiline(
+          rl,
+          () => collectingMultiline,
+          (v) => { collectingMultiline = v; },
+          line,
+        );
       }
 
       // Send message and stream response
@@ -207,8 +216,14 @@ export function printStreamChunk(
 }
 
 /** Collect multiline input (lines ending with \). */
-async function collectMultiline(rl: readline.Interface, firstLine: string): Promise<string> {
+async function collectMultiline(
+  rl: readline.Interface,
+  getCollectingFlag: () => boolean,
+  setCollectingFlag: (v: boolean) => void,
+  firstLine: string,
+): Promise<string> {
   const lines: string[] = [firstLine.slice(0, -1)]; // Remove trailing \
+  setCollectingFlag(true);
 
   return new Promise((resolve) => {
     const collect = (line: string) => {
@@ -217,6 +232,7 @@ async function collectMultiline(rl: readline.Interface, firstLine: string): Prom
       } else {
         lines.push(line);
         rl.removeListener('line', collect);
+        setCollectingFlag(false);
         resolve(lines.join('\n'));
       }
     };
