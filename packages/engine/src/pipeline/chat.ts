@@ -103,11 +103,25 @@ export async function* chat(
 
       const toolCalls: ToolCallRequest[] = [];
       let chunksDelivered = 0;
+      let prevChunkTime = 0;
 
       // 5. Call provider, yield chunks
       try {
         for await (const chunk of provider.chat(request, signal)) {
           signal?.throwIfAborted();
+
+          // Chunk interval monitoring (AC3)
+          const now = performance.now();
+          if (prevChunkTime !== 0) {
+            const chunkInterval = now - prevChunkTime;
+            if (chunkInterval > 50) {
+              emit('perf.chunk_interval', {
+                sessionId: session.id,
+                intervalMs: Math.round(chunkInterval),
+              });
+            }
+          }
+          prevChunkTime = now;
 
           // First token latency measurement (AC2)
           if (!firstToken && chunk.type === 'text') {
