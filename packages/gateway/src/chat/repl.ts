@@ -120,6 +120,7 @@ export async function createChatRepl(opts: ReplOptions): Promise<ReplResult> {
           engine,
           output,
           rl,
+          currentSessionId,
           setCurrentSession: (id: string) => { currentSessionId = id; },
           cleanup: (reason: 'exit' | 'eof') => cleanup(reason),
         });
@@ -261,19 +262,20 @@ async function handleSpecialCommand(
     engine: EngineAPI;
     output: NodeJS.WritableStream;
     rl: readline.Interface;
+    currentSessionId: string;
     setCurrentSession: (id: string) => void;
     cleanup: (reason: 'exit' | 'eof') => void;
   },
 ): Promise<'exit' | 'continue'> {
   const { command, args } = parsed;
-  const { engine, output, rl, setCurrentSession, cleanup } = ctx;
+  const { engine, output, rl, currentSessionId, setCurrentSession, cleanup } = ctx;
 
   switch (command) {
     case 'exit':
     case 'quit': {
       // Save session and exit
       try {
-        await engine.closeSession(ctx.setCurrentSession.length > 0 ? '' : '');
+        await engine.closeSession(currentSessionId);
       } catch {
         // Best-effort save
       }
