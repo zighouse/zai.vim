@@ -9,6 +9,7 @@ import { removePidFile } from './pid-file.js';
 import { ShutdownSequencer, type ShutdownDependencies } from './shutdown-sequencer.js';
 import { JsonlSessionStore, type StoreNotification } from '../session/jsonl-store.js';
 import { SessionLifecycleManager, type LifecycleNotification } from '../session/lifecycle-manager.js';
+import { getLastActivityAt } from '../session/index.js';
 
 export class EngineImpl extends EventEmitter implements EngineAPI {
   readonly version: string;
@@ -135,9 +136,7 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
       status: s.status,
       messageCount: s.messages.length,
       projectDir: s.projectDir,
-      lastActivityAt: s.messages.length > 0
-        ? (s.messages[s.messages.length - 1]!.createdAt ?? s.createdAt)
-        : s.createdAt,
+      lastActivityAt: getLastActivityAt(s),
     }));
   }
 

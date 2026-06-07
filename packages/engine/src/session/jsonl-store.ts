@@ -12,6 +12,7 @@ import type {
   ZaiConfig,
 } from '@zaivim/core';
 import { ZaiSessionNotFoundError } from '@zaivim/core';
+import { getLastActivityAt } from './index.js';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
@@ -103,12 +104,8 @@ export class JsonlSessionStore extends EventEmitter implements ISessionStore {
     const sortBy = filter?.sortBy ?? 'createdAt';
     const sortOrder = filter?.sortOrder ?? 'desc';
     sessions.sort((a, b) => {
-      const aVal = sortBy === 'lastActivityAt'
-        ? (a.messages.length > 0 ? (a.messages[a.messages.length - 1]!.createdAt ?? a.createdAt) : a.createdAt)
-        : a.createdAt;
-      const bVal = sortBy === 'lastActivityAt'
-        ? (b.messages.length > 0 ? (b.messages[b.messages.length - 1]!.createdAt ?? b.createdAt) : b.createdAt)
-        : b.createdAt;
+      const aVal = sortBy === 'lastActivityAt' ? getLastActivityAt(a) : a.createdAt;
+      const bVal = sortBy === 'lastActivityAt' ? getLastActivityAt(b) : b.createdAt;
       return sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
     });
 

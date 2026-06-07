@@ -12,6 +12,13 @@ export { SessionLifecycleManager } from './lifecycle-manager.js';
 export type { SessionLifecycleManagerOptions, LifecycleNotification } from './lifecycle-manager.js';
 export { InMemorySessionStoreFull } from './memory-store.js';
 
+/** Derive the last activity timestamp for a session from its latest message. */
+export function getLastActivityAt(session: Session): number {
+  const messages = session.messages;
+  if (messages.length === 0) return session.createdAt;
+  return messages[messages.length - 1]!.createdAt ?? session.createdAt;
+}
+
 export interface SessionStore {
   create(config: ZaiConfig): Session;
   get(id: string): Session | undefined;

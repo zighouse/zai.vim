@@ -18,7 +18,7 @@ import type {
 import { EventEmitter } from 'node:events';
 import { type ISecurityProvider, type ISessionStore, ZaiSessionNotFoundError } from '@zaivim/core';
 import { loadConfig } from '../config/index.js';
-import { InMemorySessionStoreFull } from '../session/index.js';
+import { InMemorySessionStoreFull, getLastActivityAt } from '../session/index.js';
 import { SessionLifecycleManager } from '../session/lifecycle-manager.js';
 import { SandboxManager, SecurityProvider, Auditor } from '../security/index.js';
 import { createProviderRegistry } from '../provider/index.js';
@@ -126,9 +126,7 @@ export class Engine implements EngineAPI {
       status: s.status,
       messageCount: s.messages.length,
       projectDir: s.projectDir,
-      lastActivityAt: s.messages.length > 0
-        ? (s.messages[s.messages.length - 1]!.createdAt ?? s.createdAt)
-        : s.createdAt,
+      lastActivityAt: getLastActivityAt(s),
     }));
   }
 
