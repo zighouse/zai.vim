@@ -65,7 +65,7 @@ describe('ensureEngineRunning', () => {
     expect(result.pid).toBe(54321);
     expect(mockSpawn).toHaveBeenCalledWith(
       process.execPath,
-      expect.arrayContaining([expect.stringContaining('cli.js'), 'serve', '--daemon']),
+      expect.arrayContaining([expect.stringMatching(/cli\.(js|ts)$/), 'serve', '--daemon']),
       expect.objectContaining({ detached: true, stdio: ['ignore', 'ignore', 'pipe'] }),
     );
   });

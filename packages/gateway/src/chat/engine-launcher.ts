@@ -4,7 +4,8 @@
 import { checkExistingPid, readPidFile } from '@zaivim/engine';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 
 const PID_PATH = join(homedir(), '.zaivim', 'engine.pid');
@@ -75,11 +76,21 @@ export async function ensureEngineRunning(): Promise<EngineLauncherResult> {
 
 /** Resolve the path to the CLI entry point for daemon spawn. */
 function getCliPath(): string {
-  // In production: dist/cli.js relative to this file
+  // In production: dist/chat/engine-launcher.js → dist/cli.js
   const thisFile = fileURLToPath(import.meta.url);
   const distDir = dirname(thisFile);
-  // chat/engine-launcher.js → dist/cli.js (both in dist/)
-  return join(distDir, '..', 'cli.js');
+  const candidates = [
+    join(distDir, '..', 'cli.js'),       // sibling of dist/chat/
+    join(distDir, '..', '..', 'cli.ts'),  // source fallback during dev
+    resolve(join(distDir, '..', '..', '..', 'gateway', 'src', 'cli.ts')), // monorepo root fallback
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  // Last resort — let spawn fail with a descriptive error
+  return candidates[0]!;
 }
 
 /** Verify a PID is alive using signal 0 (no actual signal sent). */
