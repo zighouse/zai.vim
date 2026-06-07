@@ -14,6 +14,7 @@ import type {
   Message,
   ResponseChunk,
 } from '@zaivim/core';
+import { EventEmitter } from 'node:events';
 import { type ISecurityProvider } from '@zaivim/core';
 import { loadConfig } from '../config/index.js';
 import { InMemorySessionStoreFull } from '../session/index.js';
@@ -33,6 +34,8 @@ export { NullSecurityProvider } from './null-security.js';
 export class Engine implements EngineAPI {
   readonly version = '0.0.1';
   readonly #startedAt = Date.now();
+  /** Event emitter for ADR-13 notifications (perf.*, chat.*, session.*, tool.*). */
+  readonly events = new EventEmitter();
 
   get uptime(): number { return Date.now() - this.#startedAt; }
 
@@ -139,6 +142,7 @@ export class Engine implements EngineAPI {
 
     const emit = (event: string, data: Record<string, unknown>) => {
       this.#auditor.log(sessionId, event, data);
+      this.events.emit(event, data);
     };
 
     const deps: ChatDeps = {
