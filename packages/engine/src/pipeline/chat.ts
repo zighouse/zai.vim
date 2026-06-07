@@ -15,6 +15,7 @@ import type {
 } from '@zaivim/core';
 import { ZaiNetworkError } from '@zaivim/core';
 import { assembleContext, PIPELINE_DEFAULTS } from './context-assembler.js';
+import { formatAttachments } from './file-attachment.js';
 import { executeToolCalls, validateToolCalls } from './tool-executor.js';
 import type { ToolCallRequest } from './tool-executor.js';
 import { classifyProviderError } from './error-classifier.js';
@@ -28,6 +29,7 @@ export interface ChatDeps {
   readonly config?: PipelineConfig;
   readonly persona?: PersonaConfig;
   readonly emit?: (event: string, data: Record<string, unknown>) => void;
+  readonly onMessagePushed?: (sessionId: string) => void;
 }
 
 type EmitFn = (event: string, data: Record<string, unknown>) => void;
@@ -50,6 +52,7 @@ export async function* chat(
     config = {},
     persona,
     emit = (() => {}),
+    onMessagePushed,
   } = deps;
 
   const maxToolCallRounds = config.maxToolCallRounds ?? PIPELINE_DEFAULTS.maxToolCallRounds;
@@ -57,12 +60,14 @@ export async function* chat(
 
   // 1. Append user message to session
   sessionStore.pushMessage(session.id, message);
+  onMessagePushed?.(session.id);
 
   // 2. Assemble context (history + system prompt + token trimming)
   const { messages: contextMessages } = assembleContext(session, persona, {
     maxContextTokens: config.maxContextTokens ?? PIPELINE_DEFAULTS.maxContextTokens,
     sessionId: session.id,
     emit,
+    formatAttachments,
   });
 
   // 3. Check provider streaming capability

@@ -6,6 +6,7 @@ import type {
   EngineAPI,
   EngineHealth,
   Session,
+  SessionSummary,
   ZaiConfig,
   AgentHandle,
   PersonaConfig,
@@ -15,9 +16,10 @@ import type {
   ResponseChunk,
 } from '@zaivim/core';
 import { EventEmitter } from 'node:events';
-import { type ISecurityProvider } from '@zaivim/core';
+import { type ISecurityProvider, type ISessionStore, ZaiSessionNotFoundError } from '@zaivim/core';
 import { loadConfig } from '../config/index.js';
 import { InMemorySessionStoreFull } from '../session/index.js';
+import { SessionLifecycleManager } from '../session/lifecycle-manager.js';
 import { SandboxManager, SecurityProvider, Auditor } from '../security/index.js';
 import { createProviderRegistry } from '../provider/index.js';
 import { AsyncGeneratorAgent } from '../agent/index.js';
@@ -30,6 +32,7 @@ export { assembleContext, estimateTokens, trimContext, PIPELINE_DEFAULTS } from 
 export { executeToolCall, executeToolCalls, validateToolCalls } from './tool-executor.js';
 export { classifyProviderError } from './error-classifier.js';
 export { NullSecurityProvider } from './null-security.js';
+export { resolveAttachments, formatAttachments } from './file-attachment.js';
 
 export class Engine implements EngineAPI {
   readonly version = '0.0.1';
@@ -40,7 +43,8 @@ export class Engine implements EngineAPI {
   get uptime(): number { return Date.now() - this.#startedAt; }
 
   #config: ZaiConfig;
-  #sessionStore: InMemorySessionStoreFull;
+  #sessionStore: ISessionStore;
+  #lifecycleManager: SessionLifecycleManager;
   #securityProvider: ISecurityProvider;
   #sandbox: SandboxManager;
   #auditor: Auditor;
@@ -48,10 +52,17 @@ export class Engine implements EngineAPI {
   #agentDeps: AgentDeps;
   #destroyed = false;
 
-  constructor(tools?: ToolDefinition[], configOverrides?: Partial<ZaiConfig>) {
+  constructor(tools?: ToolDefinition[], configOverrides?: Partial<ZaiConfig>, sessionStore?: ISessionStore) {
     this.#config = loadConfig(configOverrides);
 
-    this.#sessionStore = new InMemorySessionStoreFull();
+    this.#sessionStore = sessionStore ?? new InMemorySessionStoreFull();
+    this.#lifecycleManager = new SessionLifecycleManager(this.#sessionStore);
+
+    // Forward lifecycle notifications as engine events
+    this.#lifecycleManager.on('lifecycle.notification', (n: { type: string; sessionId: string; [k: string]: unknown }) => {
+      this.#auditor.log(n.sessionId, n.type, n);
+      this.events.emit(n.type, n);
+    });
     this.#auditor = new Auditor();
     this.#sandbox = new SandboxManager(
       this.#config.sandbox.enabled,
@@ -107,14 +118,30 @@ export class Engine implements EngineAPI {
     return this.#sessionStore.get(id);
   }
 
-  listSessions(filter?: { status?: import('@zaivim/core').SessionStatus }): Session[] {
-    const all = this.#sessionStore.list();
-    if (!filter?.status) return all;
-    return all.filter(s => s.status === filter.status);
+  listSessions(filter?: { status?: import('@zaivim/core').SessionStatus; limit?: number; offset?: number; sortBy?: 'createdAt' | 'lastActivityAt'; sortOrder?: 'asc' | 'desc' }): SessionSummary[] {
+    const sessions = this.#sessionStore.list(filter);
+    return sessions.map(s => ({
+      id: s.id,
+      createdAt: s.createdAt,
+      status: s.status,
+      messageCount: s.messages.length,
+      projectDir: s.projectDir,
+      lastActivityAt: s.messages.length > 0
+        ? (s.messages[s.messages.length - 1]!.createdAt ?? s.createdAt)
+        : s.createdAt,
+    }));
   }
 
   async closeSession(id: string): Promise<void> {
     await this.#sessionStore.close(id);
+  }
+
+  async recoverSession(id: string): Promise<Session> {
+    this.#ensureNotDestroyed();
+    const sessions = await this.#sessionStore.recoverFromDisk();
+    const session = sessions.find(s => s.id === id);
+    if (!session) throw new ZaiSessionNotFoundError(id);
+    return session;
   }
 
   pushSessionMessage(sessionId: string, msg: import('@zaivim/core').Message): void {
@@ -151,6 +178,7 @@ export class Engine implements EngineAPI {
       tools: this.#tools,
       security: this.#securityProvider,
       emit,
+      onMessagePushed: (sid: string) => this.#lifecycleManager.checkMessageLimit(sid),
     };
 
     yield* pipelineChat(session, message, deps, signal);
@@ -213,10 +241,11 @@ let instance: Engine | undefined;
 export function createPipelineEngine(
   tools?: ToolDefinition[],
   configOverrides?: Partial<ZaiConfig>,
+  sessionStore?: ISessionStore,
 ): EngineAPI {
   if (instance) {
     return instance as EngineAPI;
   }
-  instance = new Engine(tools, configOverrides);
+  instance = new Engine(tools, configOverrides, sessionStore);
   return instance as EngineAPI;
 }

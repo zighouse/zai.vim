@@ -141,3 +141,89 @@ describe('Engine.chat() integration', () => {
     })()).rejects.toThrow('Engine has been destroyed');
   });
 });
+
+describe('Engine.listSessions() — pagination (AC4)', () => {
+  it('returns SessionSummary[] with correct shape', async () => {
+    const engine = new Engine([], {
+      language: 'en',
+      sandbox: { enabled: false, type: 'none', workDir: '/tmp', timeout: 30000 },
+      providers: {},
+      defaults: { provider: '', model: '', temperature: 0.7, maxTokens: 4096 },
+    });
+
+    await engine.createSession();
+    await engine.createSession();
+
+    const list = engine.listSessions();
+    expect(list.length).toBe(2);
+    expect(list[0]).toHaveProperty('id');
+    expect(list[0]).toHaveProperty('createdAt');
+    expect(list[0]).toHaveProperty('status');
+    expect(list[0]).toHaveProperty('messageCount');
+  });
+
+  it('respects limit parameter', async () => {
+    const engine = new Engine([], {
+      language: 'en',
+      sandbox: { enabled: false, type: 'none', workDir: '/tmp', timeout: 30000 },
+      providers: {},
+      defaults: { provider: '', model: '', temperature: 0.7, maxTokens: 4096 },
+    });
+
+    for (let i = 0; i < 10; i++) await engine.createSession();
+
+    expect(engine.listSessions({ limit: 3 })).toHaveLength(3);
+    expect(engine.listSessions({ limit: 20 })).toHaveLength(10);
+  });
+
+  it('filters by status', async () => {
+    const engine = new Engine([], {
+      language: 'en',
+      sandbox: { enabled: false, type: 'none', workDir: '/tmp', timeout: 30000 },
+      providers: {},
+      defaults: { provider: '', model: '', temperature: 0.7, maxTokens: 4096 },
+    });
+
+    const s1 = await engine.createSession();
+    const s2 = await engine.createSession();
+    await engine.closeSession(s1.id);
+
+    const active = engine.listSessions({ status: 'active' });
+    expect(active).toHaveLength(1);
+    expect(active[0]!.id).toBe(s2.id);
+  });
+});
+
+describe('Engine — multi-session isolation (AC1)', () => {
+  it('sessions store independent message lists', async () => {
+    const engine = new Engine([], {
+      language: 'en',
+      sandbox: { enabled: false, type: 'none', workDir: '/tmp', timeout: 30000 },
+      providers: {},
+      defaults: { provider: '', model: '', temperature: 0.7, maxTokens: 4096 },
+    });
+
+    const s1 = await engine.createSession();
+    const s2 = await engine.createSession();
+
+    engine.pushSessionMessage(s1.id, { id: 'm1', role: 'user', content: 'hello from a' });
+    engine.pushSessionMessage(s2.id, { id: 'm2', role: 'user', content: 'hello from b' });
+
+    expect(engine.getSession(s1.id)!.messages).toHaveLength(1);
+    expect(engine.getSession(s1.id)!.messages[0]!.content).toBe('hello from a');
+    expect(engine.getSession(s2.id)!.messages[0]!.content).toBe('hello from b');
+  });
+});
+
+describe('Engine.recoverSession() (AC3)', () => {
+  it('returns session not found error when no disk persistence', async () => {
+    const engine = new Engine([], {
+      language: 'en',
+      sandbox: { enabled: false, type: 'none', workDir: '/tmp', timeout: 30000 },
+      providers: {},
+      defaults: { provider: '', model: '', temperature: 0.7, maxTokens: 4096 },
+    });
+
+    await expect(engine.recoverSession('non-existent')).rejects.toThrow('Session not found');
+  });
+});

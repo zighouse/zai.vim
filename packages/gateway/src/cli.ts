@@ -279,7 +279,7 @@ async function cmdSession(
           sessionId: s.id,
           createdAt: s.createdAt,
           projectDir: s.projectDir,
-          messageCount: s.messages.length,
+          messageCount: s.messageCount,
         })),
       }, null, 2));
       break;

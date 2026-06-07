@@ -328,3 +328,56 @@ describe('JsonlSessionStore — write queue overflow (AC11)', () => {
     expect(dropped[0].count).toBeGreaterThan(0);
   });
 });
+
+describe('JsonlSessionStore — pagination (AC4)', () => {
+  let dir: string;
+  let store: JsonlSessionStore;
+
+  beforeEach(() => {
+    dir = tempDir();
+    store = new JsonlSessionStore({ sessionsDir: dir });
+    // Create 25 sessions
+    for (let i = 0; i < 25; i++) {
+      store.create(undefined, i < 10 ? '/proj/a' : '/proj/b');
+    }
+  });
+
+  afterEach(() => {
+    store.destroy();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('list() with limit returns at most N sessions', () => {
+    const result = store.list({ limit: 5 });
+    expect(result).toHaveLength(5);
+  });
+
+  it('list() with offset skips first N sessions', () => {
+    const all = store.list();
+    const result = store.list({ offset: 5 });
+    expect(result).toHaveLength(20);
+    expect(result[0]!.id).toBe(all[5]!.id);
+  });
+
+  it('list() combines limit and offset', () => {
+    const result = store.list({ limit: 3, offset: 10 });
+    expect(result).toHaveLength(3);
+  });
+
+  it('list() sorts by createdAt desc by default', () => {
+    const result = store.list();
+    for (let i = 1; i < result.length; i++) {
+      expect(result[i]!.createdAt).toBeLessThanOrEqual(result[i - 1]!.createdAt);
+    }
+  });
+
+  it('list() limit=0 returns empty', () => {
+    expect(store.list({ limit: 0 })).toHaveLength(0);
+  });
+
+  it('list() with status filter + pagination works', () => {
+    const result = store.list({ status: 'active', limit: 5 });
+    expect(result.length).toBeLessThanOrEqual(5);
+    result.forEach(s => expect(s.status).toBe('active'));
+  });
+});

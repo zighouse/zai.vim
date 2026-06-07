@@ -124,7 +124,7 @@ export function createStdioTransport(
         status: s.status,
         createdAt: s.createdAt,
         projectDir: s.projectDir,
-        messageCount: s.messages.length,
+        messageCount: s.messageCount,
       })),
     };
   });

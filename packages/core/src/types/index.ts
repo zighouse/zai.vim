@@ -5,6 +5,7 @@
 // =============================================================================
 
 import type { ShutdownOptions } from './engine.js';
+import type { SessionSummary, ListFilter } from './session.js';
 
 // ---- Engine types (Task 1.1) ------------------------------------------------
 export type {
@@ -32,7 +33,9 @@ export type {
 // ---- Session store types (Story 1a.3) ---------------------------------------
 export type {
   ISessionStore,
+  ListFilter,
   SessionMeta,
+  SessionSummary,
   SessionApproachingLimitEvent,
   SessionAutoTrimmedEvent,
   SessionPersistenceDroppedEvent,
@@ -62,6 +65,13 @@ export interface ToolCall {
   arguments: Record<string, unknown>;
 }
 
+export interface FileAttachment {
+  readonly path: string;
+  readonly content: string;
+  readonly truncated: boolean;
+  readonly language?: string;
+}
+
 export interface Message {
   readonly id: string;
   readonly role: MessageRole;
@@ -69,6 +79,8 @@ export interface Message {
   readonly toolCalls?: ToolCall[];
   readonly createdAt?: number;
   readonly seq?: number;
+  readonly attachments?: FileAttachment[];
+  readonly pinned?: boolean;
 }
 
 // ---- Response stream -------------------------------------------------------
@@ -264,9 +276,10 @@ export interface EngineAPI {
   readonly uptime: number;
   createSession(config?: Partial<import('./config.js').ZaiConfig>, projectDir?: string): Promise<Session>;
   getSession(id: string): Session | undefined;
-  listSessions(filter?: { status?: SessionStatus }): Session[];
+  listSessions(filter?: { status?: SessionStatus; limit?: number; offset?: number; sortBy?: 'createdAt' | 'lastActivityAt'; sortOrder?: 'asc' | 'desc' }): SessionSummary[];
   closeSession(id: string): Promise<void>;
   pushSessionMessage(sessionId: string, msg: Message): void;
+  recoverSession(id: string): Promise<Session>;
   createAgent(persona: PersonaConfig, options?: ForkOptions): AgentHandle;
   chat(sessionId: string, message: Message, signal?: AbortSignal): AsyncIterable<ResponseChunk>;
   getHealth(): EngineHealth;

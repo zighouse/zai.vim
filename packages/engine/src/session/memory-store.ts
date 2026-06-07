@@ -2,7 +2,7 @@
 // No persistence — used for testing and embedded mode.
 // Implements ISessionStore from @zaivim/core (ADR-6).
 
-import type { Session, Message, SessionStatus, ISessionStore, ZaiConfig } from '@zaivim/core';
+import type { Session, Message, SessionStatus, ISessionStore, ListFilter, ZaiConfig } from '@zaivim/core';
 import { ZaiSessionNotFoundError } from '@zaivim/core';
 import { randomUUID } from 'node:crypto';
 
@@ -34,14 +34,32 @@ export class InMemorySessionStoreFull implements ISessionStore {
     (session as { status: SessionStatus }).status = 'closed';
   }
 
-  list(filter?: { status?: SessionStatus; projectDir?: string }): Session[] {
-    const sessions = [...this.#sessions.values()];
-    if (!filter) return sessions;
-    return sessions.filter(s => {
-      if (filter.status && s.status !== filter.status) return false;
-      if (filter.projectDir && s.projectDir !== filter.projectDir) return false;
-      return true;
+  list(filter?: ListFilter): Session[] {
+    let sessions = [...this.#sessions.values()];
+
+    if (filter) {
+      if (filter.status) sessions = sessions.filter(s => s.status === filter.status);
+      if (filter.projectDir) sessions = sessions.filter(s => s.projectDir === filter.projectDir);
+    }
+
+    // Sort
+    const sortBy = filter?.sortBy ?? 'createdAt';
+    const sortOrder = filter?.sortOrder ?? 'desc';
+    sessions.sort((a, b) => {
+      const aVal = sortBy === 'lastActivityAt'
+        ? (a.messages.length > 0 ? (a.messages[a.messages.length - 1]!.createdAt ?? a.createdAt) : a.createdAt)
+        : a.createdAt;
+      const bVal = sortBy === 'lastActivityAt'
+        ? (b.messages.length > 0 ? (b.messages[b.messages.length - 1]!.createdAt ?? b.createdAt) : b.createdAt)
+        : b.createdAt;
+      return sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
     });
+
+    // Paginate
+    if (filter?.offset && filter.offset > 0) sessions = sessions.slice(filter.offset);
+    if (filter?.limit !== undefined) sessions = sessions.slice(0, filter.limit);
+
+    return sessions;
   }
 
   pushMessage(id: string, msg: Message): void {

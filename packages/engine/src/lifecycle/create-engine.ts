@@ -1,7 +1,8 @@
 // @zaivim/engine — createEngine() singleton factory
 // MVP: global singleton. Second call returns existing instance.
 
-import type { EngineAPI, EngineConfig, EngineHealth, ShutdownOptions, Session, ZaiConfig, Message, ResponseChunk } from '@zaivim/core';
+import type { EngineAPI, EngineConfig, EngineHealth, ShutdownOptions, Session, SessionSummary, ZaiConfig, Message, ResponseChunk } from '@zaivim/core';
+import { ZaiSessionNotFoundError } from '@zaivim/core';
 import { EventEmitter } from 'node:events';
 import { EngineStateMachine } from './state-machine.js';
 import { removePidFile } from './pid-file.js';
@@ -126,8 +127,18 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
     return this.#sessionStore.get(id);
   }
 
-  listSessions(filter?: { status?: import('@zaivim/core').SessionStatus }): Session[] {
-    return this.#sessionStore.list(filter);
+  listSessions(filter?: { status?: import('@zaivim/core').SessionStatus; limit?: number; offset?: number; sortBy?: 'createdAt' | 'lastActivityAt'; sortOrder?: 'asc' | 'desc' }): SessionSummary[] {
+    const sessions = this.#sessionStore.list(filter);
+    return sessions.map(s => ({
+      id: s.id,
+      createdAt: s.createdAt,
+      status: s.status,
+      messageCount: s.messages.length,
+      projectDir: s.projectDir,
+      lastActivityAt: s.messages.length > 0
+        ? (s.messages[s.messages.length - 1]!.createdAt ?? s.createdAt)
+        : s.createdAt,
+    }));
   }
 
   async closeSession(id: string): Promise<void> {
@@ -138,6 +149,14 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
   pushSessionMessage(sessionId: string, msg: Message): void {
     this.#sessionStore.pushMessage(sessionId, msg);
     this.#lifecycleManager.checkMessageLimit(sessionId);
+  }
+
+  async recoverSession(id: string): Promise<Session> {
+    const sessions = await this.#sessionStore.recoverFromDisk();
+    const session = sessions.find(s => s.id === id);
+    if (!session) throw new ZaiSessionNotFoundError(id);
+    this.emit('session.recovered', { sessionId: session.id });
+    return session;
   }
 
   createAgent(): never {

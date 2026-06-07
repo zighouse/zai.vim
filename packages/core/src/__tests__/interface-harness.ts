@@ -180,7 +180,7 @@ function harness(): void {
 
   // ---- Session persistence events ----
   const evLimit: SessionApproachingLimitEvent = { type: 'session.approaching_limit', sessionId: 's1', current: 900, max: 1000 };
-  const evTrimmed: SessionAutoTrimmedEvent = { type: 'session.auto_trimmed', sessionId: 's1', removed: 500 };
+  const evTrimmed: SessionAutoTrimmedEvent = { type: 'session.auto_trimmed', sessionId: 's1', removed: 500, retained: 500 };
   const evDropped: SessionPersistenceDroppedEvent = { type: 'session.persistence.dropped', sessionId: 's1', count: 2 };
   const evRecovered: SessionRecoveredEvent = { type: 'session.recovered', sessionId: 's1', recoveredCount: 10, skippedLines: 1 };
   void evLimit; void evTrimmed; void evDropped; void evRecovered;

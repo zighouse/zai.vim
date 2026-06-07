@@ -121,8 +121,8 @@ export class SessionLifecycleManager extends EventEmitter {
     if (!session) throw new ZaiSessionNotFoundError(sessionId);
 
     const messages = session.messages;
-    const pinned = messages.filter(m => ('isPinned' in m) && (m as { isPinned: boolean }).isPinned);
-    const nonPinned = messages.filter(m => !(('isPinned' in m) && (m as { isPinned: boolean }).isPinned));
+    const pinned = messages.filter(m => m.pinned === true);
+    const nonPinned = messages.filter(m => m.pinned !== true);
 
     const removed = Math.max(0, nonPinned.length - this.#trimKeepCount);
     if (removed === 0) return;
