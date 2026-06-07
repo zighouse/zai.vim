@@ -11,11 +11,16 @@ import { ZaiConfigError, ZaiInstanceConflictError } from '@zaivim/core';
 import { createStdioTransport } from './stdio/transport.js';
 import { TransportContext } from './stdio/transport-context.js';
 import { generateAdminToken, removeAdminToken } from './admin-token.js';
+import { createChatRepl, printStreamChunk } from './chat/repl.js';
+import { ensureEngineRunning } from './chat/engine-launcher.js';
+import { createMarkdownRenderer } from './chat/markdown-renderer.js';
 import { resolve, dirname, join } from 'node:path';
 import { openSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { execSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import * as readline from 'node:readline';
 
 const VERSION = '0.1.0';
 const PID_PATH = join(homedir(), '.zaivim', 'engine.pid');
@@ -25,7 +30,7 @@ const SUBCOMMANDS = {
   status:      'Show engine status (pid, uptime, version)',
   ping:        'Check if engine is running + version + feature preview',
   stop:        'Stop a running engine daemon',
-  chat:        'Start an interactive AI chat session (coming in v0.2.0)',
+  chat:        'Start an interactive AI chat session',
   tui:         'Launch the terminal UI (coming in v0.5.0)',
   skill:       'Manage skills (coming in v0.6.0)',
   import:      'Import configuration from external sources',
@@ -53,6 +58,9 @@ Examples:
   zaivim status             Show detailed engine info
   zaivim stop               Stop running daemon
   zaivim project-context    Show detected project context
+  zaivim chat               Start interactive chat
+  zaivim chat --json        Chat in JSON pipe mode (stdin/stdout)
+  zaivim chat --session ID  Resume a previous session
 `);
 }
 
@@ -443,6 +451,158 @@ function cmdSmokeTest(): void {
   }
 }
 
+// ---- chat command -----------------------------------------------------------
+
+const HISTORY_PREVIEW_COUNT = 5;
+
+interface ChatOpts {
+  session?: string;
+  json?: boolean;
+  projectDir?: string;
+}
+
+async function cmdChat(args: string[]): Promise<void> {
+  // Parse chat-specific flags from args
+  const opts: ChatOpts = {};
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--session' && args[i + 1]) {
+      opts.session = args[++i];
+    } else if (args[i] === '--json') {
+      opts.json = true;
+    } else if (args[i] === '--project-dir' && args[i + 1]) {
+      opts.projectDir = args[++i];
+    }
+  }
+
+  // --json pipe mode: non-interactive
+  if (opts.json) {
+    await runJsonPipeMode(opts);
+    return;
+  }
+
+  // Interactive mode: ensure engine is running
+  try {
+    await ensureEngineRunning();
+  } catch (err) {
+    console.error(`\x1b[31m${(err as Error).message}\x1b[0m`);
+    process.exit(1);
+  }
+
+  // Get engine instance (started by ensureEngineRunning or already running)
+  const engine = getEngineInstance() as EngineAPI | undefined;
+  if (!engine) {
+    // Engine auto-started in daemon mode — we need a local engine instance
+    // For daemon mode, we create a lightweight client-side engine
+    console.error('Engine is running in daemon mode. Interactive chat requires foreground engine.');
+    console.error('Run "zaivim serve" in another terminal, then try again.');
+    process.exit(1);
+  }
+
+  // Create or restore session
+  let sessionId: string;
+  if (opts.session) {
+    const existing = engine.getSession(opts.session);
+    if (!existing) {
+      console.error(`Session not found: ${opts.session}`);
+      const sessions = engine.listSessions();
+      if (sessions.length > 0) {
+        console.error('Available sessions:');
+        for (const s of sessions) {
+          console.error(`  ${s.id}`);
+        }
+      }
+      process.exit(1);
+    }
+    sessionId = existing.id;
+    // Print history preview
+    const messages = existing.messages;
+    const preview = messages.slice(-HISTORY_PREVIEW_COUNT);
+    if (preview.length > 0) {
+      console.log(`\n--- Session restored (${messages.length} messages, showing last ${preview.length}) ---\n`);
+      for (const msg of preview) {
+        const role = msg.role === 'user' ? 'You' : 'AI';
+        const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+        console.log(`  ${role}: ${content.slice(0, 100)}${content.length > 100 ? '...' : ''}`);
+      }
+      console.log('');
+    }
+  } else {
+    const session = await engine.createSession(undefined, opts.projectDir);
+    sessionId = session.id;
+    console.log(`Session started: ${sessionId}`);
+  }
+
+  // Run REPL
+  const result = await createChatRepl({
+    engine,
+    sessionId,
+    renderMarkdown: true,
+  });
+
+  // Save session on exit
+  try {
+    await engine.closeSession(result.sessionId);
+  } catch {
+    // Best-effort save
+  }
+
+  process.exit(0);
+}
+
+/** JSON pipe mode: stdin JSON-RPC → engine → stdout NDJSON. */
+async function runJsonPipeMode(opts: ChatOpts): Promise<void> {
+  // Ensure engine is running
+  try {
+    await ensureEngineRunning();
+  } catch (err) {
+    process.stderr.write(`\x1b[31m${(err as Error).message}\x1b[0m\n`);
+    process.exit(1);
+  }
+
+  const engine = getEngineInstance() as EngineAPI | undefined;
+  if (!engine) {
+    process.stderr.write('Engine not available.\n');
+    process.exit(1);
+  }
+
+  const session = await engine.createSession(undefined, opts.projectDir);
+  const mdRenderer = createMarkdownRenderer();
+
+  const rl = readline.createInterface({ input: process.stdin });
+
+  rl.on('line', async (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+
+    try {
+      const req = JSON.parse(trimmed);
+      const message = req.params?.message ?? req.params?.content ?? trimmed;
+      const msg: import('@zaivim/core').Message = {
+        id: randomUUID(),
+        role: 'user',
+        content: typeof message === 'string' ? message : JSON.stringify(message),
+        createdAt: Date.now(),
+      };
+
+      const stream = engine.chat(session.id, msg);
+      for await (const chunk of stream) {
+        printStreamChunk(chunk, {
+          output: process.stdout,
+          mdRenderer: null,
+          jsonMode: true,
+        });
+      }
+    } catch (err) {
+      const errorChunk = { type: 'error' as const, code: 'PIPE_ERROR', message: (err as Error).message };
+      process.stdout.write(JSON.stringify(errorChunk) + '\n');
+    }
+  });
+
+  rl.on('close', () => {
+    engine.closeSession(session.id).catch(() => {});
+  });
+}
+
 // ---- Main entry point ------------------------------------------------------
 
 async function main(): Promise<void> {
@@ -520,6 +680,8 @@ async function main(): Promise<void> {
       cmdSmokeTest();
       break;
     case 'chat':
+      await cmdChat(positionals.slice(1));
+      break;
     case 'tui':
     case 'skill':
     case 'import':
