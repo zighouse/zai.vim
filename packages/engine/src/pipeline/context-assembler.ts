@@ -207,11 +207,14 @@ export function assembleContext(
 
   let finalMessages = allMessages;
   if (tokenEstimate > maxTokens) {
-    // Trim only history messages (not system prompt)
-    const historyOnly = systemMsg ? injected : allMessages;
+    // Trim only history messages (not system prompt nor project context)
+    const protectedMsgs: Message[] = [];
+    if (systemMsg) protectedMsgs.push(systemMsg);
+    if (projectContextMsg) protectedMsgs.push(projectContextMsg);
+    const historyOnly = protectedMsgs.length > 0 ? injected : allMessages;
     const result = trimContext(historyOnly, maxTokens, keepRecent);
     trimmed = result.removed;
-    finalMessages = systemMsg ? [systemMsg, ...result.messages] : result.messages;
+    finalMessages = [...protectedMsgs, ...result.messages];
 
     if (trimmed > 0 && options?.emit) {
       options.emit('session.auto_trimmed', {
