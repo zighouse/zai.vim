@@ -280,14 +280,12 @@ export class JsonlSessionStore extends EventEmitter implements ISessionStore {
       reconnecting: false,
     };
 
-    if (skippedLines > 0) {
-      this.emit('store.notification', {
-        type: 'session.recovered',
-        sessionId,
-        recoveredCount: messages.length,
-        skippedLines,
-      } as StoreNotification);
-    }
+    this.emit('store.notification', {
+      type: 'session.recovered',
+      sessionId,
+      recoveredCount: messages.length,
+      skippedLines,
+    } as StoreNotification);
 
     return session;
   }
