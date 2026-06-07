@@ -38,22 +38,30 @@ export function estimateMessagesTokens(messages: Message[]): number {
 
 /**
  * Trim messages to fit within token budget.
- * Keeps: all pinned messages (placeholder for future) + most recent N messages.
- * Returns trimmed messages and count of removed messages.
+ * Respects both message count cap (keepRecent) and token budget (maxTokens).
+ * Removes oldest messages first. System prompt is excluded (handled by caller).
+ * Future: respect pinned messages.
  */
 export function trimContext(
   messages: Message[],
   maxTokens: number,
   keepRecent: number = PIPELINE_DEFAULTS.keepRecentMessages,
 ): { messages: Message[]; removed: number } {
-  if (messages.length <= keepRecent) {
-    return { messages, removed: 0 };
+  // 1. Apply message count cap — keep the most recent N
+  let startIdx = messages.length > keepRecent ? messages.length - keepRecent : 0;
+
+  // 2. Apply token budget — walk forward until within budget
+  //    (O(n) per iteration, bounded by message count, fine for realistic sizes)
+  while (startIdx < messages.length) {
+    const candidate = messages.slice(startIdx);
+    if (estimateMessagesTokens(candidate) <= maxTokens) break;
+    startIdx++;
   }
 
-  // For now, simply keep the most recent N messages
-  // Future: respect pinned messages
-  const trimmed = messages.slice(-keepRecent);
-  return { messages: trimmed, removed: messages.length - trimmed.length };
+  return {
+    messages: messages.slice(startIdx),
+    removed: startIdx,
+  };
 }
 
 export interface ContextAssemblerOptions {
