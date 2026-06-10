@@ -177,6 +177,10 @@ export class AuditLogger {
         console.error('Failed to flush buffer:', error);
       } finally {
         this.writeScheduled = false;
+        // If entries accumulated during flush, schedule another pass (L1)
+        if (this.writeBuffer.length > 0) {
+          this.scheduleWrite();
+        }
       }
     });
   }
