@@ -1,6 +1,6 @@
 {
   "name": "@zaivim/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "description": "zai.vim core types, JSON-RPC protocol, and error system",
   "type": "module",
