@@ -119,7 +119,7 @@ export interface ISecurityProvider {
    * @param operation - Operation type that was executed
    * @param result - Execution result (success/failure, output, etc.)
    */
-  postExecute(operation: string, result: { success: boolean; output?: string }): Promise<void>;
+  postExecute(operation: string, result: { success: boolean; output?: string; sessionId?: string }): Promise<void>;
 
   /**
    * Get current security status for display

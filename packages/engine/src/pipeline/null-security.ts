@@ -18,7 +18,7 @@ export class NullSecurityProvider implements ISecurityProvider {
     return { allowed: true, harmLevel: 'C', reason: 'Null security — all operations allowed' };
   }
 
-  async postExecute(_operation: string, _result: { success: boolean; output?: string }): Promise<void> {
+  async postExecute(_operation: string, _result: { success: boolean; output?: string; sessionId?: string }): Promise<void> {
     // no-op
   }
 

@@ -75,7 +75,7 @@ export async function executeToolCall(
         toolCallId: tc.id,
         elapsed,
       });
-      await options.security.postExecute(tc.name, { success: false, output: 'timed out' }).catch(() => {});
+      await options.security.postExecute(tc.name, { success: false, output: 'timed out', sessionId: options.sessionId }).catch(() => {});
       return {
         result: `error: tool execution timed out after ${Math.round(timeout / 1000)}s`,
         timedOut: true,
@@ -83,7 +83,7 @@ export async function executeToolCall(
     }
     const output = typeof result === 'string' ? result : JSON.stringify(result);
     // Security enforcement: postExecute audit (AC9 / ADR-5)
-    await options.security.postExecute(tc.name, { success: true, output }).catch(() => {});
+    await options.security.postExecute(tc.name, { success: true, output, sessionId: options.sessionId }).catch(() => {});
     return { result: output, timedOut: false };
   } catch (err) {
     if (err instanceof DOMException && err.name === 'TimeoutError' ||
@@ -93,13 +93,13 @@ export async function executeToolCall(
         toolCallId: tc.id,
         elapsed,
       });
-      await options.security.postExecute(tc.name, { success: false, output: 'timed out' }).catch(() => {});
+      await options.security.postExecute(tc.name, { success: false, output: 'timed out', sessionId: options.sessionId }).catch(() => {});
       return {
         result: `error: tool execution timed out after ${Math.round(timeout / 1000)}s`,
         timedOut: true,
       };
     }
-    await options.security.postExecute(tc.name, { success: false }).catch(() => {});
+    await options.security.postExecute(tc.name, { success: false, sessionId: options.sessionId }).catch(() => {});
     return {
       result: `error: ${err instanceof Error ? err.message : String(err)}`,
       timedOut: false,

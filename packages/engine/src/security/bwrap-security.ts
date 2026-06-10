@@ -146,7 +146,7 @@ export class BwrapSecurityProvider implements ISecurityProvider {
    */
   async postExecute(
     operation: string,
-    result: { success: boolean; output?: string },
+    result: { success: boolean; output?: string; sessionId?: string },
   ): Promise<void> {
     const logEntry = {
       timestamp: new Date().toISOString(),

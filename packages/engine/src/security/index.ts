@@ -188,13 +188,13 @@ export class SecurityProvider implements ISecurityProvider {
    */
   async postExecute(
     operation: string,
-    result: { success: boolean; output?: string },
+    result: { success: boolean; output?: string; sessionId?: string },
   ): Promise<void> {
     // Use AuditLogger (persistent JSONL) when available
     if (this.#auditLogger) {
       await this.#auditLogger.log({
         timestamp: new Date().toISOString(),
-        sessionId: '',
+        sessionId: result.sessionId ?? '',
         operation,
         harmLevel: 'C',
         decision: result.success ? 'allowed' : 'denied',
