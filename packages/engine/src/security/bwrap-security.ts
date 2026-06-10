@@ -28,6 +28,7 @@ export class BwrapSecurityProvider implements ISecurityProvider {
   readonly sandboxType: 'none' | 'bwrap' = 'bwrap';
   #platform: Platform;
   #bwrapAvailable: boolean;
+  #bwrapPath: string = '';
   #workspaceDir: string;
   #auditLogPath: string;
   #harmClassifier: HarmClassifier;
@@ -54,7 +55,15 @@ export class BwrapSecurityProvider implements ISecurityProvider {
     }
     // Check if bwrap executable exists
     try {
-      return existsSync('/usr/bin/bwrap') || existsSync('/bin/bwrap');
+      if (existsSync('/usr/bin/bwrap')) {
+        this.#bwrapPath = '/usr/bin/bwrap';
+        return true;
+      }
+      if (existsSync('/bin/bwrap')) {
+        this.#bwrapPath = '/bin/bwrap';
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }
@@ -219,7 +228,7 @@ export class BwrapSecurityProvider implements ISecurityProvider {
       let stderr = '';
       let killed = false;
 
-      const child = spawn('/usr/bin/bwrap', [...bwrapArgs, '/bin/sh', '-c', command], {
+      const child = spawn(this.#bwrapPath, [...bwrapArgs, '/bin/sh', '-c', command], {
         cwd,
         env: options?.env ?? process.env,
         timeout,
