@@ -2,9 +2,20 @@
 // Depth defense: bwrap+seccomp (shell) + .git boundary (file) + FileChangeProposal + backup + audit.
 // Each security layer protects a different attack surface.
 
-import type { ISecurityProvider, FileChangeProposal } from '@zaivim/core';
+import type {
+  ISecurityProvider,
+  FileChangeProposal,
+  SecurityDecision,
+  SecurityStatus,
+} from '@zaivim/core';
 import { ZaiSecurityError } from '@zaivim/core';
 import { resolve } from 'node:path';
+
+export { BwrapSecurityProvider } from './bwrap-security.js';
+import { HarmClassifier } from './harm-classifier.js';
+export { HarmClassifier } from './harm-classifier.js';
+import { AuditLogger } from './audit-logger.js';
+export { AuditLogger, type AuditEntry, type AuditStatistics } from './audit-logger.js';
 
 // ============================================================================
 // TODO (@zaivim/sandbox): extract SandboxManager to @zaivim/sandbox when
@@ -70,7 +81,7 @@ export class SandboxManager {
 // this file until extraction.
 // ============================================================================
 
-export interface AuditEntry {
+interface AuditStoreEntry {
   readonly timestamp: number;
   readonly sessionId: string;
   readonly action: string;
@@ -78,10 +89,10 @@ export interface AuditEntry {
 }
 
 export class Auditor {
-  #entries: AuditEntry[] = [];
+  #entries: AuditStoreEntry[] = [];
 
   log(sessionId: string, action: string, detail: Record<string, unknown>): void {
-    const entry: AuditEntry = {
+    const entry: AuditStoreEntry = {
       timestamp: Date.now(),
       sessionId,
       action,
@@ -91,7 +102,7 @@ export class Auditor {
     // Growth: write to JSONL file, rotate when >100MB
   }
 
-  query(sessionId?: string): AuditEntry[] {
+  query(sessionId?: string): AuditStoreEntry[] {
     if (sessionId) {
       return this.#entries.filter(e => e.sessionId === sessionId);
     }
@@ -107,13 +118,120 @@ export class SecurityProvider implements ISecurityProvider {
   readonly sandboxType: 'none' | 'bwrap';
   #sandbox: SandboxManager;
   #auditor: Auditor;
+  #auditLogger?: AuditLogger;
   #projectRoot: string;
+  #harmClassifier: HarmClassifier;
 
-  constructor(sandbox: SandboxManager, auditor: Auditor, projectRoot?: string) {
+  constructor(sandbox: SandboxManager, auditor: Auditor, projectRoot?: string, auditLogger?: AuditLogger) {
     this.sandboxType = sandbox.sandboxType;
     this.#sandbox = sandbox;
     this.#auditor = auditor;
     this.#projectRoot = resolve(projectRoot ?? process.cwd());
+    this.#harmClassifier = new HarmClassifier();
+    this.#auditLogger = auditLogger;
+  }
+
+  /**
+   * Pre-execution security check
+   *
+   * Validates operation against security policies.
+   * Uses HarmClassifier for shell commands and path validation for file ops.
+   */
+  async preExecute(
+    operation: string,
+    params: Record<string, unknown>,
+  ): Promise<SecurityDecision> {
+    // Classify shell commands using HarmClassifier (AC2, AC5)
+    if (operation === 'shell_exec') {
+      const command = params.command as string;
+      if (command) {
+        const classification = this.#harmClassifier.classifyCommand(command);
+        if (!classification.whitelisted && classification.level === 'S') {
+          return {
+            allowed: false,
+            harmLevel: 'S',
+            reason: `Command blocked (S-level): ${classification.reason}`,
+          };
+        }
+        return {
+          allowed: true,
+          harmLevel: classification.level,
+          reason: classification.reason,
+        };
+      }
+    }
+
+    // MVP: Basic path validation for file operations
+    if (operation === 'file_write' || operation === 'file_delete') {
+      const path = params.path as string;
+      if (!this.validatePath(path, operation)) {
+        return {
+          allowed: false,
+          harmLevel: 'A',
+          reason: 'Operation outside project root or in .git directory',
+        };
+      }
+    }
+
+    return {
+      allowed: true,
+      harmLevel: 'C',
+      reason: 'Operation within security boundaries',
+    };
+  }
+
+  /**
+   * Post-execution audit logging
+   *
+   * Logs all operations to audit store.
+   * Uses AuditLogger (JSONL) when available, falls back to in-memory Auditor.
+   */
+  async postExecute(
+    operation: string,
+    result: { success: boolean; output?: string },
+  ): Promise<void> {
+    // Use AuditLogger (persistent JSONL) when available
+    if (this.#auditLogger) {
+      await this.#auditLogger.log({
+        timestamp: new Date().toISOString(),
+        sessionId: '',
+        operation,
+        harmLevel: 'C',
+        decision: result.success ? 'allowed' : 'denied',
+        reason: `Operation ${result.success ? 'completed' : 'failed'}`,
+        user: 'system',
+        metadata: {
+          outputLength: result.output?.length ?? 0,
+        },
+      });
+      return;
+    }
+
+    // Fallback to in-memory Auditor
+    this.#auditor.log('', 'operation_completed', {
+      operation,
+      success: result.success,
+      outputLength: result.output?.length ?? 0,
+    });
+  }
+
+  /**
+   * Get security status for user display
+   */
+  getStatus(): SecurityStatus {
+    const plat = process.platform;
+    const platform: SecurityStatus['platform'] = plat === 'linux' ? 'linux' : plat === 'darwin' ? 'macos' : plat === 'win32' ? 'windows' : 'unknown';
+    return {
+      sandboxMode: this.#sandbox.isAvailable() ? 'bwrap' : 'null',
+      platform,
+      filesystemRestricted: true,
+      networkIsolated: false,
+      auditLogPath: this.#auditLogger ? this.#auditLogger.logFilePath : 'memory',
+      isOperational: this.#sandbox.isAvailable(),
+      details: this.#sandbox.isAvailable()
+        ? ['Bwrap sandbox available', 'Project root boundary enforcement active']
+        : ['Sandbox not available', 'Using null security provider (degraded mode)'],
+    };
   }
 
   validatePath(path: string, operation: string): boolean {

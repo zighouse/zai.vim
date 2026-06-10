@@ -36,6 +36,19 @@ export async function executeToolCall(
     };
   }
 
+  // Security enforcement: preExecute check (AC9 / ADR-5)
+  const decision = await options.security.preExecute(tc.name, tc.arguments);
+  if (!decision.allowed) {
+    return {
+      result: JSON.stringify({
+        error: `Tool execution blocked by security policy`,
+        harmLevel: decision.harmLevel,
+        reason: decision.reason,
+      }),
+      timedOut: false,
+    };
+  }
+
   const timeout = options.timeout ?? 120_000;
   const start = Date.now();
 
@@ -62,12 +75,16 @@ export async function executeToolCall(
         toolCallId: tc.id,
         elapsed,
       });
+      await options.security.postExecute(tc.name, { success: false, output: 'timed out' }).catch(() => {});
       return {
         result: `error: tool execution timed out after ${Math.round(timeout / 1000)}s`,
         timedOut: true,
       };
     }
-    return { result: typeof result === 'string' ? result : JSON.stringify(result), timedOut: false };
+    const output = typeof result === 'string' ? result : JSON.stringify(result);
+    // Security enforcement: postExecute audit (AC9 / ADR-5)
+    await options.security.postExecute(tc.name, { success: true, output }).catch(() => {});
+    return { result: output, timedOut: false };
   } catch (err) {
     if (err instanceof DOMException && err.name === 'TimeoutError' ||
         (err instanceof Error && err.message.includes('aborted'))) {
@@ -76,11 +93,13 @@ export async function executeToolCall(
         toolCallId: tc.id,
         elapsed,
       });
+      await options.security.postExecute(tc.name, { success: false, output: 'timed out' }).catch(() => {});
       return {
         result: `error: tool execution timed out after ${Math.round(timeout / 1000)}s`,
         timedOut: true,
       };
     }
+    await options.security.postExecute(tc.name, { success: false }).catch(() => {});
     return {
       result: `error: ${err instanceof Error ? err.message : String(err)}`,
       timedOut: false,

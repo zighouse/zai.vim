@@ -1,6 +1,40 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { ToolDefinition, ToolContext } from '@zaivim/core';
+import type { ToolDefinition, ToolContext, SecurityDecision } from '@zaivim/core';
 import { executeToolCall, executeToolCalls, validateToolCalls } from '../tool-executor.js';
+
+/** Security provider that denies everything */
+function denyProvider(): import('@zaivim/core').ISecurityProvider {
+  return {
+    sandboxType: 'none',
+    preExecute: async (_op, _params): Promise<SecurityDecision> => ({
+      allowed: false,
+      harmLevel: 'S',
+      reason: 'Test: all operations denied',
+    }),
+    postExecute: vi.fn().mockResolvedValue(undefined),
+    getStatus: vi.fn() as any,
+    isSandboxAvailable: () => false,
+    validatePath: () => false,
+    proposeChange: async () => false,
+  };
+}
+
+/** Security provider that always allows */
+function allowProvider(): import('@zaivim/core').ISecurityProvider {
+  return {
+    sandboxType: 'none',
+    preExecute: async (_op, _params): Promise<SecurityDecision> => ({
+      allowed: true,
+      harmLevel: 'C',
+      reason: 'Test: all operations allowed',
+    }),
+    postExecute: vi.fn().mockResolvedValue(undefined),
+    getStatus: vi.fn() as any,
+    isSandboxAvailable: () => false,
+    validatePath: () => true,
+    proposeChange: async () => true,
+  };
+}
 
 function makeTool(name: string, impl?: (params: unknown, ctx: ToolContext) => Promise<unknown>): ToolDefinition {
   return {
@@ -32,7 +66,7 @@ describe('executeToolCall', () => {
     const result = await executeToolCall(
       { id: 'tc-1', name: 'read_file', arguments: { path: '/test.txt' } },
       [tool],
-      { sessionId: 's1', sandbox: '/tmp', security: { sandboxType: 'none', validatePath: () => true, proposeChange: async () => true, isSandboxAvailable: () => false }, audit: vi.fn() },
+      { sessionId: 's1', sandbox: '/tmp', security: allowProvider(), audit: vi.fn() },
     );
     expect(result.timedOut).toBe(false);
     expect(result.result).toContain('/test.txt');
@@ -55,7 +89,7 @@ describe('executeToolCall', () => {
       {
         sessionId: 's1',
         sandbox: '/tmp',
-        security: { sandboxType: 'none', validatePath: () => true, proposeChange: async () => true, isSandboxAvailable: () => false },
+        security: allowProvider(),
         audit: vi.fn(),
         timeout: 100, // 100ms timeout
         emit,
@@ -75,7 +109,7 @@ describe('executeToolCalls', () => {
         { id: 'tc-2', name: 'echo', arguments: { b: 2 } },
       ],
       [tool],
-      { sessionId: 's1', sandbox: '/tmp', security: { sandboxType: 'none', validatePath: () => true, proposeChange: async () => true, isSandboxAvailable: () => false }, audit: vi.fn() },
+      { sessionId: 's1', sandbox: '/tmp', security: allowProvider(), audit: vi.fn() },
     );
     expect(results.length).toBe(2);
     expect(results[0]!.role).toBe('tool');
@@ -125,5 +159,72 @@ describe('validateToolCalls', () => {
     );
     expect(result.valid.length).toBe(0);
     expect(result.errors.length).toBe(1);
+  });
+});
+
+describe('security enforcement (AC9 / ADR-5)', () => {
+  it('should block execution when security denies', async () => {
+    const tool = makeTool('read_file');
+    const result = await executeToolCall(
+      { id: 'tc-1', name: 'read_file', arguments: { path: '/test.txt' } },
+      [tool],
+      { sessionId: 's1', sandbox: '/tmp', security: denyProvider(), audit: vi.fn() },
+    );
+    expect(result.timedOut).toBe(false);
+    const parsed = JSON.parse(result.result);
+    expect(parsed.error).toContain('blocked');
+    expect(parsed.harmLevel).toBe('S');
+  });
+
+  it('should allow execution when security allows', async () => {
+    const tool = makeTool('echo', async (params) => JSON.stringify(params));
+    const result = await executeToolCall(
+      { id: 'tc-1', name: 'echo', arguments: { msg: 'hello' } },
+      [tool],
+      { sessionId: 's1', sandbox: '/tmp', security: allowProvider(), audit: vi.fn() },
+    );
+    expect(result.result).toContain('hello');
+    expect(result.timedOut).toBe(false);
+  });
+
+  it('should call postExecute after successful execution', async () => {
+    const postExecute = vi.fn().mockResolvedValue(undefined);
+    const provider: import('@zaivim/core').ISecurityProvider = {
+      ...allowProvider(),
+      postExecute,
+    };
+    const tool = makeTool('echo', async (params) => JSON.stringify(params));
+    await executeToolCall(
+      { id: 'tc-1', name: 'echo', arguments: { msg: 'hello' } },
+      [tool],
+      { sessionId: 's1', sandbox: '/tmp', security: provider, audit: vi.fn() },
+    );
+    expect(postExecute).toHaveBeenCalledWith('echo', expect.objectContaining({ success: true }));
+  });
+
+  it('should call postExecute on execution error', async () => {
+    const postExecute = vi.fn().mockResolvedValue(undefined);
+    const provider: import('@zaivim/core').ISecurityProvider = {
+      ...allowProvider(),
+      postExecute,
+    };
+    const tool = makeTool('fail', async () => { throw new Error('execution failed'); });
+    await executeToolCall(
+      { id: 'tc-1', name: 'fail', arguments: {} },
+      [tool],
+      { sessionId: 's1', sandbox: '/tmp', security: provider, audit: vi.fn() },
+    );
+    expect(postExecute).toHaveBeenCalledWith('fail', expect.objectContaining({ success: false }));
+  });
+
+  it('should propagate harm level in error message', async () => {
+    const result = await executeToolCall(
+      { id: 'tc-1', name: 'read_file', arguments: { path: '/etc/passwd' } },
+      [makeTool('read_file')],
+      { sessionId: 's1', sandbox: '/tmp', security: denyProvider(), audit: vi.fn() },
+    );
+    const parsed = JSON.parse(result.result);
+    expect(parsed.harmLevel).toBe('S');
+    expect(parsed.reason).toContain('denied');
   });
 });

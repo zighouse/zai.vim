@@ -153,6 +153,11 @@ export interface AgentPool {
   fanOut(personas: PersonaConfig[], task: string): Promise<AgentResult[]>;
 }
 
+// ---- Security types (Story 2.1) -------------------------------------------
+
+import type { HarmLevel, SecurityDecision, SecurityStatus, AuditEntry, ISecurityProvider, SecurityContext, FileChangeProposal } from './security.js';
+export type { HarmLevel, SecurityDecision, SecurityStatus, AuditEntry, ISecurityProvider, SecurityContext, FileChangeProposal };
+
 // ---- Tool types ------------------------------------------------------------
 
 export interface ToolDefinition<TParams = unknown, TResult = unknown> {
@@ -179,22 +184,6 @@ export interface ToolContext {
   readonly signal: AbortSignal;
   readonly security: ISecurityProvider;
   readonly audit: (action: string, detail: Record<string, unknown>) => void;
-}
-
-// ---- Security types --------------------------------------------------------
-
-export interface FileChangeProposal {
-  readonly path: string;
-  readonly operation: 'create' | 'modify' | 'delete';
-  readonly diff?: string;
-  readonly reason: string;
-}
-
-export interface ISecurityProvider {
-  readonly sandboxType: 'none' | 'bwrap';
-  validatePath(path: string, operation: string): boolean;
-  proposeChange(proposal: FileChangeProposal): Promise<boolean>;
-  isSandboxAvailable(): boolean;
 }
 
 // ---- Provider types --------------------------------------------------------

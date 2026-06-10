@@ -13,6 +13,7 @@ import { TransportContext } from './stdio/transport-context.js';
 import { generateAdminToken, removeAdminToken } from './admin-token.js';
 import { createChatRepl, printStreamChunk } from './chat/repl.js';
 import { createMarkdownRenderer } from './chat/markdown-renderer.js';
+import { getSecurityStatus, printSecurityStatus } from './cli/security-status.js';
 import { resolve, dirname, join } from 'node:path';
 import { openSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +35,7 @@ const SUBCOMMANDS = {
   skill:       'Manage skills (coming in v0.6.0)',
   import:      'Import configuration from external sources',
   'project-context': 'Detect and display project context information',
+  'security-status': 'Show security sandbox status (bwrap, platform, restrictions)',
   'smoke-test': 'Run integration smoke tests',
 } as const;
 
@@ -672,6 +674,9 @@ async function main(): Promise<void> {
       break;
     case 'project-context':
       await cmdProjectContext(positionals[1]);
+      break;
+    case 'security-status':
+      printSecurityStatus(getSecurityStatus());
       break;
     case 'smoke-test':
       cmdSmokeTest();
