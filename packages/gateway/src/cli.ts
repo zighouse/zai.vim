@@ -462,23 +462,15 @@ interface ChatOpts {
 
 /**
  * Get or create an in-process engine instance for CLI chat.
- * - If a foreground engine is already running in this process, returns it.
- * - If a daemon engine is running, errors — chat needs in-process access.
- * - If no engine is running, creates one in-process for the chat session.
+ * - If an engine is already running in this process, returns it.
+ * - Otherwise creates a new engine instance for the chat session.
  */
 function getChatEngine(): EngineAPI {
   const existing = getEngineInstance() as EngineAPI | undefined;
   if (existing) return existing;
 
-  // Check if a daemon is running (we can't connect to it in-process)
-  const pidCheck = checkExistingPid(PID_PATH);
-  if (pidCheck.alive) {
-    console.error('Engine is running in daemon mode. Interactive chat requires a foreground engine.');
-    console.error('Run "zaivim serve --daemon stop" or use "zaivim serve" in another terminal.');
-    process.exit(1);
-  }
-
-  // No engine running — create one in-process for chat
+  // No in-process engine — create one for chat
+  // This is independent of any daemon/foreground engine in another process.
   try {
     const config = getEngineConfig();
     const engine = createEngine(config);
