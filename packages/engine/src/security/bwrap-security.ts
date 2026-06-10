@@ -220,6 +220,16 @@ export class BwrapSecurityProvider implements ISecurityProvider {
     const cwd = options?.cwd ?? this.#workspaceDir;
     const timeout = options?.timeout ?? 30000; // 30s default timeout
 
+    // Validate stdin size before spawning (M1)
+    if (options?.stdin && options.stdin.length > 1024 * 1024) {
+      return Promise.resolve({
+        exitCode: -1,
+        stdout: '',
+        stderr: 'Bwrap error: stdin exceeds maximum size (1MB)',
+        killed: false,
+      });
+    }
+
     // Construct bwrap command
     const bwrapArgs = this.#buildBwrapArgs(cwd);
 
@@ -263,11 +273,6 @@ export class BwrapSecurityProvider implements ISecurityProvider {
 
       // Write stdin if provided
       if (options?.stdin) {
-        if (options.stdin.length > 1024 * 1024) { // 1MB limit
-          stderr += 'Bwrap error: stdin exceeds maximum size (1MB)';
-          resolve({ exitCode: -1, stdout, stderr, killed: false });
-          return;
-        }
         child.stdin?.write(options.stdin);
         child.stdin?.end();
       }
