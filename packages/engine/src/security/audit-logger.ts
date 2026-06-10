@@ -57,6 +57,8 @@ export interface AuditLoggerConfig {
   readonly maxFiles?: number;
   /** Write buffer size (bytes) */
   readonly bufferSize?: number;
+  /** Maximum write rate (entries/sec, 0 = unlimited) */
+  readonly maxRatePerSec?: number;
 }
 
 /**
@@ -78,12 +80,17 @@ export class AuditLogger {
   private flushResolvers: Array<() => void> = [];
   private writeScheduled: boolean = false;
 
+  /** Rate limiter state — token bucket */
+  private rateTokens: number = 0;
+  private rateLastRefill: number = 0;
+
   /** Default configuration */
   private static readonly DEFAULT_CONFIG: Required<AuditLoggerConfig> = {
     maxSize: 100 * 1024 * 1024, // 100MB
     maxAge: 30, // 30 days
     maxFiles: 10,
     bufferSize: 64 * 1024, // 64KB buffer
+    maxRatePerSec: 100, // 100 entries/sec
   };
 
   /** Public accessor for log file path */
@@ -186,6 +193,33 @@ export class AuditLogger {
   }
 
   /**
+   * Consume rate-limited tokens for writing entries
+   *
+   * Uses a token bucket refilled at maxRatePerSec tokens/second.
+   * Returns how many of the requested entries are allowed this call.
+   */
+  private consumeRateTokens(requested: number): number {
+    if (this.config.maxRatePerSec <= 0) {
+      return requested; // Unlimited
+    }
+
+    const now = Date.now();
+    const elapsed = (now - this.rateLastRefill) / 1000;
+
+    // Refill tokens (cap at maxRatePerSec)
+    this.rateTokens = Math.min(this.config.maxRatePerSec, this.rateTokens + elapsed * this.config.maxRatePerSec);
+    this.rateLastRefill = now;
+
+    if (this.rateTokens < 1) {
+      return 0;
+    }
+
+    const allowed = Math.min(requested, Math.floor(this.rateTokens));
+    this.rateTokens -= allowed;
+    return allowed;
+  }
+
+  /**
    * Redact sensitive data from audit entry
    *
    * @param entry - Entry to redact
@@ -272,8 +306,22 @@ export class AuditLogger {
       await this.initialize();
     }
 
+    // Rate limit: split entries into a rate-limited chunk
     const entriesToWrite = this.writeBuffer.splice(0, this.writeBuffer.length);
-    const chunk = entriesToWrite.join('');
+    const rateAllowed = this.consumeRateTokens(entriesToWrite.length);
+    const allowedEntries = entriesToWrite.slice(0, rateAllowed);
+    const deferredEntries = entriesToWrite.slice(rateAllowed);
+
+    // Put deferred entries back for next flush
+    if (deferredEntries.length > 0) {
+      this.writeBuffer.unshift(...deferredEntries);
+    }
+
+    if (allowedEntries.length === 0) {
+      return; // All entries rate-limited, retry next tick
+    }
+
+    const chunk = allowedEntries.join('');
 
     if (this.writeStream && !this.writeStream.destroyed) {
       this.pendingWrites++;
