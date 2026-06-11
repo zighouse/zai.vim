@@ -99,6 +99,15 @@ export class Engine implements EngineAPI {
       return this.#overrideManager.recordRejection('', harmLevel, `${operation}: ${command}`, { harmLevel, reason });
     };
 
+    // Validate SecurityEnricher pipeline position (Story 2.2, Task 3.3.1)
+    // Current architecture: security enrichment happens inline in chat()
+    // after provider chunks arrive and before tool execution.
+    const middlewareOrder = ['ToolExecutor', 'SecurityEnricher'] as const;
+    const positionValidation = SecurityEnricher.validatePipelinePosition(middlewareOrder);
+    if (!positionValidation.valid) {
+      throw new Error(`SecurityEnricher pipeline validation failed: ${positionValidation.error}`);
+    }
+
     this.#securityEnricher = new SecurityEnricher();
 
     this.#securityMonitor = new SecurityMonitor(

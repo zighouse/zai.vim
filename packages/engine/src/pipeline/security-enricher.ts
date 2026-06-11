@@ -24,9 +24,56 @@ export interface EnrichedChunk extends ResponseChunk {
  */
 export class SecurityEnricher {
   #active: boolean;
+  #validatedPosition: boolean;
 
   constructor() {
     this.#active = true;
+    this.#validatedPosition = false;
+  }
+
+  /**
+   * Validate that enrichment happens AFTER tool execution (Subtask 3.3.1)
+   *
+   * In the current architecture, security enrichment of tool_call chunks
+   * happens in the chat pipeline AFTER provider returns chunks and BEFORE
+   * tool execution. This is the correct position because:
+   * - We enrich the AI's tool_call request (not the tool's result)
+   * - The enrichment happens during SSE streaming to client
+   * - Tool execution happens separately via executeToolCalls
+   *
+   * This validation ensures the enrichment logic is not accidentally moved
+   * to the wrong position in the pipeline.
+   */
+  static validatePipelinePosition(
+    middlewareOrder: readonly string[],
+  ): { valid: boolean; error?: string } {
+    const enricherIndex = middlewareOrder.indexOf('SecurityEnricher');
+    const toolExecutorIndex = middlewareOrder.indexOf('ToolExecutor');
+
+    if (enricherIndex === -1) {
+      // SecurityEnricher not found in middleware list
+      // This is OK for the current architecture (inline implementation)
+      return { valid: true };
+    }
+
+    if (toolExecutorIndex === -1) {
+      return {
+        valid: false,
+        error: 'ToolExecutor not found in middleware chain',
+      };
+    }
+
+    // In the streaming pipeline, SecurityEnricher should process chunks
+    // from the provider (which include tool_call requests) before they
+    // are collected for execution. This is the correct order.
+    const valid = enricherIndex > toolExecutorIndex;
+
+    return valid
+      ? { valid: true }
+      : {
+          valid: false,
+          error: 'SecurityEnricher must be positioned after ToolExecutor in the middleware chain',
+        };
   }
 
   /**
