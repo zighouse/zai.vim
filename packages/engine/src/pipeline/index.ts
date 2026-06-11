@@ -21,13 +21,15 @@ import { type ISecurityProvider, type ISessionStore, ZaiSessionNotFoundError } f
 import { loadConfig } from '../config/index.js';
 import { InMemorySessionStoreFull, getLastActivityAt } from '../session/index.js';
 import { SessionLifecycleManager } from '../session/lifecycle-manager.js';
-import { SandboxManager, SecurityProvider, Auditor } from '../security/index.js';
+import { SandboxManager, SecurityProvider, Auditor, OverrideManager, SecurityMonitor } from '../security/index.js';
+import type { SecurityLevel } from '../security/security-monitor.js';
 import { createProviderRegistry } from '../provider/index.js';
 import { AsyncGeneratorAgent } from '../agent/index.js';
 import type { AgentDeps } from '../agent/index.js';
 import { chat as pipelineChat } from './chat.js';
 import type { ChatDeps } from './chat.js';
 import { findProjectRoot, scanProjectMeta, type ProjectRootResult } from './project-detector.js';
+import { SecurityEnricher } from './security-enricher.js';
 import { join } from 'node:path';
 import { stat } from 'node:fs/promises';
 
@@ -36,6 +38,7 @@ export { assembleContext, estimateTokens, trimContext, PIPELINE_DEFAULTS } from 
 export { executeToolCall, executeToolCalls, validateToolCalls } from './tool-executor.js';
 export { classifyProviderError } from './error-classifier.js';
 export { NullSecurityProvider } from './null-security.js';
+export { SecurityEnricher } from './security-enricher.js';
 export { resolveAttachments, formatAttachments } from './file-attachment.js';
 export { findProjectRoot, scanProjectMeta, formatProjectContext, truncateProjectContext, MAX_PROJECT_CONTEXT_CHARS } from './project-detector.js';
 export type { ProjectRootResult } from './project-detector.js';
@@ -57,6 +60,9 @@ export class Engine implements EngineAPI {
   #tools: ToolDefinition[];
   #agentDeps: AgentDeps;
   #destroyed = false;
+  #overrideManager: OverrideManager;
+  #securityMonitor: SecurityMonitor;
+  #securityEnricher: SecurityEnricher;
   /** Project context cache — keyed by session ID (Story 1b.4) */
   readonly #projectContextCache = new Map<string, ProjectContext>();
   /** Timestamp of last mtime check per session */
@@ -85,6 +91,55 @@ export class Engine implements EngineAPI {
       this.#auditor,
       process.cwd(),
     );
+
+    this.#overrideManager = new OverrideManager({}, undefined, undefined);
+
+    // Wire rejection callback: SecurityProvider → OverrideManager (Story 2.2)
+    this.#securityProvider.onRejection = (operation, harmLevel, command, reason) => {
+      return this.#overrideManager.recordRejection('', harmLevel, `${operation}: ${command}`, { harmLevel, reason });
+    };
+
+    this.#securityEnricher = new SecurityEnricher();
+
+    this.#securityMonitor = new SecurityMonitor(
+      async () => {
+        const auditHealthy = true; // Growth: real audit health check
+        const classifierHealthy = true; // Growth: real classifier health check
+        const isAvailable = this.#sandbox.isAvailable();
+        const level: SecurityLevel = !isAvailable
+          ? 'degraded'
+          : (!auditHealthy || !classifierHealthy)
+            ? 'at-risk'
+            : 'secure';
+        return {
+          level,
+          sandboxAvailable: isAvailable,
+          auditHealthy,
+          classifierHealthy,
+          auditBacklog: 0,
+          lastChecked: Date.now(),
+        };
+      },
+      undefined,
+      process.env.ZAIVIM_TEST_MODE === '1',
+    );
+
+    // Forward security status changes to engine events (Task 5.2)
+    this.#securityMonitor.onChange((change) => {
+      const eventType = change.to === 'secure' ? 'security.secure' : 'security.degraded';
+      this.events.emit(eventType, {
+        type: eventType,
+        reason: change.reason,
+        implications: change.implications,
+        from: change.from,
+        to: change.to,
+      });
+      this.#auditor.log('', `security.${change.to}`, {
+        from: change.from,
+        to: change.to,
+        reason: change.reason,
+      });
+    });
 
     this.#tools = tools ?? [];
 
@@ -232,7 +287,7 @@ export class Engine implements EngineAPI {
     return new AsyncGeneratorAgent(persona, this.#agentDeps, options);
   }
 
-  // ---- Health ----
+  // ---- Health (Story 2.2, Task 6) ----
 
   getHealth(): EngineHealth {
     const sandboxAvailable = this.#sandbox.isAvailable();
@@ -245,10 +300,28 @@ export class Engine implements EngineAPI {
     return {
       status,
       sandboxAvailable,
+      securityLevel: this.#securityMonitor.currentLevel,
       activeSessions: this.#sessionStore.activeCount,
       activeAgents: 0, // Growth: track active agent handles
       reason: sandboxAvailable ? undefined : 'sandbox unavailable',
     };
+  }
+
+  // ---- User Override (Story 2.2, FR66) ----
+
+  /** Request user override of a blocked security operation */
+  requestOverride(operationId: string, acknowledgment: string, sessionId: string): Promise<boolean> {
+    try {
+      const result = this.#overrideManager.requestOverride(operationId, acknowledgment, sessionId);
+      return Promise.resolve(result);
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  }
+
+  /** Get pending operation info (for Gateway forwarding) */
+  getPendingOperation(operationId: string) {
+    return this.#overrideManager.getPendingOperation(operationId);
   }
 
   // ---- Project context detection (Story 1b.4) -------------------------------

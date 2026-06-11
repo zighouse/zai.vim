@@ -34,6 +34,8 @@ export interface HealthResponse {
   readonly version: string;
   readonly uptime: number;
   readonly sandboxAvailable: boolean;
+  /** Security level indicator (Story 2.2, Task 6) */
+  readonly securityLevel?: 'secure' | 'degraded' | 'at-risk';
   readonly activeSessions: number;
   readonly nextMilestone?: string;
   readonly methods?: Record<string, string>;

@@ -163,3 +163,134 @@ export interface SecurityContext {
   /** Current harm level classification */
   readonly currentHarmLevel: HarmLevel;
 }
+
+// =============================================================================
+// File operation classification types (Story 2.2)
+// =============================================================================
+
+/** Type of file operation for classification */
+export type FileOperationType = 'read' | 'write' | 'delete' | 'modify';
+
+/**
+ * File classification result
+ */
+export interface FileClassification {
+  /** Classified harm level */
+  readonly harmLevel: HarmLevel;
+  /** Human-readable reason */
+  readonly reason: string;
+  /** Resolved real path (after symlink resolution) */
+  readonly resolvedPath: string;
+}
+
+// =============================================================================
+// Badge display types (Story 2.2, AC5)
+// =============================================================================
+
+/** Badge display properties for a harm level */
+export interface HarmLevelBadge {
+  /** Harm level */
+  readonly level: HarmLevel;
+  /** Display color */
+  readonly color: 'green' | 'yellow' | 'orange' | 'red';
+  /** Short label */
+  readonly label: string;
+  /** Icon character */
+  readonly icon: string;
+  /** Brief explanation */
+  readonly description: string;
+}
+
+// =============================================================================
+// Risk card types (Story 2.2, AC8)
+// =============================================================================
+
+/** Risk card severity */
+export type RiskCardSeverity = 'warning' | 'danger';
+
+/** Risk description card */
+export interface RiskCard {
+  /** Template version for traceability */
+  readonly templateVersion: string;
+  /** The operation being classified */
+  readonly operation: string;
+  /** Harm level */
+  readonly harmLevel: HarmLevel;
+  /** Severity category */
+  readonly severity: RiskCardSeverity;
+  /** Specific risk description */
+  readonly risk: string;
+  /** Potential consequences */
+  readonly consequences: readonly string[];
+  /** Safer alternatives */
+  readonly alternatives: readonly string[];
+  /** Instructions for override (if applicable) */
+  readonly overrideInstructions?: string;
+}
+
+// =============================================================================
+// Override types (Story 2.2, AC4 / FR66)
+// =============================================================================
+
+/** Override request */
+export interface OverrideRequest {
+  /** Operation ID (crypto.randomUUID) */
+  readonly operationId: string;
+  /** Harm level of the original operation */
+  readonly harmLevel: HarmLevel;
+  /** Original command/operation that was blocked */
+  readonly originalCommand: string;
+  /** User acknowledgment text */
+  readonly acknowledgment: string;
+  /** Session ID of the requester */
+  readonly sessionId: string;
+  /** Timestamp of the override */
+  readonly timestamp: string;
+}
+
+/** Override record stored in audit log */
+export interface OverrideRecord {
+  /** Audit event type discriminator */
+  readonly auditEventType: 'override';
+  /** Override details */
+  readonly override: OverrideRequest;
+  /** Original rejection decision */
+  readonly originalDecision: {
+    readonly harmLevel: HarmLevel;
+    readonly reason: string;
+  };
+  /** Result after override execution */
+  readonly executionResult?: {
+    readonly success: boolean;
+    readonly output?: string;
+  };
+}
+
+// =============================================================================
+// Security notification types (Story 2.2, AC9 / FR33)
+// =============================================================================
+
+/** Security degradation notification event */
+export interface SecurityDegradedNotification {
+  readonly type: 'security.degraded';
+  readonly reason: string;
+  readonly implications: readonly string[];
+}
+
+/** Security recovery notification event */
+export interface SecuritySecureNotification {
+  readonly type: 'security.secure';
+  readonly reason: string;
+  readonly status: 'secure';
+}
+
+/** Security notification union */
+export type SecurityNotification = SecurityDegradedNotification | SecuritySecureNotification;
+
+/** Tool notification with security context */
+export interface ToolSecurityNotification {
+  readonly type: 'tool.security';
+  readonly toolCallId: string;
+  readonly harmLevel: HarmLevel;
+  readonly badge?: HarmLevelBadge;
+}

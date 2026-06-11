@@ -157,6 +157,22 @@ export function createStdioTransport(
     return { sessionId, messageCount: session?.messages.length ?? 0 };
   });
 
+  // ---- Approval / Override (Story 2.2, Subtask 2.1.1) ------------------------
+
+  handlers.set('approval.override', async (params?: unknown) => {
+    const p = params as Record<string, unknown>;
+    const operationId = p.operationId as string;
+    const acknowledgment = p.acknowledgment as string;
+    const sessionId = p.sessionId as string;
+
+    if (!operationId || !acknowledgment || !sessionId) {
+      throw new Error('Missing required parameters: operationId, acknowledgment, sessionId');
+    }
+
+    await engine.requestOverride(operationId, acknowledgment, sessionId);
+    return { status: 'overridden', operationId };
+  });
+
   const input = streams?.stdin ?? process.stdin;
   const output = streams?.stdout ?? process.stdout;
   const rl = createInterface({ input });
@@ -177,6 +193,7 @@ export function createStdioTransport(
       { type: 'session.recovered', handler: (data) => output.write(encodeNotification('session.recovered', data)) },
       { type: 'session.project_context_updated', handler: (data) => output.write(encodeNotification('session.project_context_updated', data)) },
       { type: 'security.degraded', handler: (data) => output.write(encodeNotification('security.degraded', data)) },
+      { type: 'security.secure', handler: (data) => output.write(encodeNotification('security.secure', data)) },
       { type: 'engine.warning', handler: (data) => output.write(encodeNotification('engine.warning', data)) },
       { type: 'engine.shutdown', handler: (data) => output.write(encodeNotification('engine.shutdown', data)) },
       { type: 'provider.retry', handler: (data) => output.write(encodeNotification('provider.retry', data)) },

@@ -155,8 +155,8 @@ export interface AgentPool {
 
 // ---- Security types (Story 2.1) -------------------------------------------
 
-import type { HarmLevel, SecurityDecision, SecurityStatus, AuditEntry, ISecurityProvider, SecurityContext, FileChangeProposal } from './security.js';
-export type { HarmLevel, SecurityDecision, SecurityStatus, AuditEntry, ISecurityProvider, SecurityContext, FileChangeProposal };
+import type { HarmLevel, SecurityDecision, SecurityStatus, AuditEntry, ISecurityProvider, SecurityContext, FileChangeProposal, FileOperationType, FileClassification, HarmLevelBadge, RiskCard, RiskCardSeverity, OverrideRequest, OverrideRecord, SecurityDegradedNotification, SecuritySecureNotification, SecurityNotification, ToolSecurityNotification } from './security.js';
+export type { HarmLevel, SecurityDecision, SecurityStatus, AuditEntry, ISecurityProvider, SecurityContext, FileChangeProposal, FileOperationType, FileClassification, HarmLevelBadge, RiskCard, RiskCardSeverity, OverrideRequest, OverrideRecord, SecurityDegradedNotification, SecuritySecureNotification, SecurityNotification, ToolSecurityNotification };
 
 // ---- Tool types ------------------------------------------------------------
 
@@ -301,12 +301,16 @@ export interface EngineAPI {
   createAgent(persona: PersonaConfig, options?: ForkOptions): AgentHandle;
   chat(sessionId: string, message: Message, signal?: AbortSignal): AsyncIterable<ResponseChunk>;
   getHealth(): EngineHealth;
+  /** Request user override of a blocked security operation (Story 2.2, FR66) */
+  requestOverride(operationId: string, acknowledgment: string, sessionId: string): Promise<boolean>;
   destroy(options?: Partial<ShutdownOptions>): Promise<void>;
 }
 
 export interface EngineHealth {
   readonly status: 'ok' | 'degraded' | 'down';
   readonly sandboxAvailable: boolean;
+  /** Security level indicator (Story 2.2, Task 6) */
+  readonly securityLevel?: 'secure' | 'degraded' | 'at-risk';
   readonly activeSessions: number;
   readonly activeAgents: number;
   readonly reason?: string;

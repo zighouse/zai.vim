@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { rm } from 'node:fs/promises';
 import { AuditLogger } from '../security/audit-logger.js';
-import type { AuditEntry } from '../security/audit-logger.js';
+import type { AuditEntry, AuditQueryFilter } from '../security/audit-logger.js';
 import type { HarmLevel } from '@zaivim/core';
 
 describe('AuditLogger', () => {
@@ -360,6 +360,120 @@ describe('AuditLogger', () => {
       expect(entries).toHaveLength(1);
       expect(entries[0].operation).toBe('shell_exec');
     });
+
+    it('should filter out override entries by default in query (Subtask 2.4.2)', async () => {
+      const logger = new AuditLogger(testLogPath);
+
+      await logger.log({
+        timestamp: '2024-01-01T00:00:00.000Z',
+        sessionId: testSessionId,
+        operation: 'override',
+        harmLevel: 'S',
+        decision: 'allowed',
+        reason: 'User override',
+        user: 'testuser',
+        auditEventType: 'override',
+      });
+
+      await logger.log({
+        timestamp: '2024-01-01T00:00:01.000Z',
+        sessionId: testSessionId,
+        operation: 'shell_exec',
+        harmLevel: 'C',
+        decision: 'allowed',
+        reason: 'Safe operation',
+        user: 'testuser',
+      });
+
+      await logger.flush();
+
+      // Default query excludes overrides
+      const entries = await logger.query();
+      expect(entries).toHaveLength(1);
+      expect(entries[0].operation).toBe('shell_exec');
+    });
+
+    it('should include overrides when includeOverrides is true (Subtask 2.4.2)', async () => {
+      const logger = new AuditLogger(testLogPath);
+
+      await logger.log({
+        timestamp: '2024-01-01T00:00:00.000Z',
+        sessionId: testSessionId,
+        operation: 'override',
+        harmLevel: 'S',
+        decision: 'allowed',
+        reason: 'User override',
+        user: 'testuser',
+        auditEventType: 'override',
+      });
+
+      await logger.flush();
+
+      const entries = await logger.query({ includeOverrides: true });
+      expect(entries).toHaveLength(1);
+      expect(entries[0].auditEventType).toBe('override');
+    });
+
+    it('should filter by auditEventType in query (Subtask 2.4.2)', async () => {
+      const logger = new AuditLogger(testLogPath);
+
+      await logger.log({
+        timestamp: '2024-01-01T00:00:00.000Z',
+        sessionId: testSessionId,
+        operation: 'override',
+        harmLevel: 'S',
+        decision: 'allowed',
+        reason: 'User override',
+        user: 'testuser',
+        auditEventType: 'override',
+      });
+
+      await logger.log({
+        timestamp: '2024-01-01T00:00:01.000Z',
+        sessionId: testSessionId,
+        operation: 'shell_exec',
+        harmLevel: 'C',
+        decision: 'allowed',
+        reason: 'Safe operation',
+        user: 'testuser',
+      });
+
+      await logger.flush();
+
+      const entries = await logger.query({ auditEventType: 'override', includeOverrides: true });
+      expect(entries).toHaveLength(1);
+      expect(entries[0].auditEventType).toBe('override');
+    });
+
+    it('should filter by sessionId in query', async () => {
+      const logger = new AuditLogger(testLogPath);
+
+      await logger.log({
+        timestamp: '2024-01-01T00:00:00.000Z',
+        sessionId: 'session-a',
+        operation: 'shell_exec',
+        harmLevel: 'C',
+        decision: 'allowed',
+        reason: 'Safe',
+        user: 'u1',
+      });
+
+      await logger.log({
+        timestamp: '2024-01-01T00:00:01.000Z',
+        sessionId: 'session-b',
+        operation: 'file_write',
+        harmLevel: 'B',
+        decision: 'allowed',
+        reason: 'Write',
+        user: 'u1',
+      });
+
+      await logger.flush();
+
+      const entries = await logger.query({ sessionId: 'session-a' });
+      expect(entries).toHaveLength(1);
+      expect(entries[0].sessionId).toBe('session-a');
+    });
   });
 
   describe('Error handling', () => {
@@ -425,6 +539,39 @@ describe('AuditLogger', () => {
       expect(stats.allowedCount).toBe(1);
       expect(stats.deniedCount).toBe(1);
       expect(stats.harmLevelDistribution).toEqual({ C: 1, S: 1 });
+      expect(stats.overrides).toBe(0); // No override entries
+    });
+
+    it('should count overrides in statistics (Subtask 2.4.3)', async () => {
+      const logger = new AuditLogger(testLogPath);
+
+      await logger.log({
+        timestamp: '2024-01-01T00:00:00.000Z',
+        sessionId: testSessionId,
+        operation: 'override',
+        harmLevel: 'S',
+        decision: 'allowed',
+        reason: 'User override',
+        user: 'testuser',
+        auditEventType: 'override',
+        userAcknowledged: true,
+      });
+
+      await logger.log({
+        timestamp: '2024-01-01T00:00:01.000Z',
+        sessionId: testSessionId,
+        operation: 'shell_exec',
+        harmLevel: 'C',
+        decision: 'allowed',
+        reason: 'Safe operation',
+        user: 'testuser',
+      });
+
+      await logger.flush();
+
+      const stats = await logger.getStatistics();
+      expect(stats.totalEntries).toBe(2);
+      expect(stats.overrides).toBe(1);
     });
   });
 });

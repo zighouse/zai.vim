@@ -508,3 +508,71 @@ describe('Story 1b.5: Retry and fallback integration', () => {
     }));
   });
 });
+
+// ---- Story 2.2: Security integration tests ----
+
+describe('Story 2.2 — Security health in getHealth() (Task 7.6)', () => {
+  it('should include securityLevel in health response', () => {
+    const engine = new Engine([], {
+      language: 'en',
+      sandbox: { enabled: false, type: 'none', workDir: '/tmp', timeout: 30000 },
+      providers: {},
+      defaults: { provider: '', model: '', temperature: 0.7, maxTokens: 4096 },
+    });
+
+    const health = engine.getHealth();
+    expect(health).toHaveProperty('securityLevel');
+    expect(['secure', 'degraded', 'at-risk']).toContain(health.securityLevel);
+  });
+});
+
+describe('Story 2.2 — Tool call security enrichment (Task 3.3.2)', () => {
+  it('should enrich tool_call chunks with harmLevel from preExecute', async () => {
+    const { chat: pipelineChat } = await import('../pipeline/chat.js');
+    const { InMemorySessionStoreFull } = await import('../session/memory-store.js');
+
+    const mockProvider: IProvider = {
+      name: 'mock-enrich',
+      models: ['mock-model'],
+      capabilities: { streaming: true, toolUse: true, caching: false, thinking: false, vision: false, maxContextTokens: 128_000 },
+      async *chat() {
+        yield { type: 'tool_call', id: 'tc-1', name: 'echo', arguments: { text: 'hello' } };
+        yield { type: 'done', finishReason: 'tool_calls' };
+      },
+    };
+
+    const sessionStore = new InMemorySessionStoreFull();
+    const session = sessionStore.create({
+      language: 'en',
+      sandbox: { enabled: false, type: 'none', workDir: '/tmp', timeout: 30000 },
+      providers: {},
+      defaults: { provider: '', model: '', temperature: 0.7, maxTokens: 4096 },
+    });
+
+    const mockSecurity = {
+      async preExecute() {
+        return { allowed: true, harmLevel: 'C' as const, reason: 'safe' };
+      },
+      async postExecute() {},
+    };
+
+    const chunks: ResponseChunk[] = [];
+    for await (const chunk of pipelineChat(session, { id: 'msg-1', role: 'user', content: 'Hi' }, {
+      sessionStore,
+      provider: mockProvider,
+      tools: [
+        { name: 'echo', description: 'Echo', parameters: { type: 'object', properties: { text: { type: 'string' } } }, execute: async (p) => JSON.stringify(p) },
+      ],
+      security: mockSecurity as any,
+      emit: vi.fn(),
+    })) {
+      chunks.push(chunk);
+    }
+
+    const toolCallChunk = chunks.find(c => c.type === 'tool_call') as any;
+    expect(toolCallChunk).toBeDefined();
+    expect(toolCallChunk.harmLevel).toBe('C');
+    expect(toolCallChunk.badge).toBeDefined();
+    expect(toolCallChunk.badge.level).toBe('C');
+  });
+});

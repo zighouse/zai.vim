@@ -1,7 +1,13 @@
 // @zaivim/engine — Harm Classifier
 // Command harm level classification for security enforcement
 
-import type { HarmLevel } from '@zaivim/core';
+import type { HarmLevel, FileClassification } from '@zaivim/core';
+import { realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { homedir, platform } from 'node:os';
+
+/** Windows drive letters pattern */
+const WIN_DRIVE = /^[A-Za-z]:\\/;
 
 /**
  * Command classification result
@@ -395,5 +401,196 @@ export class HarmClassifier {
    */
   clearWhitelist(): void {
     this.whitelist.clear();
+  }
+
+  // ============================================================================
+  // File operation classification (Story 2.2, Task 1)
+  // ============================================================================
+
+  /** File path patterns: S-level — system-critical paths (modification = system compromise) */
+  private static readonly S_FILE_PATTERNS: Array<{ prefix: string; reason: string }> = [
+    { prefix: '/etc/', reason: 'system file modification attempted' },
+    { prefix: '/boot/', reason: 'boot partition modification attempted' },
+    { prefix: '/sys/', reason: 'system filesystem modification attempted' },
+    { prefix: '/proc/', reason: 'process filesystem modification attempted' },
+    { prefix: '/dev/', reason: 'device file modification attempted' },
+    { prefix: '/usr/', reason: 'system directory modification attempted' },
+    { prefix: '/bin/', reason: 'system binary modification attempted' },
+    { prefix: '/sbin/', reason: 'system binary modification attempted' },
+    { prefix: '/lib/', reason: 'system library modification attempted' },
+    { prefix: '/lib64/', reason: 'system library modification attempted' },
+    { prefix: '/run/', reason: 'runtime system file modification attempted' },
+    { prefix: '/var/', reason: 'system var directory modification attempted' },
+    { prefix: '/root/', reason: 'root home directory modification attempted' },
+  ];
+
+  /** File path patterns: A-level — sensitive configs */
+  private static readonly A_FILE_PATTERNS: Array<{ prefix: string; reason: string }> = [
+    { prefix: '.ssh/', reason: 'SSH configuration modification' },
+    { prefix: '.aws/', reason: 'AWS credential modification' },
+    { prefix: '.kube/', reason: 'Kubernetes config modification' },
+    { prefix: '.config/', reason: 'user config directory modification' },
+    { prefix: '.gnupg/', reason: 'GPG key modification' },
+    { prefix: '.docker/', reason: 'Docker config modification' },
+    { prefix: '.npmrc', reason: 'NPM config modification' },
+    { prefix: '.gitconfig', reason: 'Git config modification' },
+    { prefix: '.env', reason: 'environment file modification' },
+    { prefix: '.env.', reason: 'environment file modification' },
+    { prefix: 'C:\\Windows\\', reason: 'Windows system directory modification' },
+    { prefix: 'C:\\Program Files\\', reason: 'Windows program files modification' },
+  ];
+
+  /** S-level file patterns for read operations (reading sensitive files is still sensitive) */
+  private static readonly S_FILE_READ_PATTERNS: Array<{ prefix: string; reason: string }> = [
+    { prefix: '/etc/shadow', reason: 'password shadow file read' },
+    { prefix: '/etc/gshadow', reason: 'group shadow file read' },
+    { prefix: '/etc/ssl/', reason: 'SSL certificate read' },
+    { prefix: '.ssh/', reason: 'SSH key read' },
+    { prefix: '.aws/', reason: 'AWS credential read' },
+    { prefix: '.kube/', reason: 'Kubernetes config read' },
+    { prefix: '.gnupg/', reason: 'GPG key read' },
+  ];
+
+  /**
+   * Classify a file operation by path
+   *
+   * Resolves the path securely (realpath, ~ expansion) and classifies
+   * based on the resolved path and operation type.
+   *
+   * @param path - File path to classify
+   * @param operationType - Type of file operation (read/write/delete/modify)
+   * @returns Classification result with harm level, reason, and resolved path
+   */
+  classifyFileOperation(path: string, operationType: 'read' | 'write' | 'delete' | 'modify'): FileClassification {
+    // Guard: empty path is blocked
+    if (!path || path.trim().length === 0) {
+      return {
+        harmLevel: 'S',
+        reason: 'empty or invalid file path — blocked by default',
+        resolvedPath: path,
+      };
+    }
+
+    // 1. Resolve path securely (Subtask 1.6, 1.9)
+    const resolved = this.resolveSecurePath(path);
+
+    // 2. Classify based on resolved path
+    return this.classifyResolvedPath(resolved, operationType);
+  }
+
+  /**
+   * Securely resolve a file path
+   *
+   * Performs: ~ expansion → path.resolve → realpathSync.native()
+   * Wrapped in try-catch for ENOENT and other errors (Subtask 1.9).
+   *
+   * @param path - Raw path to resolve
+   * @returns Resolved path (or best-effort if resolution fails)
+   */
+  resolveSecurePath(path: string): string {
+    try {
+      // Step 1: Expand ~ to homedir (Subtask 1.6.1)
+      let expanded = path;
+      if (expanded.startsWith('~')) {
+        const home = homedir();
+        if (expanded === '~') {
+          expanded = home;
+        } else if (expanded.startsWith('~/')) {
+          expanded = home + expanded.slice(1);
+        }
+      }
+
+      // Step 2: Normalize with path.resolve
+      const normalized = resolve(expanded);
+
+      // Step 3: Resolve symlinks using OS-native resolution (ADR-17)
+      try {
+        return realpathSync.native(normalized);
+      } catch {
+        // realpath may fail for non-existent paths (ENOENT)
+        // Fall back to normalized path (Subtask 1.9)
+        return normalized;
+      }
+    } catch {
+      // Absolute last resort: return the original path
+      return path;
+    }
+  }
+
+  /**
+   * Classify a resolved path
+   *
+   * @param resolvedPath - resolv()ed file path
+   * @param operationType - Type of file operation
+   * @returns Classification result
+   */
+  private classifyResolvedPath(resolvedPath: string, operationType: 'read' | 'write' | 'delete' | 'modify'): FileClassification {
+    const lowerPath = resolvedPath.toLowerCase();
+
+    // For write/delete/modify: check S and A file system patterns
+    if (operationType === 'write' || operationType === 'delete' || operationType === 'modify') {
+      // Check S-level system paths first
+      for (const pattern of HarmClassifier.S_FILE_PATTERNS) {
+        if (lowerPath.includes(pattern.prefix.toLowerCase())) {
+          return {
+            harmLevel: 'S',
+            reason: `${pattern.reason} — resolved path: ${resolvedPath}`,
+            resolvedPath,
+          };
+        }
+      }
+
+      // Check A-level sensitive config paths
+      for (const pattern of HarmClassifier.A_FILE_PATTERNS) {
+        if (lowerPath.includes(pattern.prefix.toLowerCase())) {
+          return {
+            harmLevel: 'A',
+            reason: `${pattern.reason} — resolved path: ${resolvedPath}`,
+            resolvedPath,
+          };
+        }
+      }
+    }
+
+    // For read operations: check S-level patterns (both system paths and sensitive files)
+    if (operationType === 'read') {
+      // Check system directory paths first
+      for (const pattern of HarmClassifier.S_FILE_PATTERNS) {
+        if (lowerPath.includes(pattern.prefix.toLowerCase())) {
+          return {
+            harmLevel: 'S',
+            reason: `${pattern.reason} — resolved path: ${resolvedPath}`,
+            resolvedPath,
+          };
+        }
+      }
+      // Check sensitive read patterns (keys, credentials)
+      for (const pattern of HarmClassifier.S_FILE_READ_PATTERNS) {
+        if (lowerPath.includes(pattern.prefix.toLowerCase())) {
+          return {
+            harmLevel: 'S',
+            reason: `${pattern.reason} — resolved path: ${resolvedPath}`,
+            resolvedPath,
+          };
+        }
+      }
+    }
+
+    // Check for write outside project root (B-level)
+    if (operationType === 'write' || operationType === 'delete' || operationType === 'modify') {
+      // Write operations are at least B-level
+      return {
+        harmLevel: 'B',
+        reason: `File ${operationType} operation — resolved path: ${resolvedPath}`,
+        resolvedPath,
+      };
+    }
+
+    // Read operations within project: C-level (safe)
+    return {
+      harmLevel: 'C',
+      reason: `File read operation — resolved path: ${resolvedPath}`,
+      resolvedPath,
+    };
   }
 }

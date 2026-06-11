@@ -24,7 +24,7 @@ import { NullSecurityProvider } from './null-security.js';
 import { retryWithBackoff, DEFAULT_RETRY_CONFIG } from './retry.js';
 import type { RetryConfig } from './retry.js';
 import type { ProviderRegistry } from '../provider/index.js';
-
+import { getBadge } from '../security/badge-display.js';
 export interface ChatDeps {
   readonly sessionStore: ISessionStore;
   readonly provider: IProvider;
@@ -166,15 +166,6 @@ export async function* chat(
             });
           }
 
-          // Collect tool calls for execution
-          if (chunk.type === 'tool_call') {
-            toolCalls.push({
-              id: chunk.id,
-              name: chunk.name,
-              arguments: chunk.arguments,
-            });
-          }
-
           // Accumulate text content for persistence
           if (chunk.type === 'text') {
             fullContent += chunk.content;
@@ -183,6 +174,38 @@ export async function* chat(
           // Track done reason
           if (chunk.type === 'done') {
             finishReason = chunk.finishReason;
+          }
+
+          // Security enrichment: pre-check harm level for tool_call chunks (Story 2.2, Task 3.3)
+          if (chunk.type === 'tool_call') {
+            let harmLevel: import('@zaivim/core').HarmLevel | undefined;
+            try {
+              const decision = await security.preExecute(chunk.name, chunk.arguments);
+              harmLevel = decision.harmLevel;
+            } catch {
+              // Security check failure should not block the pipeline
+            }
+
+            if (harmLevel) {
+              const badge = getBadge(harmLevel);
+              const enriched = { ...chunk, harmLevel, badge };
+              toolCalls.push({
+                id: enriched.id,
+                name: enriched.name,
+                arguments: enriched.arguments,
+              });
+              yield enriched;
+              continue;
+            }
+          }
+
+          // Collect tool calls for execution
+          if (chunk.type === 'tool_call') {
+            toolCalls.push({
+              id: chunk.id,
+              name: chunk.name,
+              arguments: chunk.arguments,
+            });
           }
 
           yield chunk;

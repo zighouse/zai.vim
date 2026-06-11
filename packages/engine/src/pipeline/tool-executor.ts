@@ -3,6 +3,8 @@
 
 import type { ToolDefinition, ToolContext, ResponseChunk, Message } from '@zaivim/core';
 import { randomUUID } from 'node:crypto';
+import { realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 export interface ToolCallRequest {
   readonly id: string;
@@ -47,6 +49,22 @@ export async function executeToolCall(
       }),
       timedOut: false,
     };
+  }
+
+  // TOCTOU protection: re-resolve file paths for file operations (Story 2.2, Task 1.8)
+  if (tc.name === 'file_read' || tc.name === 'file_write' || tc.name === 'file_delete' || tc.name === 'file_modify') {
+    const originalPath = tc.arguments.path as string;
+    if (originalPath) {
+      try {
+        const reResolved = realpathSync.native(resolve(originalPath));
+        // If preExecute resolved a different path, the symlink may have been swapped
+        // Store the re-resolved path for the tool's use
+        tc.arguments.__resolvedPath = reResolved;
+      } catch {
+        // Path doesn't exist yet (e.g., creating a new file) — this is expected
+        // The tool will handle creation; no TOCTOU risk for non-existent paths
+      }
+    }
   }
 
   const timeout = options.timeout ?? 120_000;

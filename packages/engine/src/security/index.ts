@@ -16,6 +16,12 @@ import { HarmClassifier } from './harm-classifier.js';
 export { HarmClassifier } from './harm-classifier.js';
 import { AuditLogger } from './audit-logger.js';
 export { AuditLogger, type AuditEntry, type AuditStatistics } from './audit-logger.js';
+export { OverrideManager } from './override-manager.js';
+export { SecurityMonitor } from './security-monitor.js';
+export type { SecurityLevel, SecurityHealth, SecurityStatusChange } from './security-monitor.js';
+export { getBadge, getAllBadges, isElevatedRisk, isBlockingLevel } from './badge-display.js';
+export { generateRiskCard } from './risk-card.js';
+export type { RiskCardSummary } from './risk-card.js';
 
 // ============================================================================
 // TODO (@zaivim/sandbox): extract SandboxManager to @zaivim/sandbox when
@@ -121,6 +127,7 @@ export class SecurityProvider implements ISecurityProvider {
   #auditLogger?: AuditLogger;
   #projectRoot: string;
   #harmClassifier: HarmClassifier;
+  #onRejection?: (operation: string, harmLevel: HarmLevel, command: string, reason: string) => string;
 
   constructor(sandbox: SandboxManager, auditor: Auditor, projectRoot?: string, auditLogger?: AuditLogger) {
     this.sandboxType = sandbox.sandboxType;
@@ -129,6 +136,13 @@ export class SecurityProvider implements ISecurityProvider {
     this.#projectRoot = resolve(projectRoot ?? process.cwd());
     this.#harmClassifier = new HarmClassifier();
     this.#auditLogger = auditLogger;
+  }
+
+  /**
+   * Set a callback for when operations are rejected (for override recording)
+   */
+  set onRejection(cb: ((operation: string, harmLevel: HarmLevel, command: string, reason: string) => string) | undefined) {
+    this.#onRejection = cb;
   }
 
   /**
@@ -147,10 +161,12 @@ export class SecurityProvider implements ISecurityProvider {
       if (command) {
         const classification = this.#harmClassifier.classifyCommand(command);
         if (!classification.whitelisted && classification.level === 'S') {
+          const reason = `Command blocked (S-level): ${classification.reason}`;
+          this.#onRejection?.(operation, 'S', command, classification.reason);
           return {
             allowed: false,
             harmLevel: 'S',
-            reason: `Command blocked (S-level): ${classification.reason}`,
+            reason,
           };
         }
         return {
@@ -161,16 +177,59 @@ export class SecurityProvider implements ISecurityProvider {
       }
     }
 
-    // MVP: Basic path validation for file operations
-    if (operation === 'file_write' || operation === 'file_delete') {
+    // File operations: classify using HarmClassifier (Story 2.2, Task 1.7)
+    if (operation === 'file_read' || operation === 'file_write' || operation === 'file_delete' || operation === 'file_modify') {
       const path = params.path as string;
-      if (!this.validatePath(path, operation)) {
+      if (!path) {
+        return {
+          allowed: false,
+          harmLevel: 'B',
+          reason: 'File path is empty or undefined',
+        };
+      }
+
+      const opType = operation === 'file_read' ? 'read'
+        : operation === 'file_write' ? 'write'
+        : operation === 'file_delete' ? 'delete'
+        : 'modify';
+
+      const classification = this.#harmClassifier.classifyFileOperation(path, opType);
+
+      // S-level: block all file operations
+      if (classification.harmLevel === 'S') {
+        const reason = `File operation blocked (S-level): ${classification.reason}`;
+        this.#onRejection?.(operation, 'S', path, classification.reason);
+        return {
+          allowed: false,
+          harmLevel: 'S',
+          reason,
+          alternatives: [
+            'Use a different path outside system directories',
+            'Request explicit user override with acknowledgment',
+          ],
+        };
+      }
+
+      // A-level: block write/delete/modify, allow read
+      if (classification.harmLevel === 'A' && opType !== 'read') {
+        const reason = `File operation blocked (A-level): ${classification.reason}`;
+        this.#onRejection?.(operation, 'A', path, classification.reason);
         return {
           allowed: false,
           harmLevel: 'A',
-          reason: 'Operation outside project root or in .git directory',
+          reason,
+          alternatives: [
+            'Use project-internal paths instead',
+            'Request explicit user override with acknowledgment',
+          ],
         };
       }
+
+      return {
+        allowed: true,
+        harmLevel: classification.harmLevel,
+        reason: classification.reason,
+      };
     }
 
     return {
@@ -264,5 +323,50 @@ export class SecurityProvider implements ISecurityProvider {
 
   isSandboxAvailable(): boolean {
     return this.#sandbox.isAvailable();
+  }
+
+  // ============================================================================
+  // Whitelist management with audit logging (Story 2.2, Task 1.10)
+  // ============================================================================
+
+  /** Add command to whitelist (with audit record) */
+  addToWhitelist(pattern: string, reason: string): void {
+    this.#harmClassifier.addToWhitelist(pattern, reason);
+    this.#auditor.log('', 'whitelist.add', { pattern, reason });
+    if (this.#auditLogger) {
+      this.#auditLogger.log({
+        timestamp: new Date().toISOString(),
+        sessionId: '',
+        operation: 'whitelist_add',
+        harmLevel: 'C',
+        decision: 'allowed',
+        reason: `Whitelist added: ${pattern} — ${reason}`,
+        user: 'system',
+        metadata: { pattern, reason },
+      }).catch(() => {});
+    }
+  }
+
+  /** Remove command from whitelist (with audit record) */
+  removeFromWhitelist(pattern: string): void {
+    this.#harmClassifier.removeFromWhitelist(pattern);
+    this.#auditor.log('', 'whitelist.remove', { pattern });
+    if (this.#auditLogger) {
+      this.#auditLogger.log({
+        timestamp: new Date().toISOString(),
+        sessionId: '',
+        operation: 'whitelist_remove',
+        harmLevel: 'C',
+        decision: 'allowed',
+        reason: `Whitelist removed: ${pattern}`,
+        user: 'system',
+        metadata: { pattern },
+      }).catch(() => {});
+    }
+  }
+
+  /** Get all whitelisted patterns */
+  getWhitelist(): Array<[string, string]> {
+    return this.#harmClassifier.getWhitelist();
   }
 }

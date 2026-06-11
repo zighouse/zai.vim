@@ -29,6 +29,8 @@ export interface AuditEntry {
   readonly metadata?: Record<string, unknown>;
   /** User who performed the operation */
   readonly user: string;
+  /** Audit event type for categorization (e.g., 'override', 'security_status_change') */
+  readonly auditEventType?: string;
 }
 
 /**
@@ -43,6 +45,21 @@ export interface AuditStatistics {
   readonly deniedCount: number;
   /** Distribution by harm level */
   readonly harmLevelDistribution: Record<string, number>;
+  /** Number of override entries (Subtask 2.4.3) */
+  readonly overrides: number;
+}
+
+/**
+ * Filter options for audit query (Subtask 2.4.2)
+ */
+export interface AuditQueryFilter {
+  sessionId?: string;
+  startTime?: string;
+  endTime?: string;
+  /** Filter by auditEventType (e.g., 'override'). Default excludes overrides. */
+  auditEventType?: string;
+  /** Set true to include override entries in results (default: false) */
+  includeOverrides?: boolean;
 }
 
 /**
@@ -514,6 +531,53 @@ export class AuditLogger {
   }
 
   /**
+   * Generic query with filters (Subtask 2.4.2)
+   *
+   * @param filter - Optional filter criteria
+   * @returns Array of matching entries
+   */
+  async query(filter?: AuditQueryFilter): Promise<AuditEntry[]> {
+    const content = await this.readAll();
+    const lines = content.trim().split('\n').filter((l) => l);
+
+    const entries: AuditEntry[] = [];
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line) as AuditEntry;
+
+        // Default: exclude override entries unless explicitly asked
+        if (!filter?.includeOverrides && entry.operation === 'override') {
+          continue;
+        }
+
+        // Filter by auditEventType
+        if (filter?.auditEventType && entry.auditEventType !== filter.auditEventType) {
+          continue;
+        }
+
+        // Filter by sessionId
+        if (filter?.sessionId && entry.sessionId !== filter.sessionId) {
+          continue;
+        }
+
+        // Filter by time range
+        if (filter?.startTime && entry.timestamp < filter.startTime) {
+          continue;
+        }
+        if (filter?.endTime && entry.timestamp > filter.endTime) {
+          continue;
+        }
+
+        entries.push(entry);
+      } catch {
+        // Skip invalid lines
+      }
+    }
+
+    return entries;
+  }
+
+  /**
    * Get audit log statistics
    *
    * @returns Statistics about the audit log
@@ -524,6 +588,7 @@ export class AuditLogger {
 
     let allowedCount = 0;
     let deniedCount = 0;
+    let overrides = 0;
     const harmLevelDistribution: Record<string, number> = {};
 
     for (const line of lines) {
@@ -538,6 +603,10 @@ export class AuditLogger {
 
         harmLevelDistribution[entry.harmLevel] =
           (harmLevelDistribution[entry.harmLevel] || 0) + 1;
+
+        if (entry.operation === 'override') {
+          overrides++;
+        }
       } catch {
         // Skip invalid lines
       }
@@ -548,6 +617,7 @@ export class AuditLogger {
       allowedCount,
       deniedCount,
       harmLevelDistribution,
+      overrides,
     };
   }
 
