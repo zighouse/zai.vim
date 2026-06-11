@@ -222,8 +222,21 @@ export class SecurityMonitor {
 
   /**
    * Emit change to listeners
+   *
+   * In test mode (Task 5.6), downgrades to log level output instead of
+   * sending $/notification events to prevent test interference.
    */
   #emitChange(change: SecurityStatusChange): void {
+    // Test mode: log to console instead of sending notifications (Task 5.6)
+    if (this.#testMode) {
+      console.log(
+        `[SecurityMonitor:TEST] Security status changed: ${change.from} → ${change.to} — ${change.reason}`,
+      );
+      console.log(`[SecurityMonitor:TEST] Implications: ${change.implications.join(', ')}`);
+      return;
+    }
+
+    // Normal mode: send notifications to all listeners
     for (const listener of this.#listeners) {
       try {
         listener(change);
