@@ -404,3 +404,16 @@ export function getTemplateKeywords(): {
     aKeywords: A_RISK_TEMPLATES.map(t => t.keyword),
   };
 }
+
+/**
+ * Get all template keywords for testing
+ */
+export function getTemplateKeywords(): {
+  sKeywords: readonly string[];
+  aKeywords: readonly string[];
+} {
+  return {
+    sKeywords: S_RISK_TEMPLATES.map(t => t.keyword),
+    aKeywords: A_RISK_TEMPLATES.map(t => t.keyword),
+  };
+}
