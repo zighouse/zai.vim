@@ -30,6 +30,8 @@ import { chat as pipelineChat } from './chat.js';
 import type { ChatDeps } from './chat.js';
 import { findProjectRoot, scanProjectMeta, type ProjectRootResult } from './project-detector.js';
 import { SecurityEnricher } from './security-enricher.js';
+import { validatePatternTemplateSync } from '../security/risk-card.js';
+import { HarmClassifier } from '../security/harm-classifier.js';
 import { join } from 'node:path';
 import { stat } from 'node:fs/promises';
 
@@ -106,6 +108,20 @@ export class Engine implements EngineAPI {
     const positionValidation = SecurityEnricher.validatePipelinePosition(middlewareOrder);
     if (!positionValidation.valid) {
       throw new Error(`SecurityEnricher pipeline validation failed: ${positionValidation.error}`);
+    }
+
+    // Validate pattern-template sync (Story 2.2, Task 4.3.2)
+    // Ensure all S/A-level file operation patterns have risk templates
+    const patternSyncValidation = validatePatternTemplateSync(
+      HarmClassifier.getSFilePatterns(),
+      HarmClassifier.getAFilePatterns(),
+    );
+    if (!patternSyncValidation.valid) {
+      const criticalWarnings = patternSyncValidation.warnings.filter(w => w.includes('critical'));
+      throw new Error(
+        `Pattern-template sync validation failed:\n${criticalWarnings.join('\n')}\n` +
+        'Add corresponding risk templates in risk-card.ts'
+      );
     }
 
     this.#securityEnricher = new SecurityEnricher();

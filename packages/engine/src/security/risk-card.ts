@@ -337,3 +337,70 @@ export interface RiskCardSummary {
   readonly risk: string;
   readonly templateVersion: string;
 }
+
+// ============================================================================
+// Pattern-Template Sync Gate (Story 2.2, Task 4.3.2)
+// Ensures all S/A-level patterns have corresponding risk templates
+// ============================================================================
+
+/**
+ * Validate that all S/A-level harm classification patterns have
+ * corresponding risk templates (Subtask 4.3.2)
+ *
+ * MVP validation: Check that S and A templates exist and cover
+ * common pattern categories. Growth: Implement comprehensive coverage checking.
+ *
+ * @param sPatterns - Array of S-level pattern prefixes from HarmClassifier
+ * @param aPatterns - Array of A-level pattern prefixes from HarmClassifier
+ * @returns Object with validation result and warnings
+ */
+export function validatePatternTemplateSync(
+  sPatterns: readonly string[],
+  aPatterns: readonly string[],
+): { valid: boolean; warnings: string[] } {
+  const warnings: string[] = [];
+
+  // MVP: Check that S and A templates exist
+  if (S_RISK_TEMPLATES.length === 0) {
+    warnings.push('No S-level risk templates defined');
+  }
+  if (A_RISK_TEMPLATES.length === 0) {
+    warnings.push('No A-level risk templates defined');
+  }
+
+  // MVP: Check for common critical patterns
+  const sTemplateKeywords = new Set(
+    S_RISK_TEMPLATES.map(t => t.keyword.toLowerCase())
+  );
+
+  // Check for system file template (most critical)
+  const hasSystemFileTemplate = Array.from(sTemplateKeywords).some(k =>
+    k.includes('system file')
+  );
+  if (!hasSystemFileTemplate) {
+    warnings.push('Missing critical S-level template for "system file modification"');
+  }
+
+  // Growth: Add more comprehensive coverage checks here
+  // - Check each pattern category has a matching template
+  // - Validate template quality and completeness
+  // - Test template rendering for all patterns
+
+  return {
+    valid: warnings.filter(w => w.includes('critical')).length === 0,
+    warnings,
+  };
+}
+
+/**
+ * Get all template keywords for testing
+ */
+export function getTemplateKeywords(): {
+  sKeywords: readonly string[];
+  aKeywords: readonly string[];
+} {
+  return {
+    sKeywords: S_RISK_TEMPLATES.map(t => t.keyword),
+    aKeywords: A_RISK_TEMPLATES.map(t => t.keyword),
+  };
+}

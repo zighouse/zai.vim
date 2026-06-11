@@ -593,4 +593,24 @@ export class HarmClassifier {
       resolvedPath,
     };
   }
+
+  // ============================================================================
+  // Pattern access for validation (Story 2.2, Task 4.3.2)
+  // ============================================================================
+
+  /**
+   * Get all S-level file operation pattern prefixes
+   * Used for pattern-template sync validation
+   */
+  static getSFilePatterns(): readonly string[] {
+    return HarmClassifier.S_FILE_PATTERNS.map(p => p.prefix);
+  }
+
+  /**
+   * Get all A-level file operation pattern prefixes
+   * Used for pattern-template sync validation
+   */
+  static getAFilePatterns(): readonly string[] {
+    return HarmClassifier.A_FILE_PATTERNS.map(p => p.prefix);
+  }
 }
