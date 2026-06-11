@@ -162,8 +162,8 @@ describe('OverrideManager', () => {
       manager.requestOverride(ops[0]!, 'ack 0', 'session-1');
       expect(manager.currentDelayIndex).toBeGreaterThanOrEqual(1);
 
-      // Second override: delay index increases
-      manager.requestOverride(ops[1]!, 'ack 1', 'session-1');
+      // Second override: requires "I CONFIRM" (Task 4.4 warning fatigue)
+      manager.requestOverride(ops[1]!, 'ack 1 I CONFIRM', 'session-1');
       expect(manager.currentDelayIndex).toBeGreaterThanOrEqual(2);
     });
   });
