@@ -32,6 +32,7 @@ import { findProjectRoot, scanProjectMeta, type ProjectRootResult } from './proj
 import { SecurityEnricher } from './security-enricher.js';
 import { validatePatternTemplateSync } from '../security/risk-card.js';
 import { HarmClassifier } from '../security/harm-classifier.js';
+import { AuditMiddleware } from '../middleware/audit-middleware.js';
 import { join } from 'node:path';
 import { stat } from 'node:fs/promises';
 
@@ -88,10 +89,14 @@ export class Engine implements EngineAPI {
       this.#config.sandbox.workDir,
     );
 
+    const auditMiddleware = new AuditMiddleware(this.#auditor);
+
     this.#securityProvider = new SecurityProvider(
       this.#sandbox,
       this.#auditor,
       process.cwd(),
+      undefined,
+      auditMiddleware,
     );
 
     this.#overrideManager = new OverrideManager({}, undefined, undefined);
@@ -108,6 +113,14 @@ export class Engine implements EngineAPI {
     const positionValidation = SecurityEnricher.validatePipelinePosition(middlewareOrder);
     if (!positionValidation.valid) {
       throw new Error(`SecurityEnricher pipeline validation failed: ${positionValidation.error}`);
+    }
+
+    // Validate middleware order: Security → Audit (AC #10 / ADR-5)
+    // SecurityMiddleware must be registered before AuditMiddleware.
+    const auditOrder = ['SecurityMiddleware', 'AuditMiddleware'] as const;
+    const auditPositionValidation = AuditMiddleware.validatePipelinePosition(auditOrder);
+    if (!auditPositionValidation.valid) {
+      throw new Error(auditPositionValidation.error);
     }
 
     // Validate pattern-template sync (Story 2.2, Task 4.3.2)

@@ -7,6 +7,7 @@ import type {
   FileChangeProposal,
   SecurityDecision,
   SecurityStatus,
+  HarmLevel,
 } from '@zaivim/core';
 import { ZaiSecurityError } from '@zaivim/core';
 import { resolve } from 'node:path';
@@ -82,39 +83,16 @@ export class SandboxManager {
 }
 
 // ============================================================================
-// TODO (@zaivim/audit): extract Auditor to @zaivim/audit when engine/src/
-// exceeds 30 files. All JSONL write/query/rotate logic must stay ONLY in
-// this file until extraction.
+// Auditor — JSONL append-only audit logger
+// Extracted to ./auditor.ts for Story 2.3 implementation.
+// TODO (@zaivim/audit): extract to @zaivim/audit when engine/src/ exceeds 30
+// files. All JSONL write/query/rotate logic must stay ONLY in this file
+// until extraction.
 // ============================================================================
 
-interface AuditStoreEntry {
-  readonly timestamp: number;
-  readonly sessionId: string;
-  readonly action: string;
-  readonly detail: Record<string, unknown>;
-}
-
-export class Auditor {
-  #entries: AuditStoreEntry[] = [];
-
-  log(sessionId: string, action: string, detail: Record<string, unknown>): void {
-    const entry: AuditStoreEntry = {
-      timestamp: Date.now(),
-      sessionId,
-      action,
-      detail,
-    };
-    this.#entries.push(entry);
-    // Growth: write to JSONL file, rotate when >100MB
-  }
-
-  query(sessionId?: string): AuditStoreEntry[] {
-    if (sessionId) {
-      return this.#entries.filter(e => e.sessionId === sessionId);
-    }
-    return [...this.#entries];
-  }
-}
+import { Auditor } from './auditor.js';
+export { Auditor } from './auditor.js';
+import type { AuditMiddleware } from '../middleware/audit-middleware.js';
 
 // ============================================================================
 // SecurityProvider — implements ISecurityProvider interface from @zaivim/core
@@ -125,17 +103,21 @@ export class SecurityProvider implements ISecurityProvider {
   #sandbox: SandboxManager;
   #auditor: Auditor;
   #auditLogger?: AuditLogger;
+  #auditMiddleware?: AuditMiddleware;
   #projectRoot: string;
   #harmClassifier: HarmClassifier;
   #onRejection?: (operation: string, harmLevel: HarmLevel, command: string, reason: string) => string;
+  /** Cache last preExecute harmLevel per session for use in postExecute */
+  readonly #sessionHarmCache = new Map<string, HarmLevel>();
 
-  constructor(sandbox: SandboxManager, auditor: Auditor, projectRoot?: string, auditLogger?: AuditLogger) {
+  constructor(sandbox: SandboxManager, auditor: Auditor, projectRoot?: string, auditLogger?: AuditLogger, auditMiddleware?: AuditMiddleware) {
     this.sandboxType = sandbox.sandboxType;
     this.#sandbox = sandbox;
     this.#auditor = auditor;
     this.#projectRoot = resolve(projectRoot ?? process.cwd());
     this.#harmClassifier = new HarmClassifier();
     this.#auditLogger = auditLogger;
+    this.#auditMiddleware = auditMiddleware;
   }
 
   /**
@@ -155,11 +137,14 @@ export class SecurityProvider implements ISecurityProvider {
     operation: string,
     params: Record<string, unknown>,
   ): Promise<SecurityDecision> {
+    const sessionId = params.sessionId as string | undefined;
+
     // Classify shell commands using HarmClassifier (AC2, AC5)
     if (operation === 'shell_exec') {
       const command = params.command as string;
       if (command) {
         const classification = this.#harmClassifier.classifyCommand(command);
+        if (sessionId) this.#sessionHarmCache.set(sessionId, classification.level);
         if (!classification.whitelisted && classification.level === 'S') {
           const reason = `Command blocked (S-level): ${classification.reason}`;
           this.#onRejection?.(operation, 'S', command, classification.reason);
@@ -194,6 +179,7 @@ export class SecurityProvider implements ISecurityProvider {
         : 'modify';
 
       const classification = this.#harmClassifier.classifyFileOperation(path, opType);
+      if (sessionId) this.#sessionHarmCache.set(sessionId, classification.harmLevel);
 
       // S-level: block all file operations
       if (classification.harmLevel === 'S') {
@@ -249,13 +235,25 @@ export class SecurityProvider implements ISecurityProvider {
     operation: string,
     result: { success: boolean; output?: string; sessionId?: string },
   ): Promise<void> {
+    const sessionId = result.sessionId ?? '';
+    const harmLevel = this.#sessionHarmCache.get(sessionId) ?? 'C';
+
+    // Use AuditMiddleware when available (pipeline path)
+    if (this.#auditMiddleware) {
+      this.#auditMiddleware.record(
+        { allowed: result.success, harmLevel, reason: `Operation ${result.success ? 'completed' : 'failed'}`, sessionId },
+        { operation, sessionId, params: { outputLength: result.output?.length ?? 0 } },
+      );
+      return;
+    }
+
     // Use AuditLogger (persistent JSONL) when available
     if (this.#auditLogger) {
       await this.#auditLogger.log({
         timestamp: new Date().toISOString(),
-        sessionId: result.sessionId ?? '',
+        sessionId,
         operation,
-        harmLevel: 'C',
+        harmLevel,
         decision: result.success ? 'allowed' : 'denied',
         reason: `Operation ${result.success ? 'completed' : 'failed'}`,
         user: 'system',
@@ -266,12 +264,16 @@ export class SecurityProvider implements ISecurityProvider {
       return;
     }
 
-    // Fallback to in-memory Auditor
-    this.#auditor.log('', 'operation_completed', {
+    // Fallback: use Auditor.write() with proper classification
+    this.#auditor.write({
+      timestamp: new Date().toISOString(),
       operation,
-      success: result.success,
-      outputLength: result.output?.length ?? 0,
-    });
+      level: harmLevel,
+      sessionId,
+      result: result.success ? 'allowed' : 'rejected',
+      reason: `Operation ${result.success ? 'completed' : 'failed'}`,
+      params: { outputLength: result.output?.length ?? 0 },
+    }).catch(() => {});
   }
 
   /**
