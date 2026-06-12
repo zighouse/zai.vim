@@ -13,12 +13,18 @@
     "test:vim": "vint packages/vim-adapter/autoload packages/vim-adapter/plugin || true",
     "test:browser": "web-ext lint packages/browser-ext || true",
     "typecheck:downstream": "pnpm --filter @zaivim/core --filter @zaivim/engine --filter @zaivim/tools --filter @zaivim/skills --filter @zaivim/gateway typecheck",
-    "lint": "eslint --config eslint.config.js packages/*/src"
+    "lint": "eslint --config eslint.config.mjs 'packages/*/src/**/*.ts'",
+    "lint:tools": "eslint --config packages/tools/eslint.config.mjs 'packages/tools/src/**/*.ts'"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^25.9.1",
+    "eslint": "^10.4.1",
+    "eslint-import-resolver-typescript": "^4.4.5",
+    "eslint-plugin-import-x": "^4.16.2",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.0",
     "vitest": "^4.1.8"
   }
 }
