@@ -24,6 +24,23 @@ export { getBadge, getAllBadges, isElevatedRisk, isBlockingLevel } from './badge
 export { generateRiskCard } from './risk-card.js';
 export type { RiskCardSummary } from './risk-card.js';
 
+// Story 2.4 — TOCTOU-safe path validation
+export { Semaphore, PATH_VALIDATION_SEMAPHORE } from './semaphore.js';
+export {
+  validatePathSafe,
+  normalizePath,
+  findGitRoot,
+  isWithinBoundary,
+  hasConfusableChars,
+  skeleton,
+  SealedFileHandle,
+  ZaiHandleClosedError,
+  BidiControlCharError,
+  detectNormalizationForm,
+  isProcAvailable,
+} from './path-validator.js';
+export type { PathRejectCode, PathValidationResult } from './path-validator.js';
+
 // ============================================================================
 // TODO (@zaivim/sandbox): extract SandboxManager to @zaivim/sandbox when
 // engine/src/ exceeds 30 files. All bwrap/seccomp/fallback logic must stay

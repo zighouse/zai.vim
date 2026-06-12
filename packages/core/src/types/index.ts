@@ -158,6 +158,11 @@ export interface AgentPool {
 import type { HarmLevel, SecurityDecision, SecurityStatus, AuditEntry, ISecurityProvider, SecurityContext, FileChangeProposal, FileOperationType, FileClassification, HarmLevelBadge, RiskCard, RiskCardSeverity, OverrideRequest, OverrideRecord, SecurityDegradedNotification, SecuritySecureNotification, SecurityNotification, ToolSecurityNotification } from './security.js';
 export type { HarmLevel, SecurityDecision, SecurityStatus, AuditEntry, ISecurityProvider, SecurityContext, FileChangeProposal, FileOperationType, FileClassification, HarmLevelBadge, RiskCard, RiskCardSeverity, OverrideRequest, OverrideRecord, SecurityDegradedNotification, SecuritySecureNotification, SecurityNotification, ToolSecurityNotification };
 
+// ---- Audit types (Story 2.3) -----------------------------------------------
+
+import type { SafetyLevel, AuditEventType, AuditEvent, AuditQueryFilter, AuditSummary, IAuditor } from './audit.js';
+export type { SafetyLevel, AuditEventType, AuditEvent, AuditQueryFilter, AuditSummary, IAuditor };
+
 // ---- Tool types ------------------------------------------------------------
 
 export interface ToolDefinition<TParams = unknown, TResult = unknown> {
@@ -184,6 +189,22 @@ export interface ToolContext {
   readonly signal: AbortSignal;
   readonly security: ISecurityProvider;
   readonly audit: (action: string, detail: Record<string, unknown>) => void;
+  /**
+   * Controlled spawn — all child processes MUST go through this method.
+   * Enables agent to track PIDs for cascade termination on cancel.
+   */
+  spawn(
+    command: string,
+    args?: readonly string[],
+    options?: {
+      readonly cwd?: string;
+      readonly env?: Record<string, string>;
+      readonly timeout?: number;
+      readonly detached?: boolean;
+      readonly signal?: AbortSignal;
+      readonly stdio?: readonly string[];
+    },
+  ): import('child_process').ChildProcess;
 }
 
 // ---- Provider types --------------------------------------------------------
