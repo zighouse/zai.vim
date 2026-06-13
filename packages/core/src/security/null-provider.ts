@@ -134,7 +134,7 @@ export class NullSecurityProvider implements ISecurityProvider {
       } satisfies SafeFileHandle;
     }
 
-    const dir = resolve(path);
+    const dir = resolvedPath;
     return {
       validatedPath: dir,
       resolvedPath: dir,
