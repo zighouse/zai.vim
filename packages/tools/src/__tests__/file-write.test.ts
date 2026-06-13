@@ -3,7 +3,7 @@
 // rollback from proposal, directory auto-creation, audit logging.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileWriteTool, generateDiff } from '../file.js';
@@ -189,6 +189,35 @@ describe('fileWriteTool', () => {
 
     expect(result.proposal).toBeUndefined();
     expect(existsSync(filePath)).toBe(true);
+  });
+
+  it('should write atomically — no .tmp leftover after success', async () => {
+    const filePath = join(tmpDir, 'atomic.ts');
+
+    const approval = { validatedPath: filePath, resolvedPath: filePath };
+    const security = mockSecurityProvider(approval, tmpDir);
+    const ctx = mockToolContext(security);
+
+    await fileWriteTool.execute({ path: filePath, content: 'atomic content' }, ctx);
+
+    expect(readFileSync(filePath, 'utf-8')).toBe('atomic content');
+    const leftovers = readdirSync(tmpDir).filter(f => f.includes('.tmp'));
+    expect(leftovers).toEqual([]);
+  });
+
+  it('should write atomically — overwrite should not leave .tmp leftover', async () => {
+    const filePath = join(tmpDir, 'atomic-overwrite.ts');
+    writeFileSync(filePath, 'v1', 'utf-8');
+
+    const approval = { validatedPath: filePath, resolvedPath: filePath };
+    const security = mockSecurityProvider(approval, tmpDir);
+    const ctx = mockToolContext(security);
+
+    await fileWriteTool.execute({ path: filePath, content: 'v2' }, ctx);
+
+    expect(readFileSync(filePath, 'utf-8')).toBe('v2');
+    const leftovers = readdirSync(tmpDir).filter(f => f.includes('.tmp'));
+    expect(leftovers).toEqual([]);
   });
 });
 

@@ -2,10 +2,11 @@
 // Story 3.1: file_read, file_write, file_search
 // All path validation delegates to ISecurityProvider.openFile() (Story 2.4).
 
-import { existsSync, mkdirSync, copyFileSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, renameSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { createTwoFilesPatch } from 'diff';
+import { randomBytes } from 'node:crypto';
 import type { ToolDefinition, ToolContext } from '@zaivim/core';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -241,9 +242,13 @@ export const fileWriteTool: ToolDefinition<FileWriteParams, FileWriteResult> = {
       };
     }
 
-    // 5. Write file (atomic: write to temp then rename)
+    // 5. Atomic write: write to temp file in the same directory, then rename.
+    // POSIX rename() is atomic — a crash mid-write leaves the original file
+    // intact and the temp file orphaned, never a half-written target.
     mkdirSync(dirname(targetPath), { recursive: true });
-    writeFileSync(targetPath, params.content, 'utf-8');
+    const tempPath = resolve(dirname(targetPath), `.${basename(targetPath)}.${randomBytes(6).toString('hex')}.tmp`);
+    writeFileSync(tempPath, params.content, 'utf-8');
+    renameSync(tempPath, targetPath);
 
     const byteLen = Buffer.byteLength(params.content, 'utf-8');
 
