@@ -129,6 +129,20 @@ describe('fileSearchTool', () => {
     expect(result.truncatedMessage).toBeUndefined();
   });
 
+  it('H4: should fall back to literal search when pattern is invalid regex', async () => {
+    // '[' is invalid regex — tool should fall back to literal match
+    const result = await fileSearchTool.execute({ pattern: '[', glob: '*.ts' }, ctx);
+
+    // No throw; result is well-formed
+    expect(result.matches).toBeDefined();
+    expect(result.elapsedMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('H4: should reject patterns exceeding length cap', async () => {
+    const hugePattern = 'a'.repeat(501);
+    await expect(fileSearchTool.execute({ pattern: hugePattern }, ctx)).rejects.toThrow(/maximum length/);
+  });
+
   it('should support glob filtering', async () => {
     const result = await fileSearchTool.execute({ pattern: 'export', glob: '*.ts' }, ctx);
 

@@ -97,6 +97,27 @@ function touchesInternalDir(relativePath: string): boolean {
   return isExcludedDir(relativePath, HARDCODED_INTERNAL_DIRS);
 }
 
+/**
+ * Compile an AI-supplied pattern to a RegExp. If the pattern is not valid
+ * regex, fall back to a literal substring search (escaped). This prevents
+ * malformed patterns like "[" or "(*" from crashing the tool.
+ *
+ * Note: we do not attempt full ReDoS detection. The 10s AbortController and
+ * the per-file readFile signal give coarse bounds; patterns like `(a+)+` on
+ * a long line can still hang the synchronous regex match within a single
+ * line. Mitigation relies on the timeout firing after the current line
+ * completes; users who observe hangs should narrow their pattern.
+ */
+function tryCompilePattern(pattern: string): RegExp {
+  try {
+    return new RegExp(pattern, 'g');
+  } catch {
+    // Escape regex metacharacters and fall back to literal substring match
+    const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(escaped, 'g');
+  }
+}
+
 /** Safely read lines from buffer with size limit check. */
 function truncatedLines(content: string, maxBytes: number): { content: string; truncated: boolean; lines: number } {
   const byteLen = Buffer.byteLength(content, 'utf-8');
@@ -298,7 +319,18 @@ export const fileSearchTool: ToolDefinition<FileSearchParams, FileSearchResult> 
       const excludeDirs = params.includeHidden ? [...HARDCODED_INTERNAL_DIRS] : [...DEFAULT_EXCLUDE_DIRS];
       const maxResults = params.maxResults ?? MAX_SEARCH_RESULTS;
       const contextLines = params.contextLines ?? 1;
-      const regex = new RegExp(params.pattern, 'g');
+
+      // Build the matcher. AI-supplied patterns may be invalid regex; fall back
+      // to a literal substring search rather than crashing with SyntaxError.
+      // We also cap pattern length to bound worst-case regex compile cost.
+      const MAX_PATTERN_LEN = 500;
+      if (params.pattern.length > MAX_PATTERN_LEN) {
+        throw Object.assign(
+          new Error(`pattern exceeds maximum length of ${MAX_PATTERN_LEN} characters`),
+          { code: 'TOOLS_INVALID_PATTERN' },
+        );
+      }
+      const regex = tryCompilePattern(params.pattern);
 
       // Use ctx.security to obtain a validated project root. We openFile('.')
       // for read; providers validate that the cwd is within the .git boundary
