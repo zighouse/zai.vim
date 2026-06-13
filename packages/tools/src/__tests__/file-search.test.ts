@@ -109,6 +109,26 @@ describe('fileSearchTool', () => {
     expect(result.matches.length).toBeLessThanOrEqual(5);
   });
 
+  it('AC7/H3: when cap is reached, truncated=true and message is present', async () => {
+    // 'const' is abundant in any TS codebase — cap low to force truncation
+    const result = await fileSearchTool.execute({ pattern: 'const', maxResults: 3 }, ctx);
+
+    if (result.matches.length === 3 && result.totalMatches >= 3) {
+      expect(result.truncated).toBe(true);
+      expect(result.truncatedMessage).toBeTruthy();
+      expect(result.truncatedMessage).toContain('truncated');
+      expect(result.truncatedMessage).toContain('Narrow your pattern');
+    }
+  });
+
+  it('AC7/H3: when no cap reached, truncated=false and message absent', async () => {
+    const uniquePattern = `__unique_${Date.now()}_${Math.random().toString(36).slice(2)}__`;
+    const result = await fileSearchTool.execute({ pattern: uniquePattern, maxResults: 5 }, ctx);
+
+    expect(result.truncated).toBe(false);
+    expect(result.truncatedMessage).toBeUndefined();
+  });
+
   it('should support glob filtering', async () => {
     const result = await fileSearchTool.execute({ pattern: 'export', glob: '*.ts' }, ctx);
 

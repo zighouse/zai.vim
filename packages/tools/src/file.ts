@@ -74,6 +74,8 @@ export interface FileSearchResult {
   matches: FileSearchMatch[];
   totalMatches: number;
   truncated: boolean;
+  /** Present only when truncated=true; message the AI sees explaining the cap. */
+  truncatedMessage?: string;
   elapsedMs: number;
 }
 
@@ -309,6 +311,10 @@ export const fileSearchTool: ToolDefinition<FileSearchParams, FileSearchResult> 
 
       const matches: FileSearchMatch[] = [];
       let totalMatches = 0;
+      // True if walkDir exited before exhausting the project tree because the
+      // maxResults cap was reached. Distinct from totalMatches > maxResults
+      // since the cap check (>=) can fire at exactly maxResults.
+      let stoppedAtCap = false;
 
       // Recursive directory walk with AbortSignal support
       async function walkDir(dirPath: string, relativePath: string): Promise<void> {
@@ -354,7 +360,10 @@ export const fileSearchTool: ToolDefinition<FileSearchParams, FileSearchResult> 
             // Skip inaccessible entries
           }
 
-          if (totalMatches >= maxResults) return;
+          if (totalMatches >= maxResults) {
+            stoppedAtCap = true;
+            return;
+          }
         }
       }
 
@@ -393,8 +402,14 @@ export const fileSearchTool: ToolDefinition<FileSearchParams, FileSearchResult> 
 
       await walkDir(projectRoot, '');
 
-      const truncated = totalMatches > maxResults;
+      const truncated = stoppedAtCap;
       const elapsedMs = performance.now() - startTime;
+      // totalMatches is a lower bound when truncated: we stop counting once
+      // the cap is reached, so the true total may be higher. Surface that
+      // ambiguity in the message so AI knows to narrow its query (AC7).
+      const truncatedMessage = truncated
+        ? `[truncated, ${matches.length} of ${totalMatches}+ matches shown. Narrow your pattern or glob for targeted results]`
+        : undefined;
 
       // Audit
       ctx.audit('file_search', {
@@ -410,6 +425,7 @@ export const fileSearchTool: ToolDefinition<FileSearchParams, FileSearchResult> 
         matches,
         totalMatches,
         truncated,
+        truncatedMessage,
         elapsedMs,
       };
     } finally {
