@@ -450,19 +450,20 @@ export const webSearchTool: ToolDefinition<WebSearchParams, WebSearchResult> = {
     const links = [...html.matchAll(linkRegex)];
 
     let count = 0;
+    let totalMatched = 0;
     for (const match of links) {
-      if (count >= maxResults) break;
       const url = match[1]!;
-      const title = match[2]!.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-
       if (url.includes('duckduckgo.com') || !url.startsWith('http')) continue;
-
-      results.push({
-        title: title.trim() || 'Untitled',
-        url,
-        snippet: '',
-      });
-      count++;
+      totalMatched++;
+      if (count < maxResults) {
+        const title = match[2]!.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+        results.push({
+          title: title.trim() || 'Untitled',
+          url,
+          snippet: '',
+        });
+        count++;
+      }
     }
 
     const elapsed = Date.now() - startedAt;
@@ -475,7 +476,7 @@ export const webSearchTool: ToolDefinition<WebSearchParams, WebSearchResult> = {
       results,
       totalResults: results.length,
       elapsed,
-      truncated: links.length > maxResults,
+      truncated: totalMatched > maxResults,
     };
   },
 };
