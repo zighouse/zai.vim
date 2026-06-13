@@ -92,15 +92,16 @@ describe('ToolRegistry', () => {
     expect(names).toEqual(['file_read', 'file_search', 'file_write']);
   });
 
-  it('createDefault: should include all three file tools', () => {
+  it('createDefault: should include all built-in tools', () => {
     const defaultRegistry = ToolRegistry.createDefault();
 
     const tools = defaultRegistry.list();
-    expect(tools).toHaveLength(3);
+    expect(tools).toHaveLength(4);
 
     expect(defaultRegistry.get('file_read')).toBeDefined();
     expect(defaultRegistry.get('file_write')).toBeDefined();
     expect(defaultRegistry.get('file_search')).toBeDefined();
+    expect(defaultRegistry.get('shell_execute')).toBeDefined();
   });
 
   it('should maintain independence between registries', () => {

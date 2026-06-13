@@ -180,7 +180,58 @@ export interface ToolDefinition<TParams = unknown, TResult = unknown> {
   };
   readonly harmLevel?: 'S' | 'A' | 'B' | 'C';
   readonly requiresApproval?: boolean;
+  readonly requireSandbox?: boolean;
   execute(params: TParams, ctx: ToolContext): Promise<TResult>;
+}
+
+// ---- Shell tool types (Story 3.2a) -----------------------------------------
+
+/** AI-facing input parameters for shell_execute tool */
+export interface ShellParams {
+  readonly command: string;
+  readonly cwd?: string;
+  readonly env?: Record<string, string>;
+  readonly stdin?: string;
+  readonly timeout?: number;
+}
+
+/** AI-facing result from shell_execute tool */
+export interface ShellResult {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly killed: boolean;
+  readonly truncated: {
+    readonly stdout: boolean;
+    readonly stderr: boolean;
+  };
+  readonly rejected?: boolean;
+  readonly rejectionReason?: string;
+}
+
+/** Processed parameters passed to ctx.exec (engine closure) */
+export interface ShellExecParams {
+  readonly command: string;
+  readonly cwd: string;
+  readonly env?: Record<string, string>;
+  readonly stdin?: string;
+  readonly timeout: number;
+  readonly network?: boolean;
+}
+
+/** Result returned by ctx.exec (engine closure) */
+export interface ShellExecResult {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly killed: boolean;
+  readonly signal?: string;
+  readonly truncated: {
+    readonly stdout: boolean;
+    readonly stderr: boolean;
+  };
+  readonly elapsed: number;
+  readonly progressNotified: boolean;
 }
 
 export interface ToolContext {
@@ -188,7 +239,15 @@ export interface ToolContext {
   readonly sandbox: string;
   readonly signal: AbortSignal;
   readonly security: ISecurityProvider;
+  readonly lastCwd?: string;
   readonly audit: (action: string, detail: Record<string, unknown>) => void;
+  /**
+   * Sandboxed shell execution. Undefined when sandbox is unavailable
+   * or capabilities don't meet minimum requirements (ADR-SHELL-1).
+   * Engine injects a closure wrapping SandboxManager + output truncation +
+   * progress notification + audit logging.
+   */
+  readonly exec?: (params: ShellExecParams, signal?: AbortSignal) => Promise<ShellExecResult>;
   /**
    * Controlled spawn — all child processes MUST go through this method.
    * Enables agent to track PIDs for cascade termination on cancel.
