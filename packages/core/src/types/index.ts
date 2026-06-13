@@ -309,6 +309,7 @@ export interface WebSearchResult {
   readonly totalResults: number;
   readonly elapsed: number;
   readonly truncated: boolean;
+  readonly errorCode?: string;
 }
 
 // ---- Provider types --------------------------------------------------------

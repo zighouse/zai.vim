@@ -362,6 +362,7 @@ export const webSearchTool: ToolDefinition<WebSearchParams, WebSearchResult> = {
     if (query.length > MAX_QUERY_LENGTH) {
       return {
         query, results: [], totalResults: 0, elapsed: 0, truncated: false,
+        errorCode: `TOOLS_INPUT_TOO_LARGE: query exceeds ${MAX_QUERY_LENGTH} chars`,
       };
     }
 

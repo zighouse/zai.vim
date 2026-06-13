@@ -264,6 +264,7 @@ describe('AC6 — Parameter format validation', () => {
     const result = await webSearchTool.execute({ query: 'a'.repeat(501) }, ctx);
 
     expect(result.results.length).toBe(0);
+    expect(result.errorCode).toContain('TOOLS_INPUT_TOO_LARGE');
   });
 });
 
