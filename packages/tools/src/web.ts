@@ -148,8 +148,8 @@ export const webFetchTool: ToolDefinition<WebFetchParams, WebFetchResult> = {
 
     // ── Layer 2: HTTP request ───────────────────────────────────────────
 
-    const timeout = (params.timeout && params.timeout >= MIN_TIMEOUT_MS)
-      ? Math.min(params.timeout, MAX_TIMEOUT_MS)
+    const timeout = params.timeout != null
+      ? Math.min(Math.max(params.timeout, MIN_TIMEOUT_MS), MAX_TIMEOUT_MS)
       : DEFAULT_TIMEOUT_MS;
 
     const controller = new AbortController();
@@ -378,8 +378,8 @@ export const webSearchTool: ToolDefinition<WebSearchParams, WebSearchResult> = {
     }
 
     const maxResults = Math.min(Math.max(params.maxResults ?? MAX_SEARCH_RESULTS, 1), MAX_SEARCH_RESULTS);
-    const timeout = (params.timeout && params.timeout >= MIN_TIMEOUT_MS)
-      ? Math.min(params.timeout, MAX_TIMEOUT_MS)
+    const timeout = params.timeout != null
+      ? Math.min(Math.max(params.timeout, MIN_TIMEOUT_MS), MAX_TIMEOUT_MS)
       : DEFAULT_TIMEOUT_MS;
 
     // ── Layer 2: Abort check ───────────────────────────────────────────

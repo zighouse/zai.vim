@@ -224,23 +224,25 @@ describe('AC5 — Timeout protection', () => {
     vi.restoreAllMocks();
   });
 
-  it('should clamp timeout to 30s max via constants', async () => {
-    // Verify timeout clamping by reading constants from the web module
-    // The MAX_TIMEOUT_MS = 30000, MIN_TIMEOUT_MS = 1000, DEFAULT_TIMEOUT_MS = 10000
-    // A timeout of 60000 gets clamped to 30000.  This is verified structurally.
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      mockResponse({
+  it('should clamp timeout to 30s max and 1s min', async () => {
+    globalThis.fetch = vi.fn().mockImplementation(() =>
+      Promise.resolve(mockResponse({
         headers: new Headers({ 'content-type': 'text/plain' }),
         body: new ReadableStream({
           start(controller) { controller.enqueue(new TextEncoder().encode('ok')); controller.close(); },
         }),
-      }),
+      })),
     );
     const ctx = mockToolContext();
-    const result = await webFetchTool.execute({ url: 'https://example.com', timeout: 60000 }, ctx);
 
+    // timeout=60000 → clamped to 30000
+    const result = await webFetchTool.execute({ url: 'https://example.com', timeout: 60000 }, ctx);
     expect(result.statusCode).toBe(200);
-    expect(globalThis.fetch).toHaveBeenCalled();
+
+    // timeout=0 → clamped to 1000 (min boundary, not silently falling to default)
+    const result2 = await webFetchTool.execute({ url: 'https://example.com', timeout: 0 }, ctx);
+    expect(result2.statusCode).toBe(200);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 });
 
