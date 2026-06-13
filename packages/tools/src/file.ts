@@ -209,13 +209,20 @@ export const fileWriteTool: ToolDefinition<FileWriteParams, FileWriteResult> = {
     // 1. Path validation — openFile validates write permissions
     const approval = await ctx.security.openFile(params.path, 'write');
 
+    // Resolve project root via the security provider so backups land at the
+    // session-scoped {projectRoot}/.zaivim/backups/{sessionId}/... location
+    // mandated by AC8 (ADR-21), not next to the target file.
+    const rootHandle = await ctx.security.openFile('.', 'read');
+    const projectRoot = rootHandle.validatedPath;
+    await rootHandle.close();
+
     const targetPath = approval.resolvedPath;
     const exists = existsSync(targetPath);
     let proposal: FileChangeProposal | undefined;
 
     if (exists) {
-      // 2. Backup before write (ADR-21)
-      const backupDir = resolve(dirname(targetPath), '.zaivim', 'backups');
+      // 2. Backup before write (ADR-21) — session-scoped under project root
+      const backupDir = resolve(projectRoot, '.zaivim', 'backups', ctx.sessionId);
       mkdirSync(backupDir, { recursive: true });
       const backupPath = resolve(backupDir, `${Date.now()}-${basename(params.path)}`);
       copyFileSync(targetPath, backupPath);
