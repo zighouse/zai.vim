@@ -300,6 +300,7 @@ describe('BwrapSecurityProvider', () => {
       expect(typeof provider.isSandboxAvailable).toBe('function');
       expect(typeof provider.validatePath).toBe('function');
       expect(typeof provider.proposeChange).toBe('function');
+      expect(typeof provider.openFile).toBe('function');
     });
 
     it('should have correct sandboxType', () => {
