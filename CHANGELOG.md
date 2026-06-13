@@ -5,6 +5,93 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-06-13
+
+### Added
+
+#### Epic 2: Security Infrastructure (MVP)
+
+**Story 2-1: bwrap Sandbox Manager**
+- Bubblewrap sandbox management with availability detection
+- Platform degradation fallback (Linux→bwrap, macOS→partial, other→disabled)
+- Sandbox configuration via project YAML (`.zaivim/project.yaml`)
+- Shell tool placeholder registration for sandboxed execution
+- Capability descriptor (bwrap version, features, available directories)
+
+**Story 2-2: Harm Classification and Security Visibility**
+- S/A/B/C four-level harm classification for shell commands and file operations
+- `SecurityProvider` with `preExecute`/`postExecute` lifecycle hooks
+- `OverrideManager` for user override of S-level rejections
+- `SecurityMonitor` with real-time dash: harm-level counts, active overrides, bypass tracking
+- Session-scoped throttling: 3 overrides/min → 3s cool-down per session
+
+**Story 2-3: JSONL Audit Log**
+- Append-only JSONL audit log with async batched writes (50ms/500 events)
+- `Auditor` with severity A/B/C levels and session scoping
+- `AuditMiddleware` for pipeline integration
+- Audit query/filter/summary APIs with pagination
+- Sensitive data redaction (***REDACTED***) for API keys and paths
+- Token Bucket rate limiter (150 events/s, burst 200)
+- Auto-rotation at 100MB per log file
+
+**Story 2-4: Security Execution Integration**
+- **Agent cancel cascade**: PID tracking → process group SIGTERM → 5s SIGKILL → 30/60/120s orphan scans → A-level alert. 14 subtasks including idempotency, PID reuse safety, EPERM fallback, partial cancel tolerance.
+- **TOCTOU-safe path validation**: `fs.promises.open()` + `/proc/self/fd` cross-verification + `SealedFileHandle` pattern. `.git` boundary enforcement (fail-closed). Semaphore concurrency limiter (3 normal + 1 fast lane, anti-starvation).
+- **Timing side-channel protection**: Uniform ≥10ms async `setTimeout` padding for ALL paths (valid and rejected). Unified `'access denied'` error message with sub-codes. Statistical verification with 200 iterations (mean diff &lt;0.5ms, KS distribution overlap).
+- **Unicode path normalization**: Platform-adaptive NFC/NFD. Zero-width/bidi/confusable character detection. Skeleton homoglyph detection for Cyrillic/Greek/Latin.
+- **ESLint AC8 enforcement**: `no-restricted-imports` blocking `@zaivim/tools` → `@zaivim/engine` imports. Verified prevents bypass of ISecurityProvider contact-point constraint.
+
+### Changed
+
+- Version bump: All `@zaivim/*` packages bumped from 0.1.1 to 0.1.2
+- Stub packages (`@zaivim/vim-adapter`, `@zaivim/browser-ext`) remain at 0.0.0
+- `ToolContext` interface: `spawn()` method added for controlled child process creation (PID tracking support)
+
+### Security
+
+- Path validation now has TOCTOU race protection via `/proc/self/fd` cross-verification
+- Timing side-channel: all path validation responses padded to ≥10ms uniform delay
+- Access denied: unified error message `'access denied'` with structured sub-codes for forensic audit
+- Agent cancel cascade: process group termination ensures no orphaned child processes
+- ISecurityProvider is now non-bypassable — tools cannot import engine directly (ESLint enforced)
+
+### Fixed
+
+- SealedFileHandle fd prematurely closed (CRITICAL): refactored to store `FileHandle` directly, preventing fd reuse after creator's premature `close()`
+- Timing side-channel sync/async discrepancy: `rejectWithTiming` changed from sync busy-wait to async `setTimeout`, matching `padTiming`
+- Audit type safety: removed `as any` casts from all `auditor.write()` calls, added `timestamp` field
+- Test mock isolation: `vi.hoisted()` pattern for shared mock factories prevents cross-test pollution
+
+### Technical Details
+
+Test Coverage:
+- Engine: 642 tests passing (41 files)
+- Core: 65+ tests passing
+- Total: 707+ tests passing
+
+New tests for Story 2.4:
+- Agent cancel cascade: 17 tests (PID tracking, SIGTERM, SIGKILL, timeout, audit, idempotency, cleanup)
+- Semaphore concurrency: 11 tests (slot acquisition, queue, timeout, fast lane, rate-limit)
+- Path validation: 28 tests (TOCTOU, boundary, confusable/bidi, SealedFileHandle lifecycle, fail-closed)
+- Timing side-channel: 6 statistical tests (200 iterations, mean diff &lt;0.5ms, distribution overlap)
+- Performance constraints: 9 tests (semaphore concurrency, health check, anti-starvation)
+
+Package Versions:
+- @zaivim/core: 0.1.2
+- @zaivim/engine: 0.1.2
+- @zaivim/tools: 0.1.2
+- @zaivim/skills: 0.1.2
+- @zaivim/gateway: 0.1.2
+- @zaivim/tui: 0.1.2
+- @zaivim/vim-adapter: 0.0.0 (stub)
+- @zaivim/browser-ext: 0.0.0 (stub)
+
+Epic 2 Deliverables:
+- Complete security infrastructure: sandbox → harm classification → audit → execution integration
+- SecurityProvider chain is non-bypassable (ESLint AC8 enforced)
+- All 4 stories implemented, all acceptance criteria met (Growth items deferred)
+- Adversarial code review: 10 issues found and fixed before merge
+
 ## [0.1.1] - 2026-06-10
 
 ### Added
