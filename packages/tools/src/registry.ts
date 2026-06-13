@@ -5,6 +5,7 @@
 import type { ToolDefinition } from '@zaivim/core';
 import { fileReadTool, fileWriteTool, fileSearchTool } from './file.js';
 import { shellTool } from './shell.js';
+import { webFetchTool, webSearchTool } from './web.js';
 
 export type OpenAIExecuteFunction = {
   type: 'function';
@@ -83,6 +84,8 @@ export class ToolRegistry {
     registry.register(fileWriteTool);
     registry.register(fileSearchTool);
     registry.register(shellTool);
+    registry.register(webFetchTool);
+    registry.register(webSearchTool);
     return registry;
   }
 }

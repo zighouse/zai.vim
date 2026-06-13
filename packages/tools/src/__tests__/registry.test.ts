@@ -96,12 +96,14 @@ describe('ToolRegistry', () => {
     const defaultRegistry = ToolRegistry.createDefault();
 
     const tools = defaultRegistry.list();
-    expect(tools).toHaveLength(4);
+    expect(tools).toHaveLength(6);
 
     expect(defaultRegistry.get('file_read')).toBeDefined();
     expect(defaultRegistry.get('file_write')).toBeDefined();
     expect(defaultRegistry.get('file_search')).toBeDefined();
     expect(defaultRegistry.get('shell_execute')).toBeDefined();
+    expect(defaultRegistry.get('web_fetch')).toBeDefined();
+    expect(defaultRegistry.get('web_search')).toBeDefined();
   });
 
   it('should maintain independence between registries', () => {

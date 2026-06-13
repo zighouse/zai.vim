@@ -266,6 +266,51 @@ export interface ToolContext {
   ): import('child_process').ChildProcess;
 }
 
+// ---- Web tool types (Story 3.2b) -----------------------------------------
+
+/** AI-facing input parameters for web_fetch tool */
+export interface WebFetchParams {
+  readonly url: string;
+  readonly timeout?: number;
+  readonly maxOutputBytes?: number;
+  readonly raw?: boolean;
+}
+
+/** AI-facing result from web_fetch tool */
+export interface WebFetchResult {
+  readonly url: string;
+  readonly content: string;
+  readonly contentType: string;
+  readonly statusCode: number;
+  readonly truncated: boolean;
+  readonly size: number;
+  readonly elapsed: number;
+  readonly errorCode?: string;
+}
+
+/** Single search result item */
+export interface SearchResultItem {
+  readonly title: string;
+  readonly url: string;
+  readonly snippet: string;
+}
+
+/** AI-facing input parameters for web_search tool */
+export interface WebSearchParams {
+  readonly query: string;
+  readonly maxResults?: number;
+  readonly timeout?: number;
+}
+
+/** AI-facing result from web_search tool */
+export interface WebSearchResult {
+  readonly query: string;
+  readonly results: SearchResultItem[];
+  readonly totalResults: number;
+  readonly elapsed: number;
+  readonly truncated: boolean;
+}
+
 // ---- Provider types --------------------------------------------------------
 
 export interface ProviderChatRequest {

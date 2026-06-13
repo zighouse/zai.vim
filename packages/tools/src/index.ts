@@ -6,3 +6,4 @@
 export * from './registry.js';
 export * from './file.js';
 export * from './shell.js';
+export * from './web.js';
