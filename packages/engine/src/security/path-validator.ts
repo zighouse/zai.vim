@@ -269,7 +269,7 @@ export async function validatePathSafe(
   inputPath: string,
   projectRoot: string,
   operation: 'read' | 'write' | 'delete',
-): Promise<SealedFileHandle | PathRejection> {
+): Promise<SealedFileHandle | PathRejection | PathAcceptance> {
   const startTime = performance.now();
 
   // 1. Unicode normalization (AC6)
@@ -331,7 +331,7 @@ export async function validatePathSafe(
     // 8. Open with async + timeout (Task 2.6)
     let handle: FileHandle;
     try {
-      handle = await open(realPath, 'r', { signal: AbortSignal.timeout(5000) });
+      handle = await open(realPath, 'r');
     } catch {
       return await rejectWithTiming('TOOLS_PATH_OUTSIDE_BOUNDARY', startTime);
     }

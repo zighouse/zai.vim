@@ -7,7 +7,7 @@ import { getBadge } from '../security/badge-display.js';
 /**
  * Enriched tool call result with security context
  */
-export interface EnrichedChunk extends ResponseChunk {
+export type EnrichedChunk = ResponseChunk & {
   harmLevel?: HarmLevel;
   badge?: HarmLevelBadge;
 }

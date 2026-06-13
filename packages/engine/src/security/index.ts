@@ -17,7 +17,7 @@ import { HarmClassifier } from './harm-classifier.js';
 export { HarmClassifier } from './harm-classifier.js';
 import { AuditLogger } from './audit-logger.js';
 export { AuditLogger, type AuditEntry, type AuditStatistics } from './audit-logger.js';
-export { OverrideManager } from './override-manager.js';
+export { OverrideManager, type PendingOperation } from './override-manager.js';
 export { SecurityMonitor } from './security-monitor.js';
 export type { SecurityLevel, SecurityHealth, SecurityStatusChange } from './security-monitor.js';
 export { getBadge, getAllBadges, isElevatedRisk, isBlockingLevel } from './badge-display.js';
@@ -25,7 +25,8 @@ export { generateRiskCard } from './risk-card.js';
 export type { RiskCardSummary } from './risk-card.js';
 
 // Story 2.4 — TOCTOU-safe path validation
-export { Semaphore, PATH_VALIDATION_SEMAPHORE } from './semaphore.js';
+export { Semaphore } from './semaphore.js';
+export { PATH_VALIDATION_SEMAPHORE } from './path-validator.js';
 export {
   validatePathSafe,
   normalizePath,
@@ -39,7 +40,7 @@ export {
   detectNormalizationForm,
   isProcAvailable,
 } from './path-validator.js';
-export type { PathRejectCode, PathValidationResult } from './path-validator.js';
+export type { PathRejectCode, PathRejection, PathAcceptance, PathValidationResult } from './path-validator.js';
 
 // ============================================================================
 // TODO (@zaivim/sandbox): extract SandboxManager to @zaivim/sandbox when

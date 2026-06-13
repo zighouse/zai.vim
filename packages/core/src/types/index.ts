@@ -202,7 +202,7 @@ export interface ToolContext {
       readonly timeout?: number;
       readonly detached?: boolean;
       readonly signal?: AbortSignal;
-      readonly stdio?: readonly string[];
+      readonly stdio?: import('child_process').StdioOptions;
     },
   ): import('child_process').ChildProcess;
 }

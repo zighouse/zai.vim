@@ -102,7 +102,8 @@ export class Engine implements EngineAPI {
     this.#overrideManager = new OverrideManager({}, undefined, undefined);
 
     // Wire rejection callback: SecurityProvider → OverrideManager (Story 2.2)
-    this.#securityProvider.onRejection = (operation, harmLevel, command, reason) => {
+    // Cast needed: onRejection is a SecurityProvider-only setter, not on ISecurityProvider
+    (this.#securityProvider as unknown as SecurityProvider).onRejection = (operation, harmLevel, command, reason) => {
       return this.#overrideManager.recordRejection('', harmLevel, `${operation}: ${command}`, { harmLevel, reason });
     };
 
@@ -203,6 +204,7 @@ export class Engine implements EngineAPI {
       providerRegistry,
       sessionStore: this.#sessionStore,
       securityProvider: this.#securityProvider,
+      auditor: this.#auditor,
       tools: this.#tools,
     };
   }

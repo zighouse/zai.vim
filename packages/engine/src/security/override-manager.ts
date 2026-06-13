@@ -10,7 +10,7 @@ import type { AuditLogger } from './audit-logger.js';
 // Types
 // ============================================================================
 
-interface PendingOperation {
+export interface PendingOperation {
   readonly operationId: string;
   readonly sessionId: string;
   readonly harmLevel: HarmLevel;
@@ -277,7 +277,7 @@ export class OverrideManager {
 
     const delaySec = this.#config.delayProgression[
       Math.min(this.#delayIndex, this.#config.delayProgression.length - 1)
-    ] ?? this.#config.delayProgression[this.#config.delayProgression.length - 1];
+    ] ?? this.#config.delayProgression[this.#config.delayProgression.length - 1] ?? 0;
 
     if (delaySec > 0) {
       // Synchronous sleep — blocks the caller (within the mutex scope)
@@ -326,6 +326,7 @@ export class OverrideManager {
         harmLevel: record.override.harmLevel,
         decision: 'allowed',
         reason: `User override: ${acknowledgment}`,
+        user: 'system',
         userAcknowledged: true,
         auditEventType: 'override',
         metadata: { overrideRecord: record },
@@ -341,6 +342,7 @@ export class OverrideManager {
         harmLevel: record.override.harmLevel,
         decision: 'allowed',
         reason: `User override for ${record.override.originalCommand}: ${acknowledgment}`,
+        user: 'system',
         userAcknowledged: true,
         auditEventType: 'override',
         metadata: { overrideRecord: record },

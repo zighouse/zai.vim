@@ -5,6 +5,7 @@ import type { ToolDefinition, ToolContext, ResponseChunk, Message } from '@zaivi
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { spawn } from 'node:child_process';
 
 export interface ToolCallRequest {
   readonly id: string;
@@ -82,6 +83,7 @@ export async function executeToolCall(
     signal: combinedSignal,
     security: options.security,
     audit: options.audit,
+    spawn: (command, args, opts) => spawn(command, args ?? [], opts ?? {}),
   };
 
   try {

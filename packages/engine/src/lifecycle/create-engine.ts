@@ -168,6 +168,10 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
     throw new Error('Not implemented in this story');
   }
 
+  async requestOverride(_operationId: string, _acknowledgment: string, _sessionId: string): Promise<boolean> {
+    throw new Error('requestOverride() is not available on the lifecycle engine. Use the pipeline Engine from @zaivim/engine/pipeline.');
+  }
+
   async *chat(_sessionId: string, _message: Message, _signal?: AbortSignal): AsyncIterable<ResponseChunk> {
     // This Engine implementation (EngineImpl) is the lifecycle/daemon engine used by
     // the gateway for session CRUD and process management. The streaming chat pipeline

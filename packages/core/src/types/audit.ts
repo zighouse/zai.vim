@@ -25,7 +25,7 @@ export interface AuditEvent {
   readonly reason?: string;            // Rejection reason if rejected
   readonly params?: Record<string, unknown>; // Operation parameters (redacted)
   readonly auditEventType?: AuditEventType;  // Default 'operation'
-  readonly metadata?: {
+  readonly metadata?: Record<string, unknown> & {
     readonly elapsed?: number;         // Operation duration (ms)
     readonly truncated?: boolean;      // Whether params were truncated
   };
