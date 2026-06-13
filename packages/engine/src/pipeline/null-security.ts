@@ -2,7 +2,8 @@
 // Fallback when E2 security module is not loaded.
 // All operations pass through with warning logging.
 
-import type { ISecurityProvider, FileChangeProposal, SecurityDecision, SecurityStatus } from '@zaivim/core';
+import { resolve } from 'node:path';
+import type { ISecurityProvider, FileChangeProposal, SecurityDecision, SecurityStatus, SafeFileHandle, WriteApproval } from '@zaivim/core';
 
 export class NullSecurityProvider implements ISecurityProvider {
   readonly sandboxType = 'none' as const;
@@ -49,5 +50,27 @@ export class NullSecurityProvider implements ISecurityProvider {
 
   isSandboxAvailable(): boolean {
     return false;
+  }
+
+  async openFile(path: string, operation: 'read'): Promise<SafeFileHandle>;
+  async openFile(path: string, operation: 'write' | 'delete'): Promise<WriteApproval>;
+  async openFile(path: string, operation: 'read' | 'write' | 'delete'): Promise<SafeFileHandle | WriteApproval> {
+    const resolvedPath = resolve(path);
+
+    if (operation === 'read') {
+      const { readFile } = await import('node:fs/promises');
+      return {
+        validatedPath: resolvedPath,
+        async read(encoding?: BufferEncoding): Promise<string> {
+          return readFile(resolvedPath, { encoding }) as Promise<string>;
+        },
+        async close(): Promise<void> { /* no-op */ },
+      } satisfies SafeFileHandle;
+    }
+
+    return {
+      validatedPath: resolvedPath,
+      resolvedPath,
+    } satisfies WriteApproval;
   }
 }

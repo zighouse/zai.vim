@@ -2,12 +2,15 @@
 // Fallback security provider for platforms without bwrap support.
 // Used when graceful degradation is required (macOS, Windows).
 
+import { resolve } from 'node:path';
 import type {
   ISecurityProvider,
   SecurityDecision,
   SecurityStatus,
   FileChangeProposal,
   HarmLevel,
+  SafeFileHandle,
+  WriteApproval,
 } from '@zaivim/core';
 
 /**
@@ -110,5 +113,32 @@ export class NullSecurityProvider implements ISecurityProvider {
   async proposeChange(_proposal: FileChangeProposal): Promise<boolean> {
     console.warn('[NullSecurityProvider] proposeChange called — always returns true (no approval flow)');
     return true;
+  }
+
+  /**
+   * Open a file — no validation (null security, allows all).
+   * Story 3.1 interface conformance.
+   */
+  async openFile(path: string, operation: 'read'): Promise<SafeFileHandle>;
+  async openFile(path: string, operation: 'write' | 'delete'): Promise<WriteApproval>;
+  async openFile(path: string, operation: 'read' | 'write' | 'delete'): Promise<SafeFileHandle | WriteApproval> {
+    console.warn(`[NullSecurityProvider] openFile('${path}', '${operation}') — no path validation (null security)`);
+    const resolvedPath = resolve(path);
+
+    if (operation === 'read') {
+      const { readFile } = await import('node:fs/promises');
+      return {
+        validatedPath: resolvedPath,
+        async read(encoding?: BufferEncoding): Promise<string> {
+          return readFile(resolvedPath, { encoding }) as Promise<string>;
+        },
+        async close(): Promise<void> { /* no-op */ },
+      } satisfies SafeFileHandle;
+    }
+
+    return {
+      validatedPath: resolvedPath,
+      resolvedPath,
+    } satisfies WriteApproval;
   }
 }

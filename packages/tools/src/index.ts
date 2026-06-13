@@ -1,7 +1,6 @@
 // @zaivim/tools — AI tool implementations
-// Growth: Tool modules not yet implemented
-// export * from './registry.js';
-// export * from './file.js';
-// export * from './grep.js';
-// export * from './shell.js';
-// export * from './web.js';
+// Story 3.1: File operations tools (file_read, file_write, file_search) + ToolRegistry.
+// Growth: Additional tools (grep, shell, web) added in later stories.
+
+export * from './registry.js';
+export * from './file.js';

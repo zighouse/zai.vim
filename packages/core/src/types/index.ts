@@ -155,8 +155,8 @@ export interface AgentPool {
 
 // ---- Security types (Story 2.1) -------------------------------------------
 
-import type { HarmLevel, SecurityDecision, SecurityStatus, AuditEntry, ISecurityProvider, SecurityContext, FileChangeProposal, FileOperationType, FileClassification, HarmLevelBadge, RiskCard, RiskCardSeverity, OverrideRequest, OverrideRecord, SecurityDegradedNotification, SecuritySecureNotification, SecurityNotification, ToolSecurityNotification } from './security.js';
-export type { HarmLevel, SecurityDecision, SecurityStatus, AuditEntry, ISecurityProvider, SecurityContext, FileChangeProposal, FileOperationType, FileClassification, HarmLevelBadge, RiskCard, RiskCardSeverity, OverrideRequest, OverrideRecord, SecurityDegradedNotification, SecuritySecureNotification, SecurityNotification, ToolSecurityNotification };
+import type { HarmLevel, SecurityDecision, SecurityStatus, AuditEntry, ISecurityProvider, SecurityContext, FileChangeProposal, FileOperationType, FileClassification, HarmLevelBadge, RiskCard, RiskCardSeverity, OverrideRequest, OverrideRecord, SecurityDegradedNotification, SecuritySecureNotification, SecurityNotification, ToolSecurityNotification, SafeFileHandle, WriteApproval, FileOperation } from './security.js';
+export type { HarmLevel, SecurityDecision, SecurityStatus, AuditEntry, ISecurityProvider, SecurityContext, FileChangeProposal, FileOperationType, FileClassification, HarmLevelBadge, RiskCard, RiskCardSeverity, OverrideRequest, OverrideRecord, SecurityDegradedNotification, SecuritySecureNotification, SecurityNotification, ToolSecurityNotification, SafeFileHandle, WriteApproval, FileOperation };
 
 // ---- Audit types (Story 2.3) -----------------------------------------------
 

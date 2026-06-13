@@ -88,6 +88,41 @@ export interface FileChangeProposal {
   readonly reason: string;
 }
 
+// =============================================================================
+// File operation handle types (Story 3.1)
+// =============================================================================
+
+/** File operation type for openFile */
+export type FileOperation = 'read' | 'write' | 'delete';
+
+/**
+ * Safe file handle returned by ISecurityProvider.openFile(path, 'read').
+ *
+ * Tool code reads through this handle, not via raw fs — ensures path
+ * validation cannot be bypassed after the check.
+ */
+export interface SafeFileHandle {
+  /** The validated real path of the opened file */
+  readonly validatedPath: string;
+  /** Read the entire file content with the given encoding */
+  read(encoding?: BufferEncoding): Promise<string>;
+  /** Close the underlying file handle */
+  close(): Promise<void>;
+}
+
+/**
+ * Write approval returned by ISecurityProvider.openFile(path, 'write'|'delete').
+ *
+ * Confirms the path passed validation and provides the resolved absolute path
+ * that tools can use for writing.
+ */
+export interface WriteApproval {
+  /** The validated real path for writing */
+  readonly validatedPath: string;
+  /** The resolved absolute path (after realpath normalization) */
+  readonly resolvedPath: string;
+}
+
 /**
  * Security provider interface
  *
@@ -134,6 +169,19 @@ export interface ISecurityProvider {
    * Returns false if sandbox cannot be used (graceful degradation).
    */
   isSandboxAvailable(): boolean;
+
+  /**
+   * Open a file with TOCTOU-safe path validation (Story 3.1).
+   *
+   * For reads: returns SafeFileHandle for validated file access.
+   * For writes/deletes: returns WriteApproval with resolved path.
+   *
+   * @param path - File path relative to project root
+   * @param operation - File operation type
+   */
+  openFile(path: string, operation: 'read'): Promise<SafeFileHandle>;
+  openFile(path: string, operation: 'write' | 'delete'): Promise<WriteApproval>;
+  openFile(path: string, operation: FileOperation): Promise<SafeFileHandle | WriteApproval>;
 
   /**
    * Legacy path validation (for backward compatibility)

@@ -4,12 +4,14 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { platform } from 'node:os';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
 import type {
   ISecurityProvider,
   SecurityDecision,
   SecurityStatus,
   FileChangeProposal,
+  SafeFileHandle,
+  WriteApproval,
 } from '@zaivim/core';
 import { HarmClassifier } from './harm-classifier.js';
 
@@ -352,5 +354,64 @@ export class BwrapSecurityProvider implements ISecurityProvider {
     }
 
     return true;
+  }
+
+  /**
+   * Open a file with path validation (Story 3.1).
+   * BwrapSecurityProvider: delegates to basic path checks.
+   * For full TOCTOU-safe validation, use SecurityProvider from security/index.ts.
+   */
+  async openFile(path: string, operation: 'read'): Promise<SafeFileHandle>;
+  async openFile(path: string, operation: 'write' | 'delete'): Promise<WriteApproval>;
+  async openFile(path: string, _operation: 'read' | 'write' | 'delete'): Promise<SafeFileHandle | WriteApproval> {
+    const resolvedPath = resolve(this.#workspaceDir, path);
+
+    // Basic .git boundary check
+    const gitRoot = this.#findGitRoot(this.#workspaceDir);
+    if (gitRoot && resolvedPath !== gitRoot && !resolvedPath.startsWith(gitRoot + '/')) {
+      throw Object.assign(
+        new Error('access denied'),
+        { code: 'TOOLS_SECURITY_BLOCKED', reason: 'TOOLS_PATH_OUTSIDE_BOUNDARY' },
+      );
+    }
+
+    // Internal dir protection
+    if (resolvedPath.includes('/.git/') || resolvedPath.endsWith('/.git') ||
+        resolvedPath.includes('/.zaivim/') ||
+        resolvedPath.includes('/node_modules/')) {
+      throw Object.assign(
+        new Error('access denied'),
+        { code: 'TOOLS_SECURITY_BLOCKED', reason: 'TOOLS_INTERNAL_DIR' },
+      );
+    }
+
+    if (_operation === 'read') {
+      const { readFile } = await import('node:fs/promises');
+      return {
+        validatedPath: resolvedPath,
+        async read(encoding?: BufferEncoding): Promise<string> {
+          return readFile(resolvedPath, { encoding }) as Promise<string>;
+        },
+        async close(): Promise<void> {
+          // no-op for basic provider
+        },
+      } satisfies SafeFileHandle;
+    }
+
+    return {
+      validatedPath: resolvedPath,
+      resolvedPath,
+    } satisfies WriteApproval;
+  }
+
+  #findGitRoot(startDir: string): string | null {
+    let current = resolve(startDir);
+    for (let i = 0; i < 10; i++) {
+      if (existsSync(resolve(current, '.git'))) return current;
+      const parent = dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+    return null;
   }
 }

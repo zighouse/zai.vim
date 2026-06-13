@@ -8,6 +8,8 @@ import type {
   SecurityDecision,
   SecurityStatus,
   HarmLevel,
+  SafeFileHandle,
+  WriteApproval,
 } from '@zaivim/core';
 import { ZaiSecurityError } from '@zaivim/core';
 import { resolve } from 'node:path';
@@ -27,19 +29,9 @@ export type { RiskCardSummary } from './risk-card.js';
 // Story 2.4 — TOCTOU-safe path validation
 export { Semaphore } from './semaphore.js';
 export { PATH_VALIDATION_SEMAPHORE } from './path-validator.js';
-export {
-  validatePathSafe,
-  normalizePath,
-  findGitRoot,
-  isWithinBoundary,
-  hasConfusableChars,
-  skeleton,
-  SealedFileHandle,
-  ZaiHandleClosedError,
-  BidiControlCharError,
-  detectNormalizationForm,
-  isProcAvailable,
-} from './path-validator.js';
+import { validatePathSafe as _validatePathSafe, SealedFileHandle as _SealedFileHandle } from './path-validator.js';
+import type { PathAcceptance as _PathAcceptance } from './path-validator.js';
+export { validatePathSafe, normalizePath, findGitRoot, isWithinBoundary, hasConfusableChars, skeleton, SealedFileHandle, ZaiHandleClosedError, BidiControlCharError, detectNormalizationForm, isProcAvailable } from './path-validator.js';
 export type { PathRejectCode, PathRejection, PathAcceptance, PathValidationResult } from './path-validator.js';
 
 // ============================================================================
@@ -343,6 +335,45 @@ export class SecurityProvider implements ISecurityProvider {
 
   isSandboxAvailable(): boolean {
     return this.#sandbox.isAvailable();
+  }
+
+  /**
+   * Open a file with TOCTOU-safe path validation (Story 3.1).
+   *
+   * For reads: delegates to validatePathSafe, wraps SealedFileHandle as SafeFileHandle.
+   * For writes: validates path exists within .git boundary, returns WriteApproval.
+   */
+  async openFile(path: string, operation: 'read'): Promise<SafeFileHandle>;
+  async openFile(path: string, operation: 'write' | 'delete'): Promise<WriteApproval>;
+  async openFile(path: string, operation: 'read' | 'write' | 'delete'): Promise<SafeFileHandle | WriteApproval> {
+    const result = await _validatePathSafe(path, this.#projectRoot, operation);
+
+    // SealedFileHandle: returned for successful reads
+    if (result instanceof _SealedFileHandle) {
+      return {
+        validatedPath: result.validatedPath,
+        async read(encoding?: BufferEncoding): Promise<string> {
+          return result.read(encoding);
+        },
+        async close(): Promise<void> {
+          await result.close();
+        },
+      } satisfies SafeFileHandle;
+    }
+
+    // PathRejection or PathAcceptance: check valid flag
+    if (!result.valid) {
+      throw Object.assign(
+        new Error('access denied'),
+        { code: 'TOOLS_SECURITY_BLOCKED', reason: result.code },
+      );
+    }
+
+    // PathAcceptance (for write/delete)
+    return {
+      validatedPath: result.resolvedPath,
+      resolvedPath: result.resolvedPath,
+    } satisfies WriteApproval;
   }
 
   // ============================================================================

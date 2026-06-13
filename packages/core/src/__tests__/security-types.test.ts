@@ -183,6 +183,19 @@ describe('Security Types', () => {
         isSandboxAvailable: () => true,
         validatePath: (path, op) => true,
         proposeChange: async (proposal) => true,
+        openFile: async (path: string, operation: 'read' | 'write' | 'delete') => {
+          if (operation === 'read') {
+            return {
+              validatedPath: '/test/file.txt',
+              read: async () => 'file content',
+              close: async () => {},
+            };
+          }
+          return {
+            validatedPath: '/test/file.txt',
+            resolvedPath: '/test/file.txt',
+          };
+        },
       };
 
       expect(provider.sandboxType).toBe('bwrap');
@@ -190,6 +203,7 @@ describe('Security Types', () => {
       expect(typeof provider.postExecute).toBe('function');
       expect(typeof provider.getStatus).toBe('function');
       expect(typeof provider.isSandboxAvailable).toBe('function');
+      expect(typeof provider.openFile).toBe('function');
     });
 
     it('should require sandboxType property', () => {
@@ -221,6 +235,19 @@ describe('Security Types', () => {
         isSandboxAvailable: () => true,
         validatePath: () => true,
         proposeChange: async () => true,
+        openFile: async (path: string, operation: 'read' | 'write' | 'delete') => {
+          if (operation === 'read') {
+            return {
+              validatedPath: '/test/file.txt',
+              read: async () => 'file content',
+              close: async () => {},
+            };
+          }
+          return {
+            validatedPath: '/test/file.txt',
+            resolvedPath: '/test/file.txt',
+          };
+        },
       };
 
       // If this compiles, types are compatible
