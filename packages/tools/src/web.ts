@@ -307,7 +307,7 @@ export const webFetchTool: ToolDefinition<WebFetchParams, WebFetchResult> = {
 
       const origSize = contentLength || rawSize;
       content = rawBody.slice(0, capPos);
-      content += `\n... [truncated, original size: ${Math.round(origSize / 1024)}KB. Use offset/limit params for paginated reading]`;
+      content += `\n... [truncated, original size: ${Math.round(origSize / 1024)}KB]`;
       truncated = true;
     } else {
       content = rawBody;
