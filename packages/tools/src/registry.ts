@@ -133,9 +133,9 @@ export class ToolRegistry {
 
     // For skill tools, expose the namespaced name on the stored definition so
     // list()/toOpenAITools() surface `docker.run` rather than the bare `run`.
-    // Builtins are stored as-is (preserving the original reference).
+    // Metadata (source/skillName) lives only in #metadata, not on ToolDefinition.
     const storedTool: ToolDefinition = source === 'skill' && storedName !== tool.name
-      ? { ...tool, name: storedName, skillName: options!.skillName, source: 'skill' }
+      ? { ...tool, name: storedName }
       : tool;
 
     const tier = tool.tier ?? 'first';
