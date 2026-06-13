@@ -48,6 +48,9 @@ function filterEnv(
       strippedKeys.push(k);
       continue;
     }
+    if (v.length > MAX_ENV_VALUE_LENGTH) {
+      throw new Error(`TOOLS_INPUT_TOO_LARGE: env value for key "${k}" exceeds ${MAX_ENV_VALUE_LENGTH} chars`);
+    }
     if (k === 'PATH') {
       safeEnv[k] = v
         .split(':')
@@ -55,7 +58,7 @@ function filterEnv(
         .join(':');
       continue;
     }
-    safeEnv[k] = v.slice(0, MAX_ENV_VALUE_LENGTH);
+    safeEnv[k] = v;
   }
   return { safeEnv, strippedKeys };
 }
@@ -106,9 +109,8 @@ export const shellTool: ToolDefinition<ShellParams, ShellResult> = {
       );
     }
 
-    // 1b. stdin: size cap (AC13)
-    const stdin = params.stdin ?? '';
-    if (Buffer.byteLength(stdin, 'utf-8') > MAX_STDIN_BYTES) {
+    // 1b. stdin: size cap (AC13) — only validate when provided
+    if (params.stdin != null && Buffer.byteLength(params.stdin, 'utf-8') > MAX_STDIN_BYTES) {
       return rejectedResult(
         'stdin exceeds 1MB',
         'TOOLS_INPUT_TOO_LARGE',
@@ -131,7 +133,16 @@ export const shellTool: ToolDefinition<ShellParams, ShellResult> = {
     }
 
     // 1e. env: security filtering — strip blocked linker vars, whitelist PATH (AC11)
-    const { safeEnv, strippedKeys } = filterEnv(params.env);
+    let safeEnv: Record<string, string>;
+    let strippedKeys: string[];
+    try {
+      ({ safeEnv, strippedKeys } = filterEnv(params.env));
+    } catch (e) {
+      return rejectedResult(
+        e instanceof Error ? e.message : 'env validation failed',
+        'TOOLS_INPUT_TOO_LARGE',
+      );
+    }
     if (strippedKeys.length > 0) {
       ctx.audit('shell.env_stripped', { command: params.command, keys: strippedKeys });
     }
@@ -165,7 +176,7 @@ export const shellTool: ToolDefinition<ShellParams, ShellResult> = {
         command,
         cwd,
         env: Object.keys(safeEnv).length > 0 ? safeEnv : undefined,
-        stdin: stdin || undefined,
+        stdin: params.stdin || undefined,
         timeout,
       },
       ctx.signal,

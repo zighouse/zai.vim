@@ -42,6 +42,8 @@ export { executeToolCall, executeToolCalls, validateToolCalls } from './tool-exe
 export { classifyProviderError } from './error-classifier.js';
 export { NullSecurityProvider } from './null-security.js';
 export { SecurityEnricher } from './security-enricher.js';
+export { ShellExecutorFactory } from './shell-executor.js';
+export type { SandboxCapabilities } from './shell-executor.js';
 export { resolveAttachments, formatAttachments } from './file-attachment.js';
 export { findProjectRoot, scanProjectMeta, formatProjectContext, truncateProjectContext, MAX_PROJECT_CONTEXT_CHARS } from './project-detector.js';
 export type { ProjectRootResult } from './project-detector.js';

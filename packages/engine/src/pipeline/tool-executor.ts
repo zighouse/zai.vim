@@ -6,6 +6,9 @@ import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import type { SandboxManager } from '../security/index.js';
+import { ShellExecutorFactory } from './shell-executor.js';
+import type { SandboxCapabilities } from './shell-executor.js';
 
 export interface ToolCallRequest {
   readonly id: string;
@@ -21,6 +24,10 @@ export interface ToolExecutorOptions {
   readonly audit: (action: string, detail: Record<string, unknown>) => void;
   readonly timeout?: number;
   readonly emit?: (event: string, data: Record<string, unknown>) => void;
+  /** SandboxManager for creating ctx.exec (Story 3.2a / ADR-SHELL-2) */
+  readonly sandboxManager?: SandboxManager;
+  /** Override sandbox capabilities (default: minimal restrictions) */
+  readonly sandboxCapabilities?: SandboxCapabilities;
 }
 
 /**
@@ -84,6 +91,12 @@ export async function executeToolCall(
     security: options.security,
     audit: options.audit,
     spawn: (command, args, opts) => spawn(command, args ?? [], opts ?? {}),
+    exec: options.sandboxManager && options.sandboxCapabilities
+      ? ShellExecutorFactory.create(
+          options.sandboxManager,
+          options.sandboxCapabilities,
+        )
+      : undefined,
   };
 
   try {
