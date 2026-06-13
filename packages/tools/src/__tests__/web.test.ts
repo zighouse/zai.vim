@@ -384,6 +384,16 @@ describe('AC10 — AbortSignal cancellation', () => {
 
     expect(result.errorCode).toContain('WEB_FETCH_CANCELLED');
   });
+
+  it('should return cancelled for web_search when signal is aborted before fetch', async () => {
+    const controller = new AbortController();
+    const ctx = mockToolContext({ signal: controller.signal });
+    controller.abort();
+
+    const result = await webSearchTool.execute({ query: 'test' }, ctx);
+
+    expect(result.errorCode).toContain('WEB_FETCH_CANCELLED');
+  });
 });
 
 // ─── AC11: Redirect security ─────────────────────────────────────────────────

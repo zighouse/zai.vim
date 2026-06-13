@@ -204,6 +204,11 @@ export const webFetchTool: ToolDefinition<WebFetchParams, WebFetchResult> = {
           `redirect target is internal address: ${redirectUrl.hostname}`);
       }
 
+      // Check for cancellation before each redirect fetch
+      if (ctx.signal.aborted) {
+        return rejectedFetchResult(rawUrl, 'WEB_FETCH_CANCELLED', 'operation cancelled');
+      }
+
       try {
         response = await fetch(redirectUrl.toString(), {
           signal: controller.signal,
@@ -211,6 +216,12 @@ export const webFetchTool: ToolDefinition<WebFetchParams, WebFetchResult> = {
           headers: { 'User-Agent': 'zai.vim/1.0 (AI agent web fetch)' },
         });
       } catch (err) {
+        if (controller.signal.aborted) {
+          const isCancel = ctx.signal.aborted;
+          return rejectedFetchResult(rawUrl,
+            isCancel ? 'WEB_FETCH_CANCELLED' : 'WEB_FETCH_TIMEOUT',
+            isCancel ? 'operation cancelled' : `request exceeded ${timeout}ms timeout`);
+        }
         return rejectedFetchResult(rawUrl, 'WEB_FETCH_ERROR',
           `redirect fetch failed: ${(err as Error).message}`);
       }
@@ -377,6 +388,7 @@ export const webSearchTool: ToolDefinition<WebSearchParams, WebSearchResult> = {
       return {
         query, results: [], totalResults: 0,
         elapsed: Date.now() - startedAt, truncated: false,
+        errorCode: 'WEB_FETCH_CANCELLED: operation cancelled',
       };
     }
     const controller = new AbortController();
@@ -397,6 +409,14 @@ export const webSearchTool: ToolDefinition<WebSearchParams, WebSearchResult> = {
     } catch (err) {
       clearTimeout(timeoutId);
       ctx.signal.removeEventListener('abort', onAbort);
+      if (controller.signal.aborted) {
+        const isCancel = ctx.signal.aborted;
+        return {
+          query, results: [], totalResults: 0,
+          elapsed: Date.now() - startedAt, truncated: false,
+          errorCode: isCancel ? 'WEB_FETCH_CANCELLED: operation cancelled' : `WEB_FETCH_TIMEOUT: request exceeded ${timeout}ms timeout`,
+        };
+      }
       return {
         query, results: [], totalResults: 0,
         elapsed: Date.now() - startedAt, truncated: false,
