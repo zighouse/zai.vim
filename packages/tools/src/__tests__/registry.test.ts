@@ -192,6 +192,14 @@ describe('ToolRegistry — skill namespacing (Story 3.3 AC7)', () => {
       registry.register(makeSkillTool('run'), { source: 'skill', skillName: 'docker'}),
     ).toThrow(/already registered/);
   });
+
+  it('toOpenAITools includes namespaced skill tools with correct name', () => {
+    registry.register(makeSkillTool('deploy'), { source: 'skill', skillName: 'k8s' });
+    const openaiTools = registry.toOpenAITools();
+
+    expect(openaiTools.find(t => t.function.name === 'k8s.deploy')).toBeDefined();
+    expect(openaiTools.find(t => t.function.name === 'deploy')).toBeUndefined();
+  });
 });
 
 // ---- Story 3.3: tier + source filtering (AC6) ----
