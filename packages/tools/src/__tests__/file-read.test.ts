@@ -128,6 +128,33 @@ describe('fileReadTool', () => {
     expect(handle.close).toHaveBeenCalled();
   });
 
+  it('should close the handle even when read throws (no fd leak)', async () => {
+    const leakingHandle: SafeFileHandle = {
+      validatedPath: '/test/file.txt',
+      read: vi.fn().mockRejectedValue(new Error('read failed')),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const leakingSecurity = mockSecurityProvider(leakingHandle);
+    const leakingCtx = mockToolContext(leakingSecurity);
+
+    await expect(fileReadTool.execute({ path: './broken.ts' }, leakingCtx)).rejects.toThrow('read failed');
+    expect(leakingHandle.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('should close the handle even when size check throws (no fd leak)', async () => {
+    const hugeContent = 'x'.repeat(600_000);
+    const hugeHandle: SafeFileHandle = {
+      validatedPath: '/test/huge.bin',
+      read: vi.fn().mockResolvedValue(hugeContent),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const hugeSecurity = mockSecurityProvider(hugeHandle);
+    const hugeCtx = mockToolContext(hugeSecurity);
+
+    await expect(fileReadTool.execute({ path: './huge.bin' }, hugeCtx)).rejects.toThrow(/exceeds maximum read size/);
+    expect(hugeHandle.close).toHaveBeenCalledTimes(1);
+  });
+
   it('AC9: should record audit log on read', async () => {
     await fileReadTool.execute({ path: './src/index.ts' }, ctx);
 

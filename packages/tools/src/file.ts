@@ -132,47 +132,51 @@ export const fileReadTool: ToolDefinition<FileReadParams, FileReadResult> = {
     // 1. Path validation via ISecurityProvider.openFile() (Story 2.4 validatePathSafe)
     const handle = await ctx.security.openFile(params.path, 'read');
 
-    // 2. Read full content via SafeFileHandle (not raw fs)
-    const content = await handle.read('utf-8');
-    await handle.close();
+    // Read through the handle in try/finally so fd is released even on throw
+    try {
+      // 2. Read full content via SafeFileHandle (not raw fs)
+      const content = await handle.read('utf-8');
 
-    // 3. Size pre-check — reject files over maxFileReadBytes
-    const byteLen = Buffer.byteLength(content, 'utf-8');
-    if (byteLen > MAX_FILE_READ_BYTES) {
-      throw Object.assign(
-        new Error(`File exceeds maximum read size of ${MAX_FILE_READ_BYTES / 1024}KB (${(byteLen / 1024).toFixed(1)}KB)`),
-        { code: 'TOOLS_OUTPUT_TOO_LARGE' },
-      );
+      // 3. Size pre-check — reject files over maxFileReadBytes
+      const byteLen = Buffer.byteLength(content, 'utf-8');
+      if (byteLen > MAX_FILE_READ_BYTES) {
+        throw Object.assign(
+          new Error(`File exceeds maximum read size of ${MAX_FILE_READ_BYTES / 1024}KB (${(byteLen / 1024).toFixed(1)}KB)`),
+          { code: 'TOOLS_OUTPUT_TOO_LARGE' },
+        );
+      }
+
+      // 4. Apply offset/limit if specified
+      let targetContent = content;
+      if (params.offset !== undefined || params.limit !== undefined) {
+        const allLines = content.split('\n');
+        const start = params.offset ?? 0;
+        const end = params.limit !== undefined ? start + params.limit : allLines.length;
+        targetContent = allLines.slice(start, end).join('\n');
+      }
+
+      // 5. Truncate if exceeds maxOutputBytes (ADR-19)
+      const { content: finalContent, truncated, lines } = truncatedLines(targetContent, MAX_OUTPUT_BYTES);
+
+      // 6. Audit
+      ctx.audit('file_read', {
+        path: params.path,
+        size: byteLen,
+        truncated,
+        offset: params.offset,
+        limit: params.limit,
+      });
+
+      return {
+        path: params.path,
+        content: finalContent,
+        size: byteLen,
+        truncated,
+        lines,
+      };
+    } finally {
+      await handle.close();
     }
-
-    // 4. Apply offset/limit if specified
-    let targetContent = content;
-    if (params.offset !== undefined || params.limit !== undefined) {
-      const allLines = content.split('\n');
-      const start = params.offset ?? 0;
-      const end = params.limit !== undefined ? start + params.limit : allLines.length;
-      targetContent = allLines.slice(start, end).join('\n');
-    }
-
-    // 5. Truncate if exceeds maxOutputBytes (ADR-19)
-    const { content: finalContent, truncated, lines } = truncatedLines(targetContent, MAX_OUTPUT_BYTES);
-
-    // 6. Audit
-    ctx.audit('file_read', {
-      path: params.path,
-      size: byteLen,
-      truncated,
-      offset: params.offset,
-      limit: params.limit,
-    });
-
-    return {
-      path: params.path,
-      content: finalContent,
-      size: byteLen,
-      truncated,
-      lines,
-    };
   },
 };
 
