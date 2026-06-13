@@ -1,10 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Session, Message, ResponseChunk, IProvider, ToolDefinition, ZaiConfig } from '@zaivim/core';
-import { ZaiNetworkError } from '@zaivim/core';
+import { ZaiNetworkError, NullSecurityProvider } from '@zaivim/core';
+import { ToolRegistry } from '@zaivim/tools';
 import { chat } from '../chat.js';
 import type { ChatDeps } from '../chat.js';
-import { NullSecurityProvider } from '../null-security.js';
 import { InMemorySessionStoreFull } from '../../session/memory-store.js';
+
+/** Build a registry preloaded with the given tools (Story 3.3 migration). */
+function makeRegistry(...tools: ToolDefinition[]): ToolRegistry {
+  const registry = new ToolRegistry();
+  for (const tool of tools) registry.register(tool);
+  return registry;
+}
 
 const TEST_CONFIG: Partial<ZaiConfig> = {
   language: 'en',
@@ -71,7 +78,7 @@ function setup(overrides?: Partial<ChatDeps>): { deps: ChatDeps; sessionStore: I
         { type: 'text', content: 'Hello' },
         { type: 'done', finishReason: 'stop' },
       ]),
-      tools: [echoTool],
+      registry: makeRegistry(echoTool),
       security: new NullSecurityProvider(),
       ...overrides,
     },
@@ -264,11 +271,11 @@ describe('chat() pipeline', () => {
       },
     };
 
-    const { deps, createSession } = setup({ provider, tools: [echoTool] });
+    const { deps, createSession } = setup({ provider, registry: makeRegistry(echoTool) });
     const session = createSession();
     const chunks = await collectChunks(chat(session, makeUserMessage('Inject'), deps));
 
-    const errorChunk = chunks.find(c => c.type === 'error' && c.code === 'PIPELINE_TOOL_NOT_FOUND');
+    const errorChunk = chunks.find(c => c.type === 'error' && c.code === 'TOOLS_NOT_FOUND');
     expect(errorChunk).toBeDefined();
   });
 

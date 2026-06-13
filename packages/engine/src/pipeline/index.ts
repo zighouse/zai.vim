@@ -18,6 +18,7 @@ import type {
 } from '@zaivim/core';
 import { EventEmitter } from 'node:events';
 import { type ISecurityProvider, type ISessionStore, ZaiSessionNotFoundError } from '@zaivim/core';
+import { ToolRegistry } from '@zaivim/tools';
 import { loadConfig } from '../config/index.js';
 import { InMemorySessionStoreFull, getLastActivityAt } from '../session/index.js';
 import { SessionLifecycleManager } from '../session/lifecycle-manager.js';
@@ -40,7 +41,6 @@ export { chat } from './chat.js';
 export { assembleContext, estimateTokens, trimContext, PIPELINE_DEFAULTS } from './context-assembler.js';
 export { executeToolCall, executeToolCalls, validateToolCalls } from './tool-executor.js';
 export { classifyProviderError } from './error-classifier.js';
-export { NullSecurityProvider } from './null-security.js';
 export { SecurityEnricher } from './security-enricher.js';
 export { ShellExecutorFactory } from './shell-executor.js';
 export type { SandboxCapabilities } from './shell-executor.js';
@@ -62,7 +62,8 @@ export class Engine implements EngineAPI {
   #securityProvider: ISecurityProvider;
   #sandbox: SandboxManager;
   #auditor: Auditor;
-  #tools: ToolDefinition[];
+  /** Story 3.3: ToolRegistry is the single source of truth for tool dispatch. */
+  #registry: ToolRegistry;
   #agentDeps: AgentDeps;
   #destroyed = false;
   #overrideManager: OverrideManager;
@@ -182,7 +183,10 @@ export class Engine implements EngineAPI {
       });
     });
 
-    this.#tools = tools ?? [];
+    this.#registry = ToolRegistry.createDefault(this.#config);
+    for (const tool of tools ?? []) {
+      this.#registry.register(tool);
+    }
 
     const providerConfigs: Record<string, import('../provider/index.js').ProviderConfig> = {};
     for (const [name, cfg] of Object.entries(this.#config.providers)) {
@@ -207,7 +211,7 @@ export class Engine implements EngineAPI {
       sessionStore: this.#sessionStore,
       securityProvider: this.#securityProvider,
       auditor: this.#auditor,
-      tools: this.#tools,
+      registry: this.#registry,
     };
   }
 
@@ -310,7 +314,7 @@ export class Engine implements EngineAPI {
     const deps: ChatDeps = {
       sessionStore: this.#sessionStore,
       provider,
-      tools: this.#tools,
+      registry: this.#registry,
       security: this.#securityProvider,
       emit,
       onMessagePushed: (sid: string) => this.#lifecycleManager.checkMessageLimit(sid),

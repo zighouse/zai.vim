@@ -62,6 +62,19 @@ export interface EngineConstants {
   readonly toolCall: ToolCallConstants;
 }
 
+/**
+ * Story 3.3 (AC6): Tool exposure configuration.
+ *
+ * `tierOverride` lets operators promote or demote a tool's tier without
+ * editing the ToolDefinition — e.g. expose `web_fetch` as a first-class
+ * tool in one project and as second-class in another.
+ *
+ * Keys are tool names; values are the target tier.
+ */
+export interface ToolsConfig {
+  readonly tierOverride?: Readonly<Record<string, 'first' | 'second'>>;
+}
+
 /** Complete ZaiConfig type tree (ADR-9: deepFreeze immutable) */
 export interface ZaiConfig {
   readonly language: string;
@@ -71,4 +84,6 @@ export interface ZaiConfig {
   readonly engine?: {
     readonly constants?: EngineConstants;
   };
+  /** Story 3.3 (AC6): optional tools section for tier override etc. */
+  readonly tools?: ToolsConfig;
 }

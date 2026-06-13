@@ -530,6 +530,7 @@ describe('Story 2.2 — Tool call security enrichment (Task 3.3.2)', () => {
   it('should enrich tool_call chunks with harmLevel from preExecute', async () => {
     const { chat: pipelineChat } = await import('../pipeline/chat.js');
     const { InMemorySessionStoreFull } = await import('../session/memory-store.js');
+    const { ToolRegistry } = await import('@zaivim/tools');
 
     const mockProvider: IProvider = {
       name: 'mock-enrich',
@@ -556,13 +557,18 @@ describe('Story 2.2 — Tool call security enrichment (Task 3.3.2)', () => {
       async postExecute() {},
     };
 
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'echo', description: 'Echo',
+      parameters: { type: 'object', properties: { text: { type: 'string' } } },
+      execute: async (p) => JSON.stringify(p),
+    });
+
     const chunks: ResponseChunk[] = [];
     for await (const chunk of pipelineChat(session, { id: 'msg-1', role: 'user', content: 'Hi' }, {
       sessionStore,
       provider: mockProvider,
-      tools: [
-        { name: 'echo', description: 'Echo', parameters: { type: 'object', properties: { text: { type: 'string' } } }, execute: async (p) => JSON.stringify(p) },
-      ],
+      registry,
       security: mockSecurity as any,
       emit: vi.fn(),
     })) {

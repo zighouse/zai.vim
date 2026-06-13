@@ -1,6 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ToolDefinition, ToolContext, SecurityDecision } from '@zaivim/core';
+import { ToolRegistry } from '@zaivim/tools';
 import { executeToolCall, executeToolCalls, validateToolCalls } from '../tool-executor.js';
+
+/** Build a registry preloaded with the given tools. */
+function makeRegistry(...tools: ToolDefinition[]): ToolRegistry {
+  const registry = new ToolRegistry();
+  for (const tool of tools) registry.register(tool);
+  return registry;
+}
 
 /** Security provider that denies everything */
 function denyProvider(): import('@zaivim/core').ISecurityProvider {
@@ -65,7 +73,7 @@ describe('executeToolCall', () => {
     const tool = makeTool('read_file', async (params) => `content of ${(params as { path: string }).path}`);
     const result = await executeToolCall(
       { id: 'tc-1', name: 'read_file', arguments: { path: '/test.txt' } },
-      [tool],
+      makeRegistry(tool),
       { sessionId: 's1', sandbox: '/tmp', security: allowProvider(), audit: vi.fn() },
     );
     expect(result.timedOut).toBe(false);
@@ -75,17 +83,19 @@ describe('executeToolCall', () => {
   it('should return error for unknown tool', async () => {
     const result = await executeToolCall(
       { id: 'tc-1', name: 'unknown_tool', arguments: {} },
-      [],
+      makeRegistry(),
       { sessionId: 's1', sandbox: '/tmp', security: { sandboxType: 'none', validatePath: () => true, proposeChange: async () => true, isSandboxAvailable: () => false }, audit: vi.fn() },
     );
     expect(result.result).toContain('Tool not found');
+    const parsed = JSON.parse(result.result);
+    expect(parsed.code).toBe('TOOLS_NOT_FOUND');
   });
 
   it('should timeout and emit event', async () => {
     const emit = vi.fn();
     const result = await executeToolCall(
       { id: 'tc-1', name: 'slow_tool', arguments: {} },
-      [slowTool],
+      makeRegistry(slowTool),
       {
         sessionId: 's1',
         sandbox: '/tmp',
@@ -108,7 +118,7 @@ describe('executeToolCalls', () => {
         { id: 'tc-1', name: 'echo', arguments: { a: 1 } },
         { id: 'tc-2', name: 'echo', arguments: { b: 2 } },
       ],
-      [tool],
+      makeRegistry(tool),
       { sessionId: 's1', sandbox: '/tmp', security: allowProvider(), audit: vi.fn() },
     );
     expect(results.length).toBe(2);
@@ -122,7 +132,7 @@ describe('executeToolCalls', () => {
     await expect(
       executeToolCalls(
         [{ id: 'tc-1', name: 'echo', arguments: {} }],
-        [makeTool('echo')],
+        makeRegistry(makeTool('echo')),
         { sessionId: 's1', sandbox: '/tmp', signal: ac.signal, security: { sandboxType: 'none', validatePath: () => true, proposeChange: async () => true, isSandboxAvailable: () => false }, audit: vi.fn() },
       ),
     ).rejects.toThrow();
@@ -131,34 +141,35 @@ describe('executeToolCalls', () => {
 
 describe('validateToolCalls', () => {
   it('should accept registered tool calls', () => {
-    const tools = [makeTool('read_file'), makeTool('write_file')];
+    const registry = makeRegistry(makeTool('read_file'), makeTool('write_file'));
     const result = validateToolCalls(
       [{ id: 'tc-1', name: 'read_file', arguments: {} }],
-      tools,
+      registry,
     );
     expect(result.valid.length).toBe(1);
     expect(result.errors.length).toBe(0);
   });
 
   it('should reject unknown tool names', () => {
-    const tools = [makeTool('read_file')];
+    const registry = makeRegistry(makeTool('read_file'));
     const result = validateToolCalls(
       [{ id: 'tc-1', name: 'delete_everything', arguments: {} }],
-      tools,
+      registry,
+    );
+    expect(result.valid.length).toBe(0);
+    expect(result.errors.length).toBe(1);
+    expect(result.errors[0]!.code).toBe('TOOLS_NOT_FOUND');
+  });
+
+  it('should reject tool calls without id', () => {
+    const registry = makeRegistry(makeTool('read_file'));
+    const result = validateToolCalls(
+      [{ id: '', name: 'read_file', arguments: {} }],
+      registry,
     );
     expect(result.valid.length).toBe(0);
     expect(result.errors.length).toBe(1);
     expect(result.errors[0]!.code).toBe('PIPELINE_TOOL_NOT_FOUND');
-  });
-
-  it('should reject tool calls without id', () => {
-    const tools = [makeTool('read_file')];
-    const result = validateToolCalls(
-      [{ id: '', name: 'read_file', arguments: {} }],
-      tools,
-    );
-    expect(result.valid.length).toBe(0);
-    expect(result.errors.length).toBe(1);
   });
 });
 
@@ -167,7 +178,7 @@ describe('security enforcement (AC9 / ADR-5)', () => {
     const tool = makeTool('read_file');
     const result = await executeToolCall(
       { id: 'tc-1', name: 'read_file', arguments: { path: '/test.txt' } },
-      [tool],
+      makeRegistry(tool),
       { sessionId: 's1', sandbox: '/tmp', security: denyProvider(), audit: vi.fn() },
     );
     expect(result.timedOut).toBe(false);
@@ -180,7 +191,7 @@ describe('security enforcement (AC9 / ADR-5)', () => {
     const tool = makeTool('echo', async (params) => JSON.stringify(params));
     const result = await executeToolCall(
       { id: 'tc-1', name: 'echo', arguments: { msg: 'hello' } },
-      [tool],
+      makeRegistry(tool),
       { sessionId: 's1', sandbox: '/tmp', security: allowProvider(), audit: vi.fn() },
     );
     expect(result.result).toContain('hello');
@@ -196,7 +207,7 @@ describe('security enforcement (AC9 / ADR-5)', () => {
     const tool = makeTool('echo', async (params) => JSON.stringify(params));
     await executeToolCall(
       { id: 'tc-1', name: 'echo', arguments: { msg: 'hello' } },
-      [tool],
+      makeRegistry(tool),
       { sessionId: 's1', sandbox: '/tmp', security: provider, audit: vi.fn() },
     );
     expect(postExecute).toHaveBeenCalledWith('echo', expect.objectContaining({ success: true }));
@@ -211,7 +222,7 @@ describe('security enforcement (AC9 / ADR-5)', () => {
     const tool = makeTool('fail', async () => { throw new Error('execution failed'); });
     await executeToolCall(
       { id: 'tc-1', name: 'fail', arguments: {} },
-      [tool],
+      makeRegistry(tool),
       { sessionId: 's1', sandbox: '/tmp', security: provider, audit: vi.fn() },
     );
     expect(postExecute).toHaveBeenCalledWith('fail', expect.objectContaining({ success: false }));
@@ -220,7 +231,7 @@ describe('security enforcement (AC9 / ADR-5)', () => {
   it('should propagate harm level in error message', async () => {
     const result = await executeToolCall(
       { id: 'tc-1', name: 'read_file', arguments: { path: '/etc/passwd' } },
-      [makeTool('read_file')],
+      makeRegistry(makeTool('read_file')),
       { sessionId: 's1', sandbox: '/tmp', security: denyProvider(), audit: vi.fn() },
     );
     const parsed = JSON.parse(result.result);

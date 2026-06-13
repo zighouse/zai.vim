@@ -5,6 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AsyncGeneratorAgent, type AgentDeps } from '../agent/index.js';
+import { ToolRegistry } from '@zaivim/tools';
 import type { ISecurityProvider, ISessionStore, ToolContext } from '@zaivim/core';
 import { EventEmitter } from 'node:events';
 import * as childProcess from 'node:child_process';
@@ -83,7 +84,7 @@ describe('Story 2.4 Task 1: Agent cancel cascade termination', () => {
       sessionStore,
       securityProvider: security,
       auditor: auditor as any,
-      tools: [],
+      registry: new ToolRegistry(),
     };
     killSpy = vi.spyOn(process, 'kill').mockImplementation(() => {});
   });

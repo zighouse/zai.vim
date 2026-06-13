@@ -20,10 +20,10 @@ import type {
   PersonaConfig,
   ForkOptions,
   ToolContext,
-  ToolDefinition,
   IAuditor,
 } from '@zaivim/core';
 import type { ISecurityProvider } from '@zaivim/core';
+import { ToolRegistry } from '@zaivim/tools';
 import type { ProviderRegistry } from '../provider/index.js';
 import type { ISessionStore } from '@zaivim/core';
 
@@ -61,7 +61,8 @@ export interface AgentDeps {
   sessionStore: ISessionStore;
   securityProvider: ISecurityProvider;
   auditor: Pick<IAuditor, 'write'>;
-  tools?: ToolDefinition[];
+  /** Story 3.3: registry is the tool dispatch source-of-truth (was tools?: ToolDefinition[]). */
+  registry?: ToolRegistry;
   signal?: AbortSignal;
 }
 
@@ -73,7 +74,9 @@ export class AsyncGeneratorAgent implements AgentHandle {
   #sessionStore: ISessionStore;
   #securityProvider: ISecurityProvider;
   #auditor: Pick<IAuditor, 'write'>;
-  #tools: ToolDefinition[];
+  #registry: ToolRegistry;
+  /** Optional allow-list derived from ForkOptions.tools; undefined means all registry tools. */
+  #allowedTools: ReadonlySet<string> | undefined;
   #stateMachine: AgentLifecycleSM;
   #externalSignal?: AbortSignal;
 
@@ -101,9 +104,8 @@ export class AsyncGeneratorAgent implements AgentHandle {
     this.#sessionStore = deps.sessionStore;
     this.#securityProvider = deps.securityProvider;
     this.#auditor = deps.auditor;
-    this.#tools = options?.tools
-      ? deps.tools?.filter(t => options.tools!.includes(t.name)) ?? deps.tools ?? []
-      : deps.tools ?? [];
+    this.#registry = deps.registry ?? new ToolRegistry();
+    this.#allowedTools = options?.tools ? new Set(options.tools) : undefined;
     this.#stateMachine = new AgentLifecycleSM('idle');
     this.#externalSignal = deps.signal;
 
@@ -480,8 +482,9 @@ export class AsyncGeneratorAgent implements AgentHandle {
         if (chunk.type === 'tool_call') {
           this.#stateMachine.transition('tool_call');
 
-          const tool = this.#tools.find(t => t.name === chunk.name);
-          if (tool) {
+          const tool = this.#registry.get(chunk.name);
+          const allowed = !this.#allowedTools || this.#allowedTools.has(chunk.name);
+          if (tool && allowed) {
             const ctx = this.createToolContext(sessionId);
 
             try {
@@ -496,8 +499,11 @@ export class AsyncGeneratorAgent implements AgentHandle {
             }
 
             this.#stateMachine.transition('tool_result');
-          } else {
+          } else if (!tool) {
             yield { type: 'error', code: 'TOOLS_NOT_FOUND', message: `Tool not found: ${chunk.name}` };
+          } else {
+            // Tool exists in registry but is not in this agent's allow-list.
+            yield { type: 'error', code: 'TOOLS_NOT_FOUND', message: `Tool not allowed for this agent: ${chunk.name}` };
           }
           continue;
         }

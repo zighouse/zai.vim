@@ -52,6 +52,7 @@ export type {
   ApprovalConstants,
   ToolCallConstants,
   EngineConstants,
+  ToolsConfig,
   ZaiConfig,
 } from './config.js';
 
@@ -181,6 +182,12 @@ export interface ToolDefinition<TParams = unknown, TResult = unknown> {
   readonly harmLevel?: 'S' | 'A' | 'B' | 'C';
   readonly requiresApproval?: boolean;
   readonly requireSandbox?: boolean;
+  /** Story 3.3 (AC6): tool tier — first (default) or second-class exposure. */
+  readonly tier?: 'first' | 'second';
+  /** Story 3.3 (AC7): origin of the tool — builtin (default) or skill. */
+  readonly source?: 'builtin' | 'skill';
+  /** Story 3.3 (AC7): required when source === 'skill'. */
+  readonly skillName?: string;
   execute(params: TParams, ctx: ToolContext): Promise<TResult>;
 }
 

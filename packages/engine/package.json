@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@zaivim/core": "workspace:*",
+    "@zaivim/tools": "workspace:*",
     "yaml": "^2.9.0"
   }
 }

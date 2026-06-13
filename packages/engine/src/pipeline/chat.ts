@@ -6,7 +6,6 @@ import type {
   Message,
   ResponseChunk,
   IProvider,
-  ToolDefinition,
   ISecurityProvider,
   ISessionStore,
   PersonaConfig,
@@ -14,13 +13,13 @@ import type {
   ChatResult,
   ProjectContext,
 } from '@zaivim/core';
-import { ZaiNetworkError } from '@zaivim/core';
+import { ZaiNetworkError, NullSecurityProvider } from '@zaivim/core';
+import { ToolRegistry } from '@zaivim/tools';
 import { assembleContext, trimContext, PIPELINE_DEFAULTS } from './context-assembler.js';
 import { formatAttachments } from './file-attachment.js';
 import { executeToolCalls, validateToolCalls } from './tool-executor.js';
 import type { ToolCallRequest } from './tool-executor.js';
 import { classifyProviderError } from './error-classifier.js';
-import { NullSecurityProvider } from './null-security.js';
 import { retryWithBackoff, DEFAULT_RETRY_CONFIG } from './retry.js';
 import type { RetryConfig } from './retry.js';
 import type { ProviderRegistry } from '../provider/index.js';
@@ -28,7 +27,8 @@ import { getBadge } from '../security/badge-display.js';
 export interface ChatDeps {
   readonly sessionStore: ISessionStore;
   readonly provider: IProvider;
-  readonly tools: ToolDefinition[];
+  /** Story 3.3: tool dispatch source-of-truth (was tools: ToolDefinition[]). */
+  readonly registry: ToolRegistry;
   readonly security?: ISecurityProvider;
   readonly config?: PipelineConfig;
   readonly persona?: PersonaConfig;
@@ -54,7 +54,7 @@ export async function* chat(
   const {
     sessionStore,
     provider,
-    tools,
+    registry,
     security = new NullSecurityProvider(),
     config = {},
     persona,
@@ -317,7 +317,7 @@ export async function* chat(
       if (toolCalls.length === 0) break;
 
       // 7. Validate tool calls (AC13: SSE injection protection)
-      const { valid, errors } = validateToolCalls(toolCalls, tools);
+      const { valid, errors } = validateToolCalls(toolCalls, registry);
       for (const errChunk of errors) {
         yield errChunk;
         totalChunks++;
@@ -329,7 +329,7 @@ export async function* chat(
       }
 
       // 8. Execute valid tool calls
-      const toolResults = await executeToolCalls(valid, tools, {
+      const toolResults = await executeToolCalls(valid, registry, {
         sessionId: session.id,
         sandbox: session.config?.sandbox?.workDir ?? '/tmp',
         signal,
