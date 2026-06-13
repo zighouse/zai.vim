@@ -251,6 +251,9 @@ export class ToolRegistry {
   /**
    * Convert all registered tools to OpenAI-compatible function calling format.
    * Each tool's parameters.properties becomes the function.parameters schema.
+   *
+   * TODO(story-3.3-growth): accept optional `options?: { tier?: 'first' | 'second' }`
+   * so that only tools of the requested tier are exposed. Currently exposes all tiers.
    */
   toOpenAITools(): OpenAIExecuteFunction[] {
     return this.list().map(tool => ({
