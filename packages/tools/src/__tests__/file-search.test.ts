@@ -6,7 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fileSearchTool } from '../file.js';
 import type { ISecurityProvider, ToolContext } from '@zaivim/core';
 
-function mockSecurityProvider(): ISecurityProvider {
+function mockSecurityProvider(projectRoot?: string): ISecurityProvider {
+  const root = projectRoot ?? process.cwd();
   return {
     sandboxType: 'bwrap',
     preExecute: vi.fn().mockResolvedValue({ allowed: true, harmLevel: 'C', reason: 'test' }),
@@ -15,7 +16,13 @@ function mockSecurityProvider(): ISecurityProvider {
     isSandboxAvailable: vi.fn().mockReturnValue(true),
     validatePath: vi.fn().mockReturnValue(true),
     proposeChange: vi.fn().mockResolvedValue(true),
-    openFile: vi.fn().mockResolvedValue({ validatedPath: '/test/file.txt', read: async () => '', close: async () => {} }),
+    // file_search calls openFile('.', 'read') to obtain a validated project root.
+    // The mock returns process.cwd() (or caller-specified root) as validatedPath.
+    openFile: vi.fn().mockImplementation(async (path: string, _op: string) => ({
+      validatedPath: path === '.' ? root : path,
+      read: async () => '',
+      close: async () => {},
+    })),
   };
 }
 
@@ -43,6 +50,35 @@ describe('fileSearchTool', () => {
     expect(result.matches.length).toBeGreaterThan(0);
     expect(result.totalMatches).toBeGreaterThanOrEqual(result.matches.length);
     expect(result.matches.some(m => m.file.includes('file.ts'))).toBe(true);
+  });
+
+  it('AC9: should obtain project root via ctx.security.openFile(".")', async () => {
+    await fileSearchTool.execute({ pattern: 'whatever_unique_pattern', glob: '*.ts' }, ctx);
+
+    expect(ctx.security.openFile).toHaveBeenCalledWith('.', 'read');
+  });
+
+  it('AC9: should reject search when security validation fails', async () => {
+    const error = Object.assign(new Error('access denied'), { code: 'TOOLS_SECURITY_BLOCKED' });
+    const badSecurity = mockSecurityProvider();
+    (badSecurity.openFile as ReturnType<typeof vi.fn>).mockRejectedValue(error);
+    const badCtx = mockToolContext(badSecurity);
+
+    await expect(fileSearchTool.execute({ pattern: 'x' }, badCtx)).rejects.toThrow('access denied');
+  });
+
+  it('AC3: must never search .git/ or .zaivim/ even with includeHidden=true', async () => {
+    const result = await fileSearchTool.execute({
+      pattern: '.+',
+      includeHidden: true,
+      glob: '*',
+      maxResults: 50,
+    }, ctx);
+
+    const touchesInternal = result.matches.some(m =>
+      m.file.split('/').some(seg => seg === '.git' || seg === '.zaivim'),
+    );
+    expect(touchesInternal).toBe(false);
   });
 
   it('AC6: should return line numbers and context for matches', async () => {

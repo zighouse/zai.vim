@@ -15,6 +15,10 @@ const MAX_FILE_READ_BYTES = 512_000; // 500KB hard limit
 const MAX_SEARCH_RESULTS = 2000;
 const SEARCH_TIMEOUT_MS = 10_000;
 const DEFAULT_EXCLUDE_DIRS = ['node_modules', '.git', 'dist', 'build', '.zaivim'];
+// Security-critical internal directories. These are NEVER searchable, even when
+// the caller passes includeHidden=true. AC3: .zaivim/backups/ and .git/ must
+// stay invisible to AI tools regardless of user override.
+const HARDCODED_INTERNAL_DIRS = ['.git', '.zaivim'];
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -83,6 +87,11 @@ export function generateDiff(original: string, proposed: string, filePath?: stri
 function isExcludedDir(relativePath: string, excludeDirs: string[]): boolean {
   const parts = relativePath.split(/[/\\]/);
   return parts.some(part => excludeDirs.includes(part));
+}
+
+/** Check if a path touches a security-critical internal directory (.git, .zaivim). */
+function touchesInternalDir(relativePath: string): boolean {
+  return isExcludedDir(relativePath, HARDCODED_INTERNAL_DIRS);
 }
 
 /** Safely read lines from buffer with size limit check. */
@@ -272,23 +281,34 @@ export const fileSearchTool: ToolDefinition<FileSearchParams, FileSearchResult> 
     const timeout = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
 
     try {
-      const excludeDirs = params.includeHidden ? [] : [...DEFAULT_EXCLUDE_DIRS];
+      const excludeDirs = params.includeHidden ? [...HARDCODED_INTERNAL_DIRS] : [...DEFAULT_EXCLUDE_DIRS];
       const maxResults = params.maxResults ?? MAX_SEARCH_RESULTS;
       const contextLines = params.contextLines ?? 1;
       const regex = new RegExp(params.pattern, 'g');
 
-      const projectRoot = process.cwd();
+      // Use ctx.security to obtain a validated project root. We openFile('.')
+      // for read; providers validate that the cwd is within the .git boundary
+      // and return a SafeFileHandle whose validatedPath is the resolved root.
+      // If validation fails, the search itself is rejected — preventing AI
+      // from probing paths outside the project.
+      const rootHandle = await ctx.security.openFile('.', 'read');
+      const projectRoot = rootHandle.validatedPath;
+      await rootHandle.close();
+
       const matches: FileSearchMatch[] = [];
       let totalMatches = 0;
 
       // Recursive directory walk with AbortSignal support
       async function walkDir(dirPath: string, relativePath: string): Promise<void> {
         if (controller.signal.aborted) return;
+        // Hard filter: never descend into internal dirs (.git, .zaivim)
+        // regardless of includeHidden. AC3.
+        if (touchesInternalDir(relativePath)) return;
         if (isExcludedDir(relativePath, excludeDirs)) return;
 
-        let entries: string[];
+        let entries: import('node:fs').Dirent[];
         try {
-          entries = await readdir(dirPath, { withFileTypes: false });
+          entries = await readdir(dirPath, { withFileTypes: true });
         } catch {
           return; // Permission denied, skip
         }
@@ -296,20 +316,25 @@ export const fileSearchTool: ToolDefinition<FileSearchParams, FileSearchResult> 
         for (const entry of entries) {
           if (controller.signal.aborted) return;
 
-          const fullPath = resolve(dirPath, entry);
-          const relPath = relativePath ? `${relativePath}/${entry}` : entry;
+          const fullPath = resolve(dirPath, entry.name);
+          const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+
+          // Defense in depth: skip any path component matching internal dirs
+          // even if the dirent name differs in casing we already cover above.
+          if (touchesInternalDir(relPath)) continue;
 
           try {
-            const entryStat = await stat(fullPath);
-            if (entryStat.isDirectory()) {
+            if (entry.isDirectory()) {
               if (!isExcludedDir(relPath, excludeDirs)) {
                 await walkDir(fullPath, relPath);
               }
-            } else if (entryStat.isFile() && entryStat.size > 0) {
+            } else if (entry.isFile()) {
+              const entryStat = await stat(fullPath);
+              if (entryStat.size === 0) continue;
               // Apply glob filter only to files, not directories
               if (params.glob) {
                 const globSuffix = params.glob.replace('*', '');
-                if (!entry.endsWith(globSuffix)) continue;
+                if (!entry.name.endsWith(globSuffix)) continue;
               }
               await searchFile(fullPath, relPath);
             }
