@@ -453,10 +453,14 @@ export class SubSandboxProvider implements Disposable {
     args.push('--tmpfs', '/workspace');
     args.push('--tmpfs', '/tmp');
 
-    // Read-only system dirs (shared with main sandbox)
+    // Read-only system dirs (shared with main sandbox).
+    // /lib64 is conditional — Alpine (musl) and some ARM SBCs don't have it,
+    // and bwrap fails hard if the source path doesn't exist.
     args.push('--ro-bind', '/usr', '/usr');
     args.push('--ro-bind', '/lib', '/lib');
-    args.push('--ro-bind', '/lib64', '/lib64');
+    if (existsSync('/lib64')) {
+      args.push('--ro-bind', '/lib64', '/lib64');
+    }
     args.push('--ro-bind', '/bin', '/bin');
     args.push('--ro-bind', '/sbin', '/sbin');
 
