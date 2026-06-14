@@ -66,7 +66,13 @@ export async function runVimRpcServer(
 
   // ---- Admin token for ACL ----
   const adminToken = generateAdminToken();
-  const acl = MethodACL.createDefault();
+  const acl = new MethodACL();
+  acl.register('health', { access: 'public', description: 'Engine health check' });
+  acl.register('ping', { access: 'public', description: 'Engine ping' });
+  acl.register('session.create', { access: 'public', description: 'Create a new chat session' });
+  acl.register('session.get', { access: 'session-scoped', description: 'Get session by ID' });
+  acl.register('session.list', { access: 'session-scoped', description: 'List active sessions' });
+  acl.register('session.close', { access: 'session-scoped', description: 'Close a chat session' });
   acl.register('chat.send', { access: 'session-scoped', description: 'Send a chat message to a session' });
   acl.register('chat.cancel', { access: 'session-scoped', description: 'Cancel active chat stream' });
   acl.register('agent.create', { access: 'session-scoped', description: 'Create a new agent' });
