@@ -16,12 +16,12 @@
   "dependencies": {
     "@zaivim/core": "workspace:*",
     "@zaivim/engine": "workspace:*",
-    "ink": "^5.0.1",
+    "ink": "^7.0.0",
     "react": "^19.0.0"
   },
   "peerDependencies": {
-    "ink": "^5.0.1",
-    "react": "^19.0.0"
+    "ink": "^7.0.0",
+    "react": ">=19.2.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0"

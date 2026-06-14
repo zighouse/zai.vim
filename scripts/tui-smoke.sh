@@ -25,9 +25,22 @@ echo "--- Checking TUI startup ---"
 timeout 5 node "$TUI_BIN" --help 2>&1 | head -20 || true
 echo "OK: TUI help displayed"
 
-# Step 4: Quick smoke — start TUI and immediately exit
-echo "--- Quick start/exit test ---"
-echo ":q" | timeout 10 node "$TUI_BIN" 2>&1 && echo "OK: TUI started and exited cleanly"
+# Step 4: Quick smoke — start TUI via script/pty and immediately exit
+echo "--- Quick start/exit test (PTY mode) ---"
+# Use expect to simulate interactive keystrokes through a PTY.
+# ink requires a TTY for raw mode; expect provides one.
+if command -v expect &>/dev/null; then
+  expect -c "
+    set timeout 10
+    spawn node $TUI_BIN
+    sleep 1
+    send \":q\"
+    send \"\r\"
+    expect eof
+  " 2>&1 && echo "OK: TUI started and exited cleanly"
+else
+  echo "SKIP: expect not installed (install with 'sudo apt install expect')"
+fi
 
 echo ""
 echo "=== TUI Smoke Test Complete ==="

@@ -105,10 +105,8 @@ export function ChatArea({
     }
   }, [activeSessionId, isSending, dispatch, client]);
 
-  // All keyboard input goes through one hook — only when this panel is focused
+  // All keyboard input goes through one hook — only active when this panel is focused
   useInput((inputChar, key) => {
-    if (focus !== 'chat') return;
-
     if (key.ctrl && inputChar === 'c') {
       // Ctrl+C — let ink handle default behavior
       return;
@@ -118,28 +116,24 @@ export function ChatArea({
       if (input === ':q') {
         setInput('');
         onExit();
-        input.handled = true;
         return;
       }
       if (input.trim() && !isSending) {
         sendMessage(input);
       }
-      input.handled = true;
       return;
     }
 
     if (key.backspace || key.delete) {
       setInput(prev => prev.slice(0, -1));
-      input.handled = true;
       return;
     }
 
     // Printable character
     if (inputChar && inputChar.length === 1 && inputChar.charCodeAt(0) >= 0x20) {
       setInput(prev => prev + inputChar);
-      input.handled = true;
     }
-  });
+  }, { isActive: focus === 'chat' });
 
   // No session selected
   if (!activeSessionId) {

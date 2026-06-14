@@ -41,20 +41,15 @@ export function SessionList({ focus, sessions, activeSessionId, dispatch, client
     }
   }, [activeSessionId, sessionList]);
 
-  // Keyboard navigation (B2.6) — only when this panel is focused
+  // Keyboard navigation (B2.6) — only active when this panel is focused
   useInput(async (input, key) => {
-    if (focus !== 'sessions') return;
-
     if (key.upArrow) {
       setSelectedIndex(Math.max(0, selectedIndex - 1));
-      input.handled = true;
     } else if (key.downArrow) {
       setSelectedIndex(Math.min(sessionList.length - 1, selectedIndex + 1));
-      input.handled = true;
     } else if (key.return && sessionList[selectedIndex]) {
       // Enter to switch session
       dispatch({ type: 'SESSION_ACTIVATED', payload: { id: sessionList[selectedIndex].id } });
-      input.handled = true;
     } else if (input === 'n' && key.ctrl) {
       // Ctrl+N: create new session (AC2 / B2.5)
       try {
@@ -66,9 +61,8 @@ export function SessionList({ focus, sessions, activeSessionId, dispatch, client
       } catch (err) {
         // Session creation failed silently
       }
-      input.handled = true;
     }
-  });
+  }, { isActive: focus === 'sessions' });
 
   if (sessionList.length === 0) {
     return (
