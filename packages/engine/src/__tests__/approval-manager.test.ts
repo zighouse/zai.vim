@@ -482,6 +482,17 @@ describe('ApprovalManager — AC13: Atomic CAS', () => {
     await expect(manager.accept('nonexistent')).rejects.toMatchObject({ code: 'APPROVAL_NOT_FOUND' });
     await expect(manager.reject('nonexistent')).rejects.toMatchObject({ code: 'APPROVAL_NOT_FOUND' });
   });
+
+  it('accept after timeout throws APPROVAL_TIMEOUT', async () => {
+    vi.useFakeTimers();
+    const { manager } = makeManager({ defaultTimeoutMs: 50 });
+    const { changeId } = manager.submit(makeProposal());
+    vi.advanceTimersByTime(100);
+
+    // After timeout, accept should throw APPROVAL_TIMEOUT, not generic ALREADY_RESOLVED
+    await expect(manager.accept(changeId)).rejects.toMatchObject({ code: 'APPROVAL_TIMEOUT' });
+    vi.useRealTimers();
+  });
 });
 
 describe('ApprovalManager — Agent pause state', () => {

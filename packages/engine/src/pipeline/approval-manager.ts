@@ -280,12 +280,10 @@ export class ApprovalManager {
     }
 
     if (!this.#compareAndSwap(changeId, 'pending', 'accepted')) {
+      const code = entry.status === 'timeout' ? 'APPROVAL_TIMEOUT' : 'APPROVAL_ALREADY_RESOLVED';
       throw Object.assign(
         new Error(`Approval already resolved: ${changeId}`),
-        {
-          code: 'APPROVAL_ALREADY_RESOLVED',
-          detail: { resolvedAs: entry.status },
-        },
+        { code, detail: { resolvedAs: entry.status } },
       );
     }
 
@@ -328,12 +326,10 @@ export class ApprovalManager {
     }
 
     if (!this.#compareAndSwap(changeId, 'pending', 'rejected')) {
+      const code = entry.status === 'timeout' ? 'APPROVAL_TIMEOUT' : 'APPROVAL_ALREADY_RESOLVED';
       throw Object.assign(
         new Error(`Approval already resolved: ${changeId}`),
-        {
-          code: 'APPROVAL_ALREADY_RESOLVED',
-          detail: { resolvedAs: entry.status },
-        },
+        { code, detail: { resolvedAs: entry.status } },
       );
     }
 
@@ -359,12 +355,10 @@ export class ApprovalManager {
     }
 
     if (!this.#compareAndSwap(changeId, 'pending', 'partial')) {
+      const code = entry.status === 'timeout' ? 'APPROVAL_TIMEOUT' : 'APPROVAL_ALREADY_RESOLVED';
       throw Object.assign(
         new Error(`Approval already resolved: ${changeId}`),
-        {
-          code: 'APPROVAL_ALREADY_RESOLVED',
-          detail: { resolvedAs: entry.status },
-        },
+        { code, detail: { resolvedAs: entry.status } },
       );
     }
 
