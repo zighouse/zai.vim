@@ -63,10 +63,13 @@ const GRACEFUL_KILL_DELAY_MS = 5_000;
 const STDOUT_TRUNCATION_BYTES = 10 * 1024 * 1024; // 10MB
 const ULIMIT_USER_PROCESSES = 256;
 // TODO(story-3.4-growth): bwrap ≥0.8 supports --size and --nr-inodes on tmpfs.
-// Until then we rely on bwrap defaults + the host memory pre-check (AC4).
-const TMPFS_SIZE = '100M';
-const TMPFS_INODES = 65536;
+// When we can rely on that, set explicit size limits here (e.g. 100M + 65536
+// inodes) instead of relying on bwrap defaults + the host memory pre-check.
 const NICE_PRIORITY = 19;
+// Absolute path because the wrapped command's lookup happens inside the
+// sandbox where PATH may differ from the host. /usr/bin/nice is the
+// universal location on glibc/musl systems.
+const NICE_BIN_PATH = '/usr/bin/nice';
 
 export interface IsolatedExecResult {
   readonly exitCode: number;
@@ -489,9 +492,10 @@ export class SubSandboxProvider implements Disposable {
     options: IsolatedExecOptions,
   ): Promise<IsolatedExecResult> {
     const bwrapArgs = this.#buildBwrapArgs();
-    // Pre-mortem PM4: lower child CPU priority via nice. nice is at /usr/bin/nice
-    // (ro-bound inside the sandbox); the wrapper exec's so we don't fork twice.
-    const wrappedCommand = `exec nice -n ${NICE_PRIORITY} /bin/sh -c ${JSON.stringify(command)}`;
+    // Pre-mortem PM4: lower child CPU priority via nice. The wrapper exec's
+    // so we don't fork twice. Absolute path because the lookup happens inside
+    // the sandbox where PATH may differ from the host.
+    const wrappedCommand = `exec ${NICE_BIN_PATH} -n ${NICE_PRIORITY} /bin/sh -c ${JSON.stringify(command)}`;
     // Pre-mortem PM2 / Security Audit V2: limit child process count to deter fork bombs
     const childEnv: Record<string, string> = {
       ...(options.env ?? {}),
