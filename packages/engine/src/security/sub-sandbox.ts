@@ -133,7 +133,37 @@ function locateBwrapBinary(): string | null {
   return null;
 }
 
-/** Synchronously read bwrap version; returns null on error. */
+// ---------------------------------------------------------------------------
+// Signal-driven cleanup registry (Security Audit V1 / H-1)
+// ---------------------------------------------------------------------------
+//
+// Each SubSandboxProvider needs best-effort cleanup if the engine receives
+// SIGINT/SIGTERM or the event loop drains. Registering three listeners per
+// provider overflows Node's default 10-listener cap as soon as maxConcurrency
+// ≥ 4 (3 listeners × 4 providers = 12). To avoid MaxListenersExceededWarning
+// we register ONE listener per signal at module load; each provider adds
+// itself to this Set on construction and removes itself on destroy.
+
+const SIGNAL_CLEANUP_EVENTS: readonly (NodeJS.Signals | 'beforeExit')[] = [
+  'beforeExit',
+  'SIGINT',
+  'SIGTERM',
+] as const;
+
+const activeProviders = new Set<SubSandboxProvider>();
+let signalHandlersInstalled = false;
+
+function ensureSignalHandlers(): void {
+  if (signalHandlersInstalled) return;
+  signalHandlersInstalled = true;
+  for (const evt of SIGNAL_CLEANUP_EVENTS) {
+    process.once(evt, () => {
+      for (const provider of activeProviders) {
+        void provider.destroy().catch(() => {});
+      }
+    });
+  }
+}
 function readBwrapVersion(bwrapPath: string): number[] | null {
   try {
     // spawnSync avoided to keep zero sync-blocking during construction;
@@ -176,10 +206,6 @@ export class SubSandboxProvider implements Disposable {
   #bwrapMtime: number | null = null;
   #bwrapVersion: number[] | null = null;
   #bwrapVersionChecked = false;
-  /** Bound cleanup hook used for beforeExit/uncaughtException guards. */
-  readonly #cleanupHook = (): void => {
-    void this.destroy().catch(() => {});
-  };
 
   constructor(
     workspaceDir: string,
@@ -201,8 +227,13 @@ export class SubSandboxProvider implements Disposable {
       }
     }
 
-    // Security Audit V1: best-effort cleanup on engine crash
-    process.once('beforeExit', this.#cleanupHook);
+    // Security Audit V1: best-effort cleanup on engine crash or signal.
+    // The provider is registered in a module-level Set; shared signal
+    // handlers iterate the Set on beforeExit/SIGINT/SIGTERM and call destroy()
+    // on each. This avoids one-listener-per-provider × N-providers, which
+    // would overflow Node's default 10-listener EventEmitter cap (H-1).
+    ensureSignalHandlers();
+    activeProviders.add(this);
   }
 
   get isDestroyed(): boolean {
@@ -307,6 +338,8 @@ export class SubSandboxProvider implements Disposable {
     if (this.#destroyed) return;
     this.#destroyed = true;
 
+    activeProviders.delete(this);
+
     // AC3: clear monitor first so it does not race with abort
     if (this.#activeMonitor) {
       clearInterval(this.#activeMonitor);
@@ -331,8 +364,6 @@ export class SubSandboxProvider implements Disposable {
       try { this.#activeAbort.abort(); } catch { /* ignore */ }
       this.#activeAbort = null;
     }
-
-    process.removeListener('beforeExit', this.#cleanupHook);
 
     this.#audit?.('isolated.cleanup', {
       sandboxId: this.sandboxId,
