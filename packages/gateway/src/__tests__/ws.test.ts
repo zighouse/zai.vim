@@ -6,9 +6,11 @@
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { createServer, type Server } from 'node:http';
+import { PassThrough } from 'node:stream';
 import { WebSocket, type RawData } from 'ws';
 import { HandlerRegistry } from '../handler-registry.js';
 import { createWebSocketGateway, RATE_LIMIT_PER_SECOND, CLOSE_CODE_POLICY_VIOLATION } from '../ws.js';
+import { createStdioTransport } from '../stdio/transport.js';
 import { EventBus, ClientManager } from '@zaivim/engine';
 import { TransportContext } from '../stdio/transport-context.js';
 import type { EngineAPI } from '@zaivim/core';
@@ -210,6 +212,61 @@ describe('WebSocket gateway', () => {
 
     sock1.close();
     sock2.close();
+  });
+
+  it('AC5 (M6): a stdio client and a WS client both receive the same engine event', async () => {
+    // Wire stdio transport and WS gateway against the SAME EventBus so a
+    // single emit reaches both transports. This is the literal AC5 scenario
+    // (mixed stdio + WS clients on the same session) — the WS-only test
+    // above proves fanout among WS clients, but not the cross-transport case.
+    setup = await spinUp();
+
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const stdoutLines: string[] = [];
+    stdout.on('data', (chunk: Buffer) => {
+      stdoutLines.push(...chunk.toString().split('\n').filter(Boolean));
+    });
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {}) as never);
+
+    try {
+      const stdioEngine = createMockEngine();
+      createStdioTransport(stdioEngine, undefined, { stdin: stdin as never, stdout: stdout as never }, {
+        transportContext: new TransportContext({
+          eventBus: setup.eventBus,
+          clientManager: new ClientManager(setup.eventBus),
+        }),
+      });
+
+      const sock = await connect(setup.port);
+      await new Promise((r) => setTimeout(r, 20));
+
+      setup.eventBus.emit('session.created', { sessionId: 's-mixed' } as never);
+
+      const wsMsg = await nextMessage(sock);
+      expect(wsMsg.method).toBe('$/notification');
+      expect(wsMsg.params.type).toBe('session.created');
+      expect(wsMsg.params.data.sessionId).toBe('s-mixed');
+      expect(typeof wsMsg.params.seq).toBe('number');
+
+      // stdio writes the same notification to its stdout — give the event
+      // loop a tick to drain.
+      await new Promise((r) => setImmediate(r));
+      const stdioMsg = stdoutLines.map((l) => JSON.parse(l)).find((m) => m.method === '$/notification' && m.params.type === 'session.created');
+      expect(stdioMsg).toBeDefined();
+      expect(stdioMsg.params.data.sessionId).toBe('s-mixed');
+      expect(typeof stdioMsg.params.seq).toBe('number');
+
+      sock.close();
+    } finally {
+      // End stdin first so the readline close handler fires while the
+      // process.exit spy is still in place — otherwise vitest catches the
+      // real exit(0) as an unhandled exception.
+      stdin.end();
+      stdout.end();
+      await new Promise((r) => setImmediate(r));
+      exitSpy.mockRestore();
+    }
   });
 
   it('AC6: bursts above the rate limit receive RATE_LIMITED responses', async () => {
