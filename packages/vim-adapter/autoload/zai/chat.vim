@@ -53,7 +53,6 @@ function! s:render_output(c) abort
     elseif e.type ==# 'error' | call appendbufline(a:c.bufnr, '$', '❌ ' . e.message)
     endif
   endfor
-  if !empty(a:c.stream_buf) | call appendbufline(a:c.bufnr, '$', a:c.stream_buf[-1]) | endif
 endfun
 
 function! zai#chat#on_chunk(p) abort
