@@ -5,7 +5,120 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.2] - 2026-06-13
+## [0.1.3] - 2026-06-14
+
+### Added
+
+#### Epic 3: Tool Execution and Change Management (MVP)
+
+**Story 3-1: File Operations Tool**
+- `file_read` tool with realpath resolution and `.git` boundary enforcement
+- `file_write` tool with atomic temp+rename pattern and session-scoped backups
+- `file_search` tool with glob pattern matching and security boundary enforcement
+- Large file output truncation (maxOutputBytes default 10KB) to prevent context window overflow
+- Internal directory protection (`.zaivim/backups/` blocked from AI read access)
+- Search timeout (10s auto-cancel) and result cap (max 2000 results)
+- `node_modules/`, `.git/objects/`, `dist/` excluded from search by default
+
+**Story 3-2a: Shell Command Execution Tool**
+- `shell_execute` tool with bwrap sandbox execution
+- Security hardening: sandbox-unavailable rejection, network isolation (default none)
+- Adversarial review findings closed before merge
+
+**Story 3-2b: Web Fetch and Search Tool**
+- `web_fetch` tool for fetching web page content
+- `web_search` tool with configurable result count and timeout
+- Redirect loop detection (AC10) and cancellation handling
+- Input validation with `TOOLS_INPUT_TOO_LARGE` for oversized queries
+- Accurate truncation flag computation from filtered link count
+
+**Story 3-3: Tool Registry**
+- `ToolRegistry` with `register`, `get`, `list`, `dispatch` methods
+- `validateAndExecute` for pre-execution tool validation
+- `toOpenAITools` for tool definition serialization (including namespaced skill tools)
+- Skill metadata isolation on ToolDefinition (metadata on `#metadata`, not on definition)
+
+**Story 3-4: Isolated Execution Environment**
+- `SubSandboxManager` for high-risk tool isolation (AC1)
+- Independent tmpfs workspace (`--tmpfs /workspace`) and tmp dir (`--tmpfs /tmp`)
+- Shared read-only system directories (`/usr`, `/lib`, `/bin`)
+- Default 30s timeout with SIGTERM → 5s SIGKILL cascade (AC2)
+- Resource guard: insufficient memory rejection <100MB (AC4)
+- Concurrency limit: max 5 concurrent sub-sandboxes (AC5)
+- Cleanup: no orphan processes or temp files after completion (AC3)
+- Registered shared signal cleanup handlers for graceful shutdown
+- Fixed redundant `--dev-bind` entries and conditional `/lib64` binding
+- Preserved original `RESOURCE_INSUFFICIENT` error message
+
+**Story 3-5: Diff Review and Async Approval**
+- `ApprovalManager` with async approval lifecycle: submit → pending → accept|reject|partial|timeout (AC1)
+- Agent pause/resume: tool-call loop breaks on pending approval, resumes on resolution (CR-1)
+- AC9 file modification detection: SHA-256 hash verification at accept time (CR-2)
+- Queue promotion: resolving blocking `changeId` promotes next queued entry (AC6, H-1)
+- AC4 partial accept with `acceptFiles`/`rejectFiles` per-file granularity (H-2)
+- Loop detection: Jaccard similarity on diff lines, max 3 similar rejections → `approval.loop_detected` event (H-3)
+- APPROVAL_TIMEOUT error code for timed-out entries (M-2)
+- `FileLockManager.releaseAll()` for clean shutdown (M-3)
+- SessionId extraction from approval events for audit logging (M-4)
+- Cross-session file lock detection (AC12)
+- Atomic CAS state transitions (AC13): user action beats timeout
+
+### Changed
+
+- Version bump: All `@zaivim/*` packages bumped from 0.1.2 to 0.1.3
+- Stub packages (`@zaivim/vim-adapter`, `@zaivim/browser-ext`) remain at 0.0.0
+- `ToolContext` now includes `requestApproval` callback for file change approval
+- `executeToolCalls` return type extended to `{ messages, pendingChangeIds }` for approval lifecycle
+
+### Fixed
+
+- Sub-sandbox `--dev-bind` entries deduplicated for cleaner sandbox construction
+- `/lib64` conditionally bound only on host systems where it exists
+- `baseFileHash` now computed in file.ts proposal (AC9 hash detection was non-functional)
+- `FileHashStore.recordBaseHash` dead code removed; replaced with standalone `verifyFileHash()`
+- Approving a timed-out entry now throws `APPROVAL_TIMEOUT` instead of generic `APPROVAL_ALREADY_RESOLVED`
+- `cancelAll()` no longer calls ineffective `releaseSession('*')` — uses proper `releaseAll()` instead
+- Approval audit events now include real sessionId from event data
+
+### Security
+
+- Tool execution sandboxed via `SecurityProvider.preExecute`/`postExecute` lifecycle
+- File change proposals include `baseFileHash` for external-modification detection at accept time
+- Loop detection prevents infinite re-submission of similar rejected diffs (AC10)
+- Cross-session file locks prevent concurrent modification of the same path (AC12)
+- Sub-sandbox provides additional isolation layer for high-risk operations
+
+### Technical Details
+
+Test Coverage:
+- Engine: 734 tests passing (46 files)
+- Core: 65+ tests passing
+- Tools: skeleton tests passing
+- Total: 799+ tests passing
+
+New tests for Epic 3:
+- Story 3.1: File read/write/search security boundary tests
+- Story 3.2a: Shell sandbox execution and security tests
+- Story 3.2b: Web fetch/search timeout, redirect, input validation tests
+- Story 3.3: Tool registry dispatch and validation tests
+- Story 3.4: Sub-sandbox isolation, timeout, concurrency, cleanup tests
+- Story 3.5: ApprovalManager lifecycle (AC1-AC13), agent pause, queue promotion, loop detection, file hash, CAS atomicity
+
+Package Versions:
+- @zaivim/core: 0.1.3
+- @zaivim/engine: 0.1.3
+- @zaivim/tools: 0.1.3
+- @zaivim/skills: 0.1.3
+- @zaivim/gateway: 0.1.3
+- @zaivim/tui: 0.1.3
+- @zaivim/vim-adapter: 0.0.0 (stub)
+- @zaivim/browser-ext: 0.0.0 (stub)
+
+Epic 3 Deliverables:
+- Complete tool execution system: file → shell → web → registry → isolation → approval
+- 6 stories implemented, all acceptance criteria met
+- Adversarial code review on Story 3.4 (7 issues) and Story 3.5 (14 issues): all fixed before tag
+- All file changes go through FileChangeProposal → backup → diff → approval workflow
 
 ### Added
 

@@ -1,8 +1,8 @@
 {
   "name": "@zaivim/tools",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": false,
-  "description": "zai.vim AI tools — file, grep, shell, web, registry",
+  "description": "zai.vim AI tools \u2014 file, grep, shell, web, registry",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
