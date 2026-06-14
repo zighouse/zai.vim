@@ -21,9 +21,16 @@ function! s:handle_msg(raw) abort
   endif
 endfun
 
+" Wrapper for Vim 8.x JSON mode: out_cb(channel, msg) where msg is
+" already a decoded dict. Normalize back to JSON string for handle_msg.
+function! s:vim_out_cb(ch, msg) abort
+  let raw = type(a:msg) == v:t_dict ? json_encode(a:msg) : a:msg
+  call s:handle_msg(raw)
+endfun
+
 function! zai#rpc#connect_vim() abort
   if !has('job') || !has('channel') | return | endif
-  let s:job = job_start([g:zaivim_engine_path, 'vim-rpc-server'], {'mode': 'json', 'out_cb': function('s:handle_msg'), 'err_cb': function('s:err_cb'), 'exit_cb': function('s:exit_cb'), 'in_io': 'file', 'in_name': '/dev/null'})
+  let s:job = job_start([g:zaivim_engine_path, 'vim-rpc-server'], {'mode': 'json', 'out_cb': function('s:vim_out_cb'), 'err_cb': function('s:err_cb'), 'exit_cb': function('s:exit_cb'), 'in_io': 'file', 'in_name': '/dev/null'})
   let s:channel = job_getchannel(s:job)
 endfun
 
