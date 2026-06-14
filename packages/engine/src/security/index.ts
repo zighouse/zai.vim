@@ -34,6 +34,12 @@ import type { PathAcceptance as _PathAcceptance } from './path-validator.js';
 export { validatePathSafe, normalizePath, findGitRoot, isWithinBoundary, hasConfusableChars, skeleton, SealedFileHandle, ZaiHandleClosedError, BidiControlCharError, detectNormalizationForm, isProcAvailable } from './path-validator.js';
 export type { PathRejectCode, PathRejection, PathAcceptance, PathValidationResult } from './path-validator.js';
 
+// Story 3.4 — Isolated sub-sandbox for high-risk tools
+export { SubSandboxProvider, DEFAULT_SUBSANDBOX_CONFIG } from './sub-sandbox.js';
+export type { IsolatedExecResult, IsolatedExecOptions } from './sub-sandbox.js';
+export { SubSandboxManager } from './sub-sandbox-manager.js';
+export type { SubSandboxManagerOptions } from './sub-sandbox-manager.js';
+
 // ============================================================================
 // TODO (@zaivim/sandbox): extract SandboxManager to @zaivim/sandbox when
 // engine/src/ exceeds 30 files. All bwrap/seccomp/fallback logic must stay

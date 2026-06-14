@@ -37,6 +37,11 @@ export interface ChatDeps {
   readonly projectContext?: ProjectContext;
   readonly providerRegistry?: ProviderRegistry;
   readonly sessionId?: string;
+  /**
+   * Story 3.4: high-risk sub-sandbox manager. Optional — when absent, high-risk
+   * tool calls return ISOLATED_UNAVAILABLE instead of failing the pipeline.
+   */
+  readonly subSandboxManager?: import('../security/index.js').SubSandboxManager;
 }
 
 type EmitFn = (event: string, data: Record<string, unknown>) => void;
@@ -337,6 +342,8 @@ export async function* chat(
         audit: (action, detail) => emit('tool.audit', { action, ...detail }),
         timeout: toolCallTimeout,
         emit,
+        // Story 3.4: thread sub-sandbox manager so high-risk tools route to isolation
+        subSandboxManager: deps.subSandboxManager,
       });
 
       // 9. Yield tool_result chunks and add to working messages

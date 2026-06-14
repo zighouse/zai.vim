@@ -182,6 +182,13 @@ export interface ToolDefinition<TParams = unknown, TResult = unknown> {
   readonly harmLevel?: 'S' | 'A' | 'B' | 'C';
   readonly requiresApproval?: boolean;
   readonly requireSandbox?: boolean;
+  /**
+   * Story 3.4 (AC1): when true, the engine routes execution through an
+   * isolated sub-sandbox with stricter filesystem, network, and capability
+   * constraints than the primary BwrapSecurityProvider sandbox. Defaults to
+   * undefined (non-high-risk) so existing tools are unaffected.
+   */
+  readonly highRisk?: boolean;
   /** Story 3.3 (AC6): tool tier — first (default) or second-class exposure. */
   readonly tier?: 'first' | 'second';
   /** Story 3.3 (AC7): origin of the tool — builtin (default) or skill. */
@@ -189,6 +196,28 @@ export interface ToolDefinition<TParams = unknown, TResult = unknown> {
   /** Story 3.3 (AC7): required when source === 'skill'. */
   readonly skillName?: string;
   execute(params: TParams, ctx: ToolContext): Promise<TResult>;
+}
+
+// ---- Sub-sandbox config (Story 3.4) ----------------------------------------
+
+/**
+ * Story 3.4: Configuration for isolated sub-sandbox execution.
+ *
+ * These are internal engine parameters, not user-writable configuration.
+ * They live in types/index.ts (not config.ts) because they describe how
+ * the engine manages isolation, not what a user can change in YAML.
+ */
+export interface SubSandboxConfig {
+  /** Default per-execution timeout (ms). Default: 30_000. */
+  readonly defaultTimeoutMs: number;
+  /** Maximum allowed per-execution timeout (ms). Default: 300_000. */
+  readonly maxTimeoutMs: number;
+  /** Whether to check host memory before executing. Default: true. */
+  readonly memoryCheckEnabled: boolean;
+  /** Minimum free host memory (MB) required to start execution. Default: 100. */
+  readonly minFreeMemoryMB: number;
+  /** Max concurrent active sub-sandboxes (AC5). Default: 5. */
+  readonly maxConcurrency: number;
 }
 
 // ---- Shell tool types (Story 3.2a) -----------------------------------------

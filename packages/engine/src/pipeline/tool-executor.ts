@@ -3,15 +3,18 @@
 // Story 3.3: tool dispatch now flows through ToolRegistry (single source of truth)
 // instead of a ToolDefinition[] array. validateAndExecute provides the unified
 // validation + execution + JSON roundtrip gate (AC2/AC3/AC4).
+// Story 3.4: high-risk tools (toolDef.highRisk === true) are routed to a
+// SubSandboxProvider before security.preExecute so they never touch the
+// primary BwrapSecurityProvider sandbox (AC1).
 
-import type { ToolContext, ResponseChunk, Message, ISecurityProvider } from '@zaivim/core';
+import type { ToolContext, ResponseChunk, Message, ISecurityProvider, SubSandboxConfig } from '@zaivim/core';
 import { NullSecurityProvider } from '@zaivim/core';
 import { ToolRegistry, validateAndExecute } from '@zaivim/tools';
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
-import type { SandboxManager } from '../security/index.js';
+import type { SandboxManager, SubSandboxManager } from '../security/index.js';
 import { ShellExecutorFactory } from './shell-executor.js';
 import type { SandboxCapabilities } from './shell-executor.js';
 
@@ -38,6 +41,17 @@ export interface ToolExecutorOptions {
   readonly sandboxManager?: SandboxManager;
   /** Override sandbox capabilities (default: minimal restrictions) */
   readonly sandboxCapabilities?: SandboxCapabilities;
+  /**
+   * Story 3.4: when present, tools with `toolDef.highRisk === true` are routed
+   * to a SubSandboxProvider for isolated execution. When absent, high-risk
+   * execution degrades gracefully to an ISOLATED_UNAVAILABLE response.
+   */
+  readonly subSandboxManager?: SubSandboxManager;
+  /**
+   * Story 3.4: optional sub-sandbox config override (timeout clamp, memory
+   * check). When omitted, the manager's built-in config is used.
+   */
+  readonly subSandboxConfig?: Partial<SubSandboxConfig>;
 }
 
 /**
@@ -61,6 +75,15 @@ export async function executeToolCall(
       }),
       timedOut: false,
     };
+  }
+
+  // Story 3.4 (AC1): high-risk tools bypass the primary sandbox path entirely.
+  // Routed before security.preExecute so no high-risk command ever touches the
+  // primary BwrapSecurityProvider. The high-risk check is general — it keys
+  // off toolDef.highRisk rather than tc.name — so future tools (database_execute)
+  // can opt in without executor changes.
+  if (toolDef.highRisk === true) {
+    return executeHighRiskTool(tc, toolDef, options);
   }
 
   // Story 3.3 AC5: when no security provider is injected (E2 degraded), fall
@@ -243,4 +266,209 @@ export function validateToolCalls(
   }
 
   return { valid, errors };
+}
+
+// ─── Story 3.4: High-risk tool dispatch (AC1, AC2, AC4, AC5) ────────────────
+
+const HIGHRISK_MIN_TIMEOUT_MS = 5_000;
+
+/**
+ * Execute a high-risk tool in an isolated SubSandboxProvider.
+ *
+ * Currently the only high-risk surface is `shell_execute`-style command
+ * execution: we read `tc.arguments.command` and run it in the sub-sandbox.
+ * The check is keyed on `toolDef.highRisk` rather than `tc.name` so future
+ * tools (database_execute) can opt in without changes here.
+ *
+ * Lifecycle (AC3): the SubSandboxProvider is bound via `using` so its
+ * `[Symbol.dispose]` runs destroy() at scope exit (return or throw) — no
+ * residue even on abort/timeout.
+ */
+async function executeHighRiskTool(
+  tc: ToolCallRequest,
+  _toolDef: import('@zaivim/core').ToolDefinition,
+  options: ToolExecutorOptions,
+): Promise<{ result: string; timedOut: boolean }> {
+  // Manager not configured → graceful degradation (Pre-mortem edge case table)
+  if (!options.subSandboxManager) {
+    options.audit('isolated.unavailable', {
+      tool: tc.name,
+      reason: 'SubSandboxManager not configured',
+      sessionId: options.sessionId,
+    });
+    return {
+      result: JSON.stringify({
+        code: 'ISOLATED_UNAVAILABLE',
+        message: 'SubSandboxManager not configured',
+      }),
+      timedOut: false,
+    };
+  }
+
+  // Pull command + optional execution metadata from the tool call.
+  const command = tc.arguments.command;
+  if (typeof command !== 'string' || command.length === 0) {
+    options.audit('isolated.invalid_command', {
+      tool: tc.name,
+      sessionId: options.sessionId,
+    });
+    return {
+      result: JSON.stringify({
+        code: 'TOOLS_INVALID_PARAMS',
+        message: 'high-risk execution requires a non-empty string `command` argument',
+      }),
+      timedOut: false,
+    };
+  }
+
+  // Construct NullSecurityProvider for postExecute audit chain parity (Story 3.3 AC5)
+  const security: ISecurityProvider = options.security ?? new NullSecurityProvider({
+    logger: {
+      warn: (msg: string) => options.audit('security.fallback', { reason: msg, tool: tc.name }),
+    },
+  });
+
+  // Effective timeout: tc.arguments.timeout ?? default ?? 30s, clamped to >=5s
+  const requestedTimeout = typeof tc.arguments.timeout === 'number'
+    ? tc.arguments.timeout
+    : options.subSandboxConfig?.defaultTimeoutMs ?? 30_000;
+  const effectiveTimeout = Math.max(
+    HIGHRISK_MIN_TIMEOUT_MS,
+    Math.min(requestedTimeout, options.subSandboxConfig?.maxTimeoutMs ?? 300_000),
+  );
+
+  const start = Date.now();
+  let sandboxId: string | undefined;
+  try {
+    // AC5: create() may throw ISOLATED_CONCURRENCY_LIMIT — surface as structured error
+    using subSandbox = options.subSandboxManager.create();
+    sandboxId = subSandbox.sandboxId;
+    options.audit('isolated.dispatch', {
+      tool: tc.name,
+      sandboxId,
+      sessionId: options.sessionId,
+      timeoutMs: effectiveTimeout,
+      commandLength: command.length,
+    });
+
+    const isolated = await subSandbox.executeIsolated(command, {
+      cwd: typeof tc.arguments.cwd === 'string' ? tc.arguments.cwd : undefined,
+      env: tc.arguments.env && typeof tc.arguments.env === 'object'
+        ? tc.arguments.env as Record<string, string>
+        : undefined,
+      stdin: typeof tc.arguments.stdin === 'string' ? tc.arguments.stdin : undefined,
+      timeout: effectiveTimeout,
+      onAudit: (action, detail) => options.audit(action, { ...detail, tool: tc.name }),
+    });
+
+    const elapsed = Date.now() - start;
+    // AC2: timedOut → ISOLATED_TIMEOUT structured response
+    if (isolated.timedOut) {
+      options.emit?.('tool.timeout', { toolCallId: tc.id, elapsed });
+      await security.postExecute(tc.name, {
+        success: false,
+        output: 'isolated execution timed out',
+        sessionId: options.sessionId,
+      }).catch(() => {});
+      const timeoutSeconds = Math.round(effectiveTimeout / 1000);
+      return {
+        result: JSON.stringify({
+          code: 'ISOLATED_TIMEOUT',
+          message: `isolated execution timed out after ${timeoutSeconds}s`,
+          sandboxId,
+          exitCode: isolated.exitCode,
+          killed: isolated.killed,
+        }),
+        timedOut: true,
+      };
+    }
+
+    // Map isolated result to ShellResult-compatible JSON so callers
+    // (provider/AI) get a uniform shape regardless of execution path.
+    const payload = {
+      exitCode: isolated.exitCode,
+      stdout: isolated.stdout,
+      stderr: isolated.stderr,
+      killed: isolated.killed,
+      truncated: { stdout: false, stderr: false },
+      isolated: true,
+      sandboxId,
+    };
+    await security.postExecute(tc.name, {
+      success: isolated.exitCode === 0,
+      output: isolated.stdout,
+      sessionId: options.sessionId,
+    }).catch(() => {});
+    return { result: JSON.stringify(payload), timedOut: false };
+  } catch (err) {
+    const elapsed = Date.now() - start;
+    const code = (err as { code?: string })?.code;
+    const message = err instanceof Error ? err.message : String(err);
+
+    // AC4: RESOURCE_INSUFFICIENT → structured error
+    if (code === 'RESOURCE_INSUFFICIENT') {
+      await security.postExecute(tc.name, {
+        success: false,
+        output: 'resource insufficient',
+        sessionId: options.sessionId,
+      }).catch(() => {});
+      return {
+        result: JSON.stringify({
+          code: 'RESOURCE_INSUFFICIENT',
+          message: 'insufficient memory for isolated execution',
+          sandboxId,
+        }),
+        timedOut: false,
+      };
+    }
+
+    // AC5: ISOLATED_CONCURRENCY_LIMIT → structured error (does not block other tools)
+    if (code === 'ISOLATED_CONCURRENCY_LIMIT') {
+      options.emit?.('tool.concurrency_limited', { toolCallId: tc.id, elapsed });
+      await security.postExecute(tc.name, {
+        success: false,
+        output: 'concurrency limit reached',
+        sessionId: options.sessionId,
+      }).catch(() => {});
+      return {
+        result: JSON.stringify({
+          code: 'ISOLATED_CONCURRENCY_LIMIT',
+          message,
+          sandboxId,
+        }),
+        timedOut: false,
+      };
+    }
+
+    // ISOLATED_UNAVAILABLE → bwrap missing/non-Linux
+    if (code === 'ISOLATED_UNAVAILABLE') {
+      await security.postExecute(tc.name, {
+        success: false,
+        output: 'isolated sandbox unavailable',
+        sessionId: options.sessionId,
+      }).catch(() => {});
+      return {
+        result: JSON.stringify({
+          code: 'ISOLATED_UNAVAILABLE',
+          message,
+          sandboxId,
+        }),
+        timedOut: false,
+      };
+    }
+
+    // Unexpected error — propagate as generic message so AI can react
+    await security.postExecute(tc.name, {
+      success: false,
+      sessionId: options.sessionId,
+    }).catch(() => {});
+    return {
+      result: JSON.stringify({
+        code: code ?? 'TOOLS_EXECUTION_FAILED',
+        message,
+        sandboxId,
+      }),
+      timedOut: false,
+    };
+  }
 }

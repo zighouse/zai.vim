@@ -23,6 +23,7 @@ import { loadConfig } from '../config/index.js';
 import { InMemorySessionStoreFull, getLastActivityAt } from '../session/index.js';
 import { SessionLifecycleManager } from '../session/lifecycle-manager.js';
 import { SandboxManager, SecurityProvider, Auditor, OverrideManager, SecurityMonitor } from '../security/index.js';
+import { SubSandboxManager } from '../security/index.js';
 import type { SecurityLevel } from '../security/security-monitor.js';
 import { createProviderRegistry } from '../provider/index.js';
 import { AsyncGeneratorAgent } from '../agent/index.js';
@@ -69,6 +70,8 @@ export class Engine implements EngineAPI {
   #overrideManager: OverrideManager;
   #securityMonitor: SecurityMonitor;
   #securityEnricher: SecurityEnricher;
+  /** Story 3.4: high-risk tool sub-sandbox lifecycle manager. */
+  #subSandboxManager: SubSandboxManager;
   /** Project context cache — keyed by session ID (Story 1b.4) */
   readonly #projectContextCache = new Map<string, ProjectContext>();
   /** Timestamp of last mtime check per session */
@@ -187,6 +190,14 @@ export class Engine implements EngineAPI {
     for (const tool of tools ?? []) {
       this.#registry.register(tool);
     }
+
+    // Story 3.4: instantiate the SubSandboxManager bound to the project workspace.
+    // Audits are funnelled through the engine's existing audit sink so high-risk
+    // lifecycle events land in the same JSONL log as everything else.
+    this.#subSandboxManager = new SubSandboxManager({
+      workspaceDir: this.#config.sandbox.workDir,
+      onAudit: (action, detail) => this.#auditor.log(detail.sessionId as string ?? '', action, detail),
+    });
 
     const providerConfigs: Record<string, import('../provider/index.js').ProviderConfig> = {};
     for (const [name, cfg] of Object.entries(this.#config.providers)) {
@@ -321,6 +332,8 @@ export class Engine implements EngineAPI {
       projectContext,
       providerRegistry: this.#agentDeps.providerRegistry,
       sessionId,
+      // Story 3.4: wire SubSandboxManager for high-risk tool routing
+      subSandboxManager: this.#subSandboxManager,
     };
 
     yield* pipelineChat(session, message, deps, signal);
@@ -386,6 +399,9 @@ export class Engine implements EngineAPI {
 
   async destroy(options?: Partial<import('@zaivim/core').ShutdownOptions>): Promise<void> {
     this.#destroyed = true;
+    // Story 3.4 (AC3): tear down all active sub-sandboxes on engine shutdown so
+    // no bwrap process or tmpfs residue outlives the engine.
+    await this.#subSandboxManager.destroyAll().catch(() => {});
     // Close all active sessions
     for (const session of this.#sessionStore.list()) {
       if (session.status === 'active') {
