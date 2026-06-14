@@ -211,7 +211,8 @@ export class Engine implements EngineAPI {
       onAudit: (action, detail) => this.#auditor.log(detail.sessionId as string ?? '', action, detail),
       onEmit: (event, data) => {
         this.events.emit(event, data);
-        this.#auditor.log('', event, data);
+        const sid = (data as Record<string, unknown>).sessionId as string | undefined;
+        this.#auditor.log(sid ?? '', event, data);
       },
     });
 
