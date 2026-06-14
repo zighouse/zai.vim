@@ -1,7 +1,7 @@
 // @zaivim/tui — Session list panel
 // Displays all active sessions with status icons. Keyboard-navigable.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { TuiClient } from '../client.js';
 import type { TuiStore, SessionState, StoreAction } from '../store.js';
@@ -28,7 +28,7 @@ function statusIcon(status: SessionState['status']): string {
 }
 
 export function SessionList({ focus, sessions, activeSessionId, dispatch, client }: SessionListProps): React.JSX.Element {
-  const sessionList = Array.from(sessions.values());
+  const sessionList = useMemo(() => Array.from(sessions.values()), [sessions]);
   const [selectedIndex, setSelectedIndex] = useState(
     activeSessionId ? sessionList.findIndex(s => s.id === activeSessionId) : 0,
   );
