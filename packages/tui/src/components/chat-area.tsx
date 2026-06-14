@@ -129,8 +129,8 @@ export function ChatArea({
       return;
     }
 
-    // Printable character
-    if (inputChar && inputChar.length === 1 && inputChar.charCodeAt(0) >= 0x20) {
+    // Printable character (including CJK multi-character IME composition)
+    if (inputChar && inputChar.charCodeAt(0) >= 0x20) {
       setInput(prev => prev + inputChar);
     }
   }, { isActive: focus === 'chat' });
