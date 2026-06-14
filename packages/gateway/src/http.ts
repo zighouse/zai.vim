@@ -42,6 +42,13 @@ export interface HttpGatewayOptions {
   adminToken?: string;
   /** When true, treat every connection as remote-enforced (skip localhost bypass for tests). */
   enforceAuthAlways?: boolean;
+  /**
+   * When true (default), non-loopback requests must arrive over TLS — plain
+   * HTTP is rejected with 401 even if the Bearer token is valid. Set to
+   * false only when an upstream TLS-terminating proxy guarantees transport
+   * security (NFR16).
+   */
+  requireTls?: boolean;
 }
 
 export interface HttpGateway {
@@ -73,6 +80,7 @@ export function createHttpGateway(opts: HttpGatewayOptions): HttpGateway {
       maxPayload,
       resolveAdminToken: adminTokenProvider,
       enforceAuthAlways: opts.enforceAuthAlways === true,
+      requireTls: opts.requireTls !== false,
     }).catch((err) => {
       if (!res.headersSent) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -126,16 +134,29 @@ interface HandleRequestDeps {
   maxPayload: number;
   resolveAdminToken: () => string | undefined;
   enforceAuthAlways: boolean;
+  requireTls: boolean;
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse, deps: HandleRequestDeps): Promise<void> {
   // ---- Non-localhost auth (NFR16) ------------------------------------------
   // Every request hits this gate. Localhost bypasses it; everything else
-  // requires HTTPS + a valid Bearer token. MVP runs HTTP only, so non-
-  // localhost connections are rejected outright unless the caller supplies
-  // a matching admin token (treated as transport-trusted).
+  // requires HTTPS AND a valid Bearer token. MVP runs plain HTTP only, so
+  // non-loopback traffic is rejected outright — a token alone cannot make
+  // an insecure transport safe.
   const isLocal = isLocalhostRequest(req, deps.enforceAuthAlways);
   if (!isLocal) {
+    if (deps.requireTls && !(req.socket as { encrypted?: boolean }).encrypted) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          error: {
+            code: '-32001',
+            message: 'Unauthorized: HTTPS and API key required for non-localhost connections',
+          },
+        }),
+      );
+      return;
+    }
     const authResult = authorizeNonLocal(req, deps.resolveAdminToken());
     if (!authResult.ok) {
       res.writeHead(401, { 'Content-Type': 'application/json' });

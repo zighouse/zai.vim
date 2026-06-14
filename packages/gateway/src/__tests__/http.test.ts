@@ -247,13 +247,16 @@ describe('HTTP gateway', () => {
     expect(res.status).toBe(401);
   });
 
-  it('AC4: non-localhost with correct Bearer token passes', async () => {
+  it('AC4: non-localhost with correct Bearer token passes (TLS termination simulated)', async () => {
+    // requireTls=false simulates an upstream TLS-terminating proxy. Without
+    // this flag the plain-HTTP test transport would be rejected by default.
     const gateway = createHttpGateway({
       port: 0,
       handlerRegistry: registry,
       engine,
       adminToken: 'correct-key',
       enforceAuthAlways: true,
+      requireTls: false,
     });
     gateways.push(gateway);
     await gateway.started;
@@ -261,6 +264,23 @@ describe('HTTP gateway', () => {
     const res = await jsonGet(gateway.port, '/health', { Authorization: 'Bearer correct-key' });
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body).status).toBe('ok');
+  });
+
+  it('AC4/M1: plain HTTP non-localhost is rejected by default even with a valid token', async () => {
+    const gateway = createHttpGateway({
+      port: 0,
+      handlerRegistry: registry,
+      engine,
+      adminToken: 'correct-key',
+      enforceAuthAlways: true,
+      // requireTls defaults to true
+    });
+    gateways.push(gateway);
+    await gateway.started;
+
+    const res = await jsonGet(gateway.port, '/health', { Authorization: 'Bearer correct-key' });
+    expect(res.status).toBe(401);
+    expect(JSON.parse(res.body).error.code).toBe('-32001');
   });
 
   it('H1: a forged Host: localhost header cannot bypass non-loopback auth', async () => {
