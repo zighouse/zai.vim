@@ -77,6 +77,17 @@ export class SubSandboxManager {
       this.#workspaceDir,
       this.#config,
       this.#audit,
+      // Sync the manager's #sandboxes map when the provider is destroyed via
+      // any path (manager.destroy, `using` disposal, beforeExit cleanup).
+      // Without this, the `using` path used by executeHighRiskTool would leak
+      // a slot per high-risk call and trip AC5's cap after maxConcurrency.
+      (sandboxId) => {
+        this.#sandboxes.delete(sandboxId);
+        this.#audit?.('isolated.destroy', {
+          sandboxId,
+          activeCount: this.#sandboxes.size,
+        });
+      },
     );
     this.#sandboxes.set(provider.sandboxId, provider);
     this.#audit?.('isolated.create', {

@@ -160,6 +160,14 @@ export class SubSandboxProvider implements Disposable {
   readonly #config: SubSandboxConfig;
   readonly #workspaceDir: string;
   readonly #audit?: (action: string, detail: Record<string, unknown>) => void;
+  /**
+   * Optional callback invoked after destroy() resolves. SubSandboxManager uses
+   * this to remove the provider from its #sandboxes map — otherwise the `using`
+   * disposal path (which goes through [Symbol.dispose] → provider.destroy())
+   * leaks a slot in the manager's active set and trips the concurrency cap
+   * after `maxConcurrency` invocations.
+   */
+  readonly #onDispose?: (sandboxId: string) => void;
   #destroyed = false;
   #activeChild: ChildProcess | null = null;
   #activeMonitor: NodeJS.Timeout | null = null;
@@ -177,11 +185,13 @@ export class SubSandboxProvider implements Disposable {
     workspaceDir: string,
     config?: Partial<SubSandboxConfig>,
     audit?: (action: string, detail: Record<string, unknown>) => void,
+    onDispose?: (sandboxId: string) => void,
   ) {
     this.sandboxId = randomUUID();
     this.#workspaceDir = resolve(workspaceDir);
     this.#config = { ...DEFAULT_SUBSANDBOX_CONFIG, ...config };
     this.#audit = audit;
+    this.#onDispose = onDispose;
     this.#bwrapPath = locateBwrapBinary();
     if (this.#bwrapPath) {
       try {
@@ -329,6 +339,11 @@ export class SubSandboxProvider implements Disposable {
       exitCode: child?.exitCode ?? null,
       killed: !!child?.killed,
     });
+
+    // Notify the manager (if any) so its #sandboxes map stays in sync with
+    // the actual lifecycle. Without this, `using sub = manager.create()` would
+    // leak a slot on every high-risk call and trip AC5's cap prematurely.
+    this.#onDispose?.(this.sandboxId);
   }
 
   /** Disposable interface: scoped `using` callers (Story 3.4 Task 3.3). */

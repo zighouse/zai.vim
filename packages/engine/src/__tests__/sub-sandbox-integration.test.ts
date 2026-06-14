@@ -261,6 +261,36 @@ describe('ToolExecutor → SubSandboxProvider routing (Story 3.4)', () => {
       expect(manager.activeCount).toBe(0);
       await manager.destroyAll();
     });
+
+    it('repeated high-risk calls do not exhaust the concurrency cap (CR-1 regression)', async () => {
+      // CR-1 regression: the `using subSandbox = manager.create()` disposal path
+      // must release the slot in the manager's #sandboxes map. Without that,
+      // every high-risk call leaks a slot and the N+1th call (where N is
+      // maxConcurrency) fails with ISOLATED_CONCURRENCY_LIMIT even though no
+      // sandbox is actually running.
+      const manager = new SubSandboxManager({
+        workspaceDir: '/workspace',
+        config: { maxConcurrency: 3 },
+      });
+      const registry = makeRegistry(makeHighRiskShellTool());
+      // Run well past maxConcurrency so any slot leak trips the cap.
+      for (let i = 0; i < 10; i++) {
+        const result = await executeToolCall(
+          { id: `tc-${i}`, name: 'shell_execute_high_risk', arguments: { command: 'echo hello' } },
+          registry,
+          buildOptions({ subSandboxManager: manager }),
+        );
+        const parsed = JSON.parse(result.result);
+        // Whether the underlying bwrap ran or returned ISOLATED_UNAVAILABLE
+        // (non-Linux CI), the manager must NEVER refuse with the concurrency
+        // cap — that would indicate a leaked slot.
+        expect(parsed.code).not.toBe('ISOLATED_CONCURRENCY_LIMIT');
+        // Slot must be released synchronously enough that the next iteration
+        // sees an empty active set.
+        expect(manager.activeCount).toBe(0);
+      }
+      await manager.destroyAll();
+    });
   });
 });
 
