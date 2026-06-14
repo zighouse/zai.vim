@@ -252,6 +252,25 @@ describe('ApprovalManager — AC6: Same-file queue', () => {
     const queuedCalls = onEmit.mock.calls.filter((c: unknown[]) => c[0] === 'approval.queued');
     expect(queuedCalls.length).toBe(1);
   });
+
+  it('resolving first promotes the queued second entry', async () => {
+    const { manager } = makeManager();
+    const testFile = join(tempDir, 'promote.ts');
+    const r1 = manager.submit(makeProposal({ path: testFile }));
+    const r2 = manager.submit(makeProposal({ path: testFile }));
+
+    expect(r2.waitingFor).toBe(r1.changeId);
+
+    // Reject the first — second should be promoted
+    // (reject doesn't need a real file)
+    await manager.reject(r1.changeId);
+
+    // The promoted entry should now have waitingFor cleared
+    expect(manager.listPending().length).toBe(1);
+    const remaining = manager.listPending();
+    expect(remaining[0]!.waitingFor).toBeUndefined();
+    expect(remaining[0]!.changeId).toBe(r2.changeId);
+  });
 });
 
 describe('ApprovalManager — AC7: Rejected change context', () => {

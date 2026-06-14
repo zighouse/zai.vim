@@ -672,9 +672,29 @@ export class ApprovalManager {
       }
     }
 
+    // AC6: promote the next queued entry for the same file, if any
+    const filePath = entry.proposal.path;
+    if (filePath) {
+      let nextEntry: PendingApprovalEntry | undefined;
+      for (const e of this.#pending.values()) {
+        if (e.status === 'pending' && e.proposal.path === filePath && e.waitingFor === changeId) {
+          nextEntry = e;
+          break;
+        }
+      }
+      if (nextEntry) {
+        nextEntry.waitingFor = undefined;
+        this.#onEmit('approval.queued', {
+          changeId: nextEntry.changeId,
+          waitingFor: undefined,
+          promoted: true,
+        });
+      }
+    }
+
     // Clear hash
-    if (entry.proposal.path) {
-      this.#hashStore.clear(entry.proposal.path);
+    if (filePath) {
+      this.#hashStore.clear(filePath);
     }
 
     // AC13: Keep the entry in #pending with its resolved status so double
