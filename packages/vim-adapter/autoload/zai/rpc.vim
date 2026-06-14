@@ -46,7 +46,12 @@ function! s:nvim_stdout(j, d, e) abort
   for l in lines | call s:handle_msg(l) | endfor
 endfun
 
-function! s:err_cb(...) abort | endfun
+" Log stderr from vim-rpc-server to message history (:messages to view)
+function! s:err_cb(...) abort
+  if a:0 < 2 | return | endif
+  let data = type(a:2) == v:t_list ? join(a:2, '') : a:2
+  if !empty(data) | echom '[zaivim:stderr] ' . data | endif
+endfun
 function! s:exit_cb(j, s) abort | let s:job = v:null | let s:channel = v:null | endfun
 
 function! zai#rpc#connect() abort
