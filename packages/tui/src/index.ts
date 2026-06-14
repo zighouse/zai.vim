@@ -2,39 +2,22 @@
 // @zaivim/tui — CLI entry: terminal UI for zaivim
 // Spawns an in-process engine and renders the ink/React TUI.
 
-import { createEngine, loadConfig, getEngineInstance } from '@zaivim/engine';
-import type { EngineAPI, EngineConfig } from '@zaivim/core';
+import { Engine } from '@zaivim/engine';
 import { ZaiConfigError } from '@zaivim/core';
 import { createTuiClient } from './client.js';
 import { createTuiStore } from './store.js';
 import { renderTuiApp } from './app.js';
 
-const VERSION = '0.1.0';
-
 interface TuiOptions {
   sessionId?: string;
 }
 
-function getEngineConfig(): EngineConfig {
-  return {
-    pidFile: '',
-    version: VERSION,
-    startupTimeout: 3000,
-    healthCheckInterval: 30000,
-  };
-}
-
 /**
- * Get or create an in-process engine instance for TUI.
+ * Create the pipeline Engine instance for TUI.
  */
-function getEngine(): EngineAPI {
-  const existing = getEngineInstance() as EngineAPI | undefined;
-  if (existing) return existing;
-
+function getEngine(): Engine {
   try {
-    loadConfig();
-    const config = getEngineConfig();
-    return createEngine(config) as EngineAPI;
+    return new Engine();
   } catch (err) {
     if (err instanceof ZaiConfigError) {
       console.error(`Configuration error: ${err.message}`);
