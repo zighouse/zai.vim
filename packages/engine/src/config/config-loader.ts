@@ -7,15 +7,17 @@ import { ZaiConfigError } from '@zaivim/core';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { createRequire } from 'node:module';
 import { resolveEnvVars, markUnavailableProviders } from './env-resolver.js';
 import { validateConfig } from './config-validator.js';
 import { stripJsComments, normalizeConfigKeys, normalizeModelField } from './config-compat.js';
 import { createConfigBackup, restoreFromBackup, getDefaultConfig } from './config-backup.js';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+const _require = createRequire(import.meta.url);
 let yaml: { parse: (s: string) => unknown } | undefined;
 try {
-  yaml = require('yaml') as { parse: (s: string) => unknown };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  yaml = _require('yaml') as { parse: (s: string) => unknown };
 } catch {
   // yaml not installed — config files are optional
 }
@@ -193,6 +195,27 @@ export function loadConfig(overridesOrOpts?: Partial<ZaiConfig> | LoadConfigOpti
       }
     }
 
+    // Handle old Python format: YAML array of providers [{name, base-url, api-key-name, model}, ...]
+    if (userRaw && Array.isArray(userRaw)) {
+      const mapped: Record<string, Record<string, unknown>> = {};
+      for (const item of userRaw) {
+        if (!item || typeof item !== 'object') continue;
+        const entry = item as Record<string, unknown>;
+        const name = String(entry.name ?? '');
+        if (!name) continue;
+        const models = normalizeModelField(entry.model);
+        const modelNames = models.map(m => String((m as Record<string, unknown>).api_name ?? m.name));
+        mapped[name] = {
+          type: entry.type ?? 'openai',
+          apiKey: entry.api_key_name ? `$${entry.api_key_name}` : (entry.api_key ?? ''),
+          baseURL: entry.base_url ?? '',
+          models: modelNames,
+          defaultModel: String(entry.default_model ?? modelNames[0] ?? ''),
+        };
+      }
+      userRaw = { providers: mapped } as Record<string, unknown>;
+    }
+
     if (userRaw) {
       // New format: top-level providers key
       // Old format: services or assistants key wrapping providers
@@ -254,8 +277,9 @@ export function loadConfig(overridesOrOpts?: Partial<ZaiConfig> | LoadConfigOpti
   // Layer 3: Overrides (CLI flags, env vars)
   if (opts.overrides) {
     if (opts.overrides.language) config.language = opts.overrides.language;
-    if (opts.overrides.defaults?.provider) config.defaults.provider = opts.overrides.defaults.provider;
-    if (opts.overrides.defaults?.model) config.defaults.model = opts.overrides.defaults.model;
+    if (opts.overrides.defaults?.provider !== undefined) config.defaults.provider = opts.overrides.defaults.provider;
+    if (opts.overrides.defaults?.model !== undefined) config.defaults.model = opts.overrides.defaults.model;
+    if (opts.overrides.providers) config.providers = { ...opts.overrides.providers };
   }
 
   // Resolve environment variables ($VAR_NAME patterns)
