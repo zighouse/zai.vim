@@ -450,10 +450,15 @@ function! s:ui_open() abort
         setlocal modifiable
         setlocal wrap
         setlocal syntax=markdown
-        let &l:statusline = '[Zai] Submit:normal+[Enter]%=%-14.(%l,%c%V%) %P'
+        let &l:statusline = '[Zai] Send:<C-Enter>(insert)/<CR>(normal)%=%-14.(%l,%c%V%) %P'
         resize 10  " window height
         normal! G
         nnoremap <buffer><silent><nowait> <CR> :call zai#Go()<CR>
+        inoremap <buffer><silent><nowait> <C-CR> <Esc>:call zai#Go()<CR>
+        augroup ZaiInputAutoInsert
+            autocmd! * <buffer>
+            autocmd WinEnter <buffer> call s:input_win_enter()
+        augroup END
     else
         let l:iwin = bufwinnr(s:zai_ibuf)
         if l:iwin == -1
@@ -502,6 +507,24 @@ function! s:goto_iwin() abort
         execute l:iwin .. 'wincmd w'
         normal! zR
     endif
+endfunction
+
+" Auto-enter insert mode when the input window gains focus, so users can type
+" y/n (and other confirmations) without first pressing `i`. Skipped when the
+" user is in a non-normal mode (visual/replace/command-line) to avoid
+" disrupting their current action, and gated by g:zai_input_auto_insert so the
+" behavior can be disabled.
+function! s:input_win_enter() abort
+    if !get(g:, 'zai_input_auto_insert', 1)
+        return
+    endif
+    if mode() !=# 'n'
+        return
+    endif
+    " Defer to the typeahead loop via feedkeys so this works correctly when
+    " triggered from inside a function chain (e.g. s:goto_iwin in s:ui_open).
+    " GA = go to last line, then append at end of line in insert mode.
+    call feedkeys("GA", 'n')
 endfunction
 
 function! s:goto_lwin() abort

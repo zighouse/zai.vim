@@ -23,6 +23,46 @@ Attach file: >
     :AI attach file.txt
 
 ==============================================================================
+CHAT INPUT WINDOW                                       *zai-input-window*
+==============================================================================
+
+The chat interface uses three windows: a session list at the top, the AI
+output in the middle, and the input buffer at the bottom. You type messages
+and answers to permission prompts in the input buffer.
+
+AUTO-INSERT MODE                                       *zai-input-auto-insert*
+
+When the input window gains focus, Zai.Vim automatically enters insert mode
+and positions the cursor at the end of the buffer. This lets you type
+confirmations (e.g. y/n for shell permission prompts) without first pressing
+`i`.
+
+To disable this behavior and use the legacy flow, add to your vimrc: >
+    let g:zai_input_auto_insert = 0
+
+After submitting input, the input buffer is cleared and you remain in insert
+mode so you can immediately respond to the next prompt.
+
+SUBMITTING INPUT                                         *zai-input-submit*
+
+From insert mode (recommended): >
+    <C-Enter>      Submit the input buffer
+
+From normal mode (legacy): >
+    <CR>           Submit the input buffer
+
+Note: <C-Enter> is recognized in GUI Vim and most modern terminals
+(kitty, alacritty, iTerm2, tmux with the right config). If your terminal
+does not distinguish <C-Enter> from <Enter>, use the normal-mode flow, or
+add a fallback mapping in your vimrc.
+
+PERMISSION PROMPTS                                       *zai-input-prompts*
+
+When the AI requests permission to run a shell command (see
+|zai-shell-security|), the request appears in the output buffer. Type `y`
+to allow or `n` to deny in the input window, then press <C-Enter> to submit.
+
+==============================================================================
 SESSION COMMANDS                                         *zai-commands*
 ==============================================================================
 
@@ -168,7 +208,8 @@ Every command passes through a security chain before execution:
     L5: Audit Logging          - Records all execution attempts
 
 In degraded mode (bwrap unavailable), commands require explicit
-user confirmation via ask prompts.
+user confirmation via ask prompts. See |zai-input-prompts| for how to
+respond.
 
 SANDBOX MODES                                              *zai-sandbox*
 
@@ -180,6 +221,7 @@ Features: >
     Permission policy engine    Default-deny rules for destructive commands
                                 (rm -rf /, dd, mkfs, etc.)
     Ask prompts                Interactive confirmation for risky commands
+                                (see |zai-input-prompts|)
     Safe wrapper handling      sudo, timeout, nice transparently supported
     SSH credential isolation   ~/.ssh/ protected in sandbox
     Compound command parsing   Each sub-command analyzed independently

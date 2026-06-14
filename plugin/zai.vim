@@ -45,6 +45,13 @@ if !exists('g:zai_auto_install_deps')
     let g:zai_auto_install_deps = 1
 endif
 
+" When non-zero (default), focusing the chat input window auto-enters insert
+" mode so users can type confirmations (y/n) and submit with <C-Enter> without
+" first pressing `i`. Set to 0 in vimrc to keep the legacy normal+[Enter] flow.
+if !exists('g:zai_input_auto_insert')
+    let g:zai_input_auto_insert = 1
+endif
+
 if g:zai_auto_install_deps
     call s:CheckDependencies()
 endif
