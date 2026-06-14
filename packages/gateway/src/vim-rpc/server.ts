@@ -145,7 +145,7 @@ export async function runVimRpcServer(
 
   async function handleChatCancel(params: Record<string, unknown>): Promise<{ status: string }> {
     const id = params.id as string;
-    if (!id) throw new Error('Missing parameter: id');
+    if (!id) return { status: 'missing_id' };
 
     const vs = sessions.get(id);
     if (vs?.abortController && vs.isStreaming) {
