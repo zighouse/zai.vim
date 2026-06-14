@@ -30,6 +30,12 @@ interface VimSession {
   name?: string;
 }
 
+/** Per-agent state for Vim agent sessions. */
+interface VimAgent {
+  readonly agentId: string;
+  readonly handle: AgentHandle;
+}
+
 /** In-memory token cache: sessionId → token */
 const sessionTokenCache = new Map<string, string>();
 
@@ -54,6 +60,7 @@ export async function runVimRpcServer(
 
   // ---- State ----
   const sessions = new Map<string, VimSession>();
+  const agents = new Map<string, VimAgent>();
   const pendingCallbacks = new Map<number, { resolve: (result: unknown) => void; reject: (err: Error) => void }>();
   let idCounter = 0;
 
@@ -144,11 +151,25 @@ export async function runVimRpcServer(
 
   async function handleAgentCreate(params: Record<string, unknown>): Promise<Record<string, unknown>> {
     const persona = params.persona as Record<string, unknown> | undefined;
-    const agent = activeEngine.createAgent(
+    const handle = activeEngine.createAgent(
       { name: (persona?.name as string) ?? 'assistant', systemPrompt: (persona?.systemPrompt as string) ?? '' },
       undefined,
     );
-    return { agentId: agent.id, status: agent.status() };
+    agents.set(handle.id, { agentId: handle.id, handle });
+    return { agentId: handle.id, status: handle.status() };
+  }
+
+  async function handleAgentCancel(params: Record<string, unknown>): Promise<{ status: string }> {
+    const agentId = params.agentId as string;
+    if (!agentId) throw new Error('Missing parameter: agentId');
+
+    const va = agents.get(agentId);
+    if (va) {
+      va.handle.cancel('user_cancelled');
+      agents.delete(agentId);
+      return { status: 'cancelled' };
+    }
+    return { status: 'not_found' };
   }
 
   // ---- Streaming chat response with forward-compat dispatcher (AC10/AC11) ----
@@ -340,6 +361,10 @@ export async function runVimRpcServer(
           // ---- Agent methods ----
           case 'agent.create':
             result = await handleAgentCreate(params);
+            break;
+
+          case 'agent.cancel':
+            result = await handleAgentCancel(params);
             break;
 
           case 'agent.status': {
