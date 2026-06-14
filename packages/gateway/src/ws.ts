@@ -12,6 +12,7 @@
 import { type Server as HttpServer } from 'node:http';
 import { WebSocketServer, type WebSocket, type RawData } from 'ws';
 import { JSONRPC_ERROR_CODES } from '@zaivim/core';
+import { ZaiError } from '@zaivim/core';
 import { decode, successResponse, errorResponse } from '@zaivim/core';
 import type { JsonRpcMessage, JsonRpcRequest } from '@zaivim/core';
 import type { EventBus } from '@zaivim/engine';
@@ -217,6 +218,7 @@ function onMessage(
               request.id,
               dispatch.errorCode ?? JSONRPC_ERROR_CODES.INTERNAL_ERROR,
               dispatch.errorMessage ?? 'Internal error',
+              dispatch.errorData,
             ),
           ),
         );
@@ -230,6 +232,7 @@ function onMessage(
             request.id,
             JSONRPC_ERROR_CODES.INTERNAL_ERROR,
             (err as Error)?.message ?? 'Internal error',
+            err instanceof ZaiError ? err.toJSON() : undefined,
           ),
         ),
       );

@@ -256,6 +256,7 @@ async function handleJsonRpc(
           request.id,
           dispatch.errorCode ?? JSONRPC_ERROR_CODES.INTERNAL_ERROR,
           dispatch.errorMessage ?? 'Internal error',
+          dispatch.errorData,
         ),
       ),
     );

@@ -5,6 +5,7 @@
 import type { EngineAPI } from '@zaivim/core';
 import { JSONRPC_ERROR_CODES } from '@zaivim/core';
 import type { JsonRpcRequest } from '@zaivim/core';
+import { ZaiError } from '@zaivim/core';
 import { readPidFile, isProcessAlive } from '@zaivim/engine';
 import { requireAuth, type MethodACL } from './method-acl.js';
 import type { TransportContext } from './stdio/transport-context.js';
@@ -18,6 +19,8 @@ export interface DispatchResult {
   readonly result?: unknown;
   readonly errorCode?: number;
   readonly errorMessage?: string;
+  /** Extra error payload — for ZaiError, the result of toJSON() (code/message/stack). */
+  readonly errorData?: unknown;
 }
 
 /**
@@ -98,6 +101,16 @@ export class HandlerRegistry {
       const result = await handler(request.params);
       return { ok: true, result };
     } catch (err) {
+      // ADR-10 — ZaiError carries domain code, statusCode, and detail that
+      // must propagate to the client. Plain Error collapses to internal_error.
+      if (err instanceof ZaiError) {
+        return {
+          ok: false,
+          errorCode: err.statusCode || JSONRPC_ERROR_CODES.INTERNAL_ERROR,
+          errorMessage: err.message,
+          errorData: err.toJSON(),
+        };
+      }
       const errorMessage = err instanceof Error ? err.message : 'Internal error';
       return {
         ok: false,

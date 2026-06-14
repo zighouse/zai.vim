@@ -6,6 +6,7 @@ import { MethodACL } from '../method-acl.js';
 import { TransportContext } from '../stdio/transport-context.js';
 import { EventBus, ClientManager } from '@zaivim/engine';
 import type { EngineAPI } from '@zaivim/core';
+import { ZaiError } from '@zaivim/core';
 
 function createMockEngine(): EngineAPI {
   return {
@@ -67,6 +68,23 @@ describe('HandlerRegistry', () => {
     expect(result.ok).toBe(false);
     expect(result.errorCode).toBe(-32603);
     expect(result.errorMessage).toBe('handler crashed');
+  });
+
+  it('preserves ZaiError code, statusCode, and detail via toJSON (AC8 / ADR-10)', async () => {
+    const engine = createMockEngine();
+    const registry = new HandlerRegistry(engine);
+    registry.register('zai-boom', () => {
+      throw new ZaiError('session gone', 'ENGINE_SESSION_NOT_FOUND', 404, { sessionId: 'sX' });
+    });
+
+    const result = await registry.dispatch({ jsonrpc: '2.0', id: 1, method: 'zai-boom' });
+    expect(result.ok).toBe(false);
+    expect(result.errorCode).toBe(404);
+    expect(result.errorMessage).toBe('session gone');
+    expect(result.errorData).toMatchObject({
+      code: 'ENGINE_SESSION_NOT_FOUND',
+      message: 'session gone',
+    });
   });
 
   it('awaits async handlers', async () => {
