@@ -113,7 +113,7 @@ describe('executeToolCall', () => {
 describe('executeToolCalls', () => {
   it('should execute multiple tool calls serially', async () => {
     const tool = makeTool('echo', async (params) => JSON.stringify(params));
-    const results = await executeToolCalls(
+    const { messages: results } = await executeToolCalls(
       [
         { id: 'tc-1', name: 'echo', arguments: { a: 1 } },
         { id: 'tc-2', name: 'echo', arguments: { b: 2 } },

@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, renam
 import { basename, dirname, resolve } from 'node:path';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { createTwoFilesPatch } from 'diff';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import type { ToolDefinition, ToolContext } from '@zaivim/core';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -280,6 +280,8 @@ export const fileWriteTool: ToolDefinition<FileWriteParams, FileWriteResult> = {
           backupPath,
           proposedContent: params.content,
           sessionId: ctx.sessionId,
+          // AC9: record base file hash for external modification detection
+          baseFileHash: createHash('sha256').update(originalContent, 'utf-8').digest('hex'),
         };
 
         const pending = await ctx.requestApproval(coreProposal);
