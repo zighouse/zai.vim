@@ -3,7 +3,6 @@
 
 import React, { useState, useRef, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { EngineAPI } from '@zaivim/core';
 import type { TuiClient } from '../client.js';
 import type { SessionState, MessageState, StoreAction } from '../store.js';
 import { sanitizeForTerminal } from '../sanitize.js';
@@ -14,7 +13,6 @@ interface ChatAreaProps {
   activeSessionId: string | null;
   dispatch: (action: StoreAction) => void;
   client: TuiClient;
-  engine: EngineAPI;
   onExit: () => void;
 }
 

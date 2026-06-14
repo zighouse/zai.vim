@@ -55,7 +55,7 @@ export async function startTui(options?: TuiOptions): Promise<void> {
   const store = createTuiStore(client);
 
   // Render ink app
-  const { waitUntilExit } = renderTuiApp(store, client, engine);
+  const { waitUntilExit } = renderTuiApp(store, client);
 
   // Handle signals
   const cleanup = async () => {

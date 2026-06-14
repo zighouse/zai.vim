@@ -3,7 +3,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { render, Box, Text, useInput } from 'ink';
-import type { EngineAPI } from '@zaivim/core';
 import type { TuiClient } from './client.js';
 import type { TuiStore } from './store.js';
 import { Layout } from './components/layout.js';
@@ -15,10 +14,9 @@ import { ChatArea } from './components/chat-area.js';
 interface AppProps {
   store: TuiStore;
   client: TuiClient;
-  engine: EngineAPI;
 }
 
-function App({ store, client, engine }: AppProps) {
+function App({ store, client }: AppProps) {
   const [state, setState] = useState(store.getState());
   const [focus, setFocus] = useState<'sessions' | 'chat'>('chat');
 
@@ -61,7 +59,6 @@ function App({ store, client, engine }: AppProps) {
         activeSessionId={state.activeSessionId}
         dispatch={store.dispatch}
         client={client}
-        engine={engine}
         onExit={handleExit}
       />
     </Layout>
@@ -77,10 +74,9 @@ interface RenderResult {
 export function renderTuiApp(
   store: TuiStore,
   client: TuiClient,
-  engine: EngineAPI,
 ): RenderResult {
   const { waitUntilExit } = render(
-    <App store={store} client={client} engine={engine} />,
+    <App store={store} client={client} />,
   );
   return { waitUntilExit };
 }
