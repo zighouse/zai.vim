@@ -18,9 +18,9 @@
 // AC13: Atomic CAS — user action beats timeout
 
 import { randomUUID, createHash } from 'node:crypto';
-import { writeFile, readFile, mkdir, unlink } from 'node:fs/promises';
+import { writeFile, mkdir, unlink } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import type { FileChangeProposal, PendingApproval, ApprovalStatus, ApprovalLoopDetection } from '@zaivim/core';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -45,45 +45,21 @@ export interface ApprovalManagerOptions {
   readonly projectRoot?: string;
 }
 
-// ─── FileHashStore ─────────────────────────────────────────────────────────────
+// ─── File hash verification (AC9) ───────────────────────────────────────────────
 
 /**
- * Records and verifies file content hashes (AC9).
- *
- * At proposal generation time, records the base hash of the original file.
- * At accept time, re-hashes the current file on disk and compares.
+ * Verify the file on disk matches the expected hash.
+ * Returns true if the file exists and its sha256 hash matches expectedHash.
  */
-class FileHashStore {
-  readonly #hashes = new Map<string, string>();
-
-  /** Record the base hash of file content. Returns the hex digest. */
-  recordBaseHash(resolvedPath: string, content: string): string {
-    const hash = createHash('sha256').update(content, 'utf-8').digest('hex');
-    this.#hashes.set(resolvedPath, hash);
-    return hash;
+function verifyFileHash(resolvedPath: string, expectedHash: string): boolean {
+  try {
+    if (!existsSync(resolvedPath)) return false;
+    const content = readFileSync(resolvedPath, 'utf-8');
+    const currentHash = createHash('sha256').update(content, 'utf-8').digest('hex');
+    return currentHash === expectedHash;
+  } catch {
+    return false;
   }
-
-  /** Verify the file on disk still matches the recorded base hash. */
-  verifyCurrentHash(resolvedPath: string, expectedHash: string): boolean {
-    try {
-      if (!existsSync(resolvedPath)) return false;
-      const content = readFileSyncSafe(resolvedPath);
-      const currentHash = createHash('sha256').update(content, 'utf-8').digest('hex');
-      return currentHash === expectedHash;
-    } catch {
-      return false;
-    }
-  }
-
-  /** Remove a recorded hash (after accept or cancel). */
-  clear(resolvedPath: string): void {
-    this.#hashes.delete(resolvedPath);
-  }
-}
-
-/** Synchronous file read for hash verification — small files only. */
-function readFileSyncSafe(path: string): string {
-  return readFileSync(path, 'utf-8');
 }
 
 // ─── FileLockManager ───────────────────────────────────────────────────────────
@@ -139,7 +115,6 @@ export class ApprovalManager {
   readonly #pending = new Map<string, PendingApprovalEntry>();
   readonly #timeoutTimers = new Map<string, NodeJS.Timeout>();
   readonly #fileLocks = new FileLockManager();
-  readonly #hashStore = new FileHashStore();
   readonly #loopDetection = new Map<string, ApprovalLoopDetection[]>();
   readonly #agentPauseStates = new Map<string, Set<string>>();
   readonly #onAudit: AuditFn;
@@ -321,7 +296,7 @@ export class ApprovalManager {
     const proposal = entry.proposal;
     const resolvedPath = proposal.path;
     if (resolvedPath && proposal.baseFileHash) {
-      if (!this.#hashStore.verifyCurrentHash(resolvedPath, proposal.baseFileHash)) {
+      if (!verifyFileHash(resolvedPath, proposal.baseFileHash)) {
         // Stale — revert status back to rejected/stale
         entry.status = 'rejected';
         this.#onEmit('approval.stale', { changeId, reason: 'file modified externally' });
@@ -547,6 +522,9 @@ export class ApprovalManager {
    * Uses Jaccard similarity on diff lines. Only checks same file + same agent.
    * After maxSimilarRetries consecutive similar rejections, the next attempt
    * is blocked and an `approval.loop_detected` event is emitted.
+   *
+   * Persists the rejection count to #loopDetection so it survives cleanup
+   * of the #pending map (e.g., cancelAll).
    */
   #detectLoop(proposal: FileChangeProposal): boolean {
     const agentId = proposal.agentId ?? 'unknown';
@@ -577,10 +555,17 @@ export class ApprovalManager {
       }
     }
 
-    // Also check history for persisted entries
+    // Merge with persisted history (survives cancelAll/engine restart in Growth)
     for (const hist of history) {
       similarCount = Math.max(similarCount, hist.similarDiffCount);
     }
+
+    // Persist the updated count so future attempts see it even if pending
+    // entries are cleared (e.g., cancelAgentPending from other reasons).
+    this.#loopDetection.set(key, [
+      ...history,
+      { filePath, agentId, similarDiffCount: similarCount, firstRejectedAt: Date.now() },
+    ]);
 
     if (similarCount >= this.#maxSimilarRetries) {
       this.#onEmit('approval.loop_detected', {
@@ -707,11 +692,6 @@ export class ApprovalManager {
           promoted: true,
         });
       }
-    }
-
-    // Clear hash
-    if (filePath) {
-      this.#hashStore.clear(filePath);
     }
 
     // AC13: Keep the entry in #pending with its resolved status so double
