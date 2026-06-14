@@ -511,4 +511,70 @@ describe('HandlerRegistry', () => {
     expect((engine as any).detectProjectContext).toHaveBeenCalledWith('/some/dir');
     expect(r.result).toEqual({ root: '/r' });
   });
+
+  it('H5: chat.send aggregates stream chunks and returns them (AC2 stdio parity)', async () => {
+    const engine = {
+      ...createMockEngine(),
+      getSession: vi.fn().mockReturnValue({ id: 's1', messages: [] }),
+      chat: vi.fn().mockImplementation(async function* () {
+        yield { type: 'text', content: 'Hello' };
+        yield { type: 'text', content: ' world' };
+        yield { type: 'done' };
+      }),
+    } as unknown as EngineAPI;
+    const registry = new HandlerRegistry(engine);
+    const r = await registry.dispatch({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'chat.send',
+      params: { sessionId: 's1', content: 'hi' },
+    });
+    expect(r.ok).toBe(true);
+    expect((r.result as { chunks: unknown[] }).chunks).toHaveLength(3);
+    const callArgs = (engine as any).chat.mock.calls[0];
+    expect(callArgs[0]).toBe('s1');
+    expect(callArgs[1].role).toBe('user');
+    expect(callArgs[1].content).toBe('hi');
+  });
+
+  it('H5: chat.send rejects with ZaiError when the session is missing', async () => {
+    const engine = createMockEngine();
+    (engine.getSession as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
+    const registry = new HandlerRegistry(engine);
+    const r = await registry.dispatch({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'chat.send',
+      params: { sessionId: 'nope', content: 'hi' },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errorCode).toBe(404);
+    expect(r.errorData).toMatchObject({ code: 'ENGINE_SESSION_NOT_FOUND' });
+  });
+
+  it('H5: chat.send requires sessionId + content', async () => {
+    const engine = createMockEngine();
+    const registry = new HandlerRegistry(engine);
+    const r = await registry.dispatch({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'chat.send',
+      params: { sessionId: 's1' },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errorMessage).toContain('content');
+  });
+
+  it('H5: chat.cancel acknowledges the request', async () => {
+    const engine = createMockEngine();
+    const registry = new HandlerRegistry(engine);
+    const r = await registry.dispatch({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'chat.cancel',
+      params: { sessionId: 's1' },
+    });
+    expect(r.ok).toBe(true);
+    expect((r.result as { status: string }).status).toBe('cancel_requested');
+  });
 });

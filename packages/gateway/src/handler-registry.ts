@@ -3,10 +3,12 @@
 // through one set of handlers — methods registered once, served over N transports.
 
 import type { EngineAPI } from '@zaivim/core';
+import type { Message, ResponseChunk } from '@zaivim/core';
 import { JSONRPC_ERROR_CODES } from '@zaivim/core';
 import type { JsonRpcRequest } from '@zaivim/core';
 import { ZaiError } from '@zaivim/core';
 import { readPidFile, isProcessAlive } from '@zaivim/engine';
+import { randomUUID } from 'node:crypto';
 import { requireAuth, type MethodACL } from './method-acl.js';
 import type { TransportContext } from './stdio/transport-context.js';
 
@@ -356,6 +358,54 @@ export class HandlerRegistry {
       const p = params as Record<string, unknown> | undefined;
       const sessionId = p?.sessionId as string | undefined;
       return engine.approvalListPending(sessionId);
+    });
+
+    // ---- Chat handlers (AC2 — stdio parity for HTTP/WS) ---------------------
+    // The streaming chunk-by-chunk variant lives in vim-rpc/server.ts because
+    // it needs per-session AbortController state. The shared registry exposes
+    // a non-streaming variant: collect all chunks then return them in one
+    // envelope. Clients that want streaming should subscribe to $/notification
+    // (already wired through the EventBus) or use stdio via the Vim adapter.
+    this.register('chat.send', async (params?: unknown) => {
+      const p = params as Record<string, unknown> | undefined;
+      const sessionId = p?.sessionId as string | undefined;
+      const content = p?.content as string | undefined;
+      if (!sessionId) throw new Error('Missing required parameter: sessionId');
+      if (typeof content !== 'string') throw new Error('Missing required parameter: content (string)');
+
+      const session = engine.getSession(sessionId);
+      if (!session) {
+        throw new ZaiError(
+          `Session not found: ${sessionId}`,
+          'ENGINE_SESSION_NOT_FOUND',
+          404,
+          { sessionId },
+        );
+      }
+
+      const message: Message = {
+        id: (p?.messageId as string) ?? randomUUID(),
+        role: 'user',
+        content,
+        createdAt: Date.now(),
+      };
+
+      const chunks: ResponseChunk[] = [];
+      for await (const chunk of engine.chat(sessionId, message)) {
+        chunks.push(chunk);
+      }
+      return { sessionId, messageId: message.id, chunks };
+    });
+
+    this.register('chat.cancel', (params?: unknown) => {
+      const p = params as Record<string, unknown> | undefined;
+      const sessionId = p?.sessionId as string | undefined;
+      if (!sessionId) throw new Error('Missing required parameter: sessionId');
+      // MVP: per-session AbortController tracking is owned by the Vim RPC
+      // adapter, not the shared registry. Acknowledge the request; full
+      // cancellation across HTTP/WS clients requires lifting the session
+      // map into the engine.
+      return { sessionId, status: 'cancel_requested' };
     });
   }
 }
