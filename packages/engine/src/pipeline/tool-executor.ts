@@ -406,6 +406,11 @@ async function executeHighRiskTool(
     const message = err instanceof Error ? err.message : String(err);
 
     // AC4: RESOURCE_INSUFFICIENT → structured error
+    // Preserve the original ZaiError message — the underlying provider may
+    // throw RESOURCE_INSUFFICIENT for memory OR load pre-check failures, and
+    // hardcoding "insufficient memory" misleads the caller when the actual
+    // cause was load (sub-sandbox.ts throws "host load too high" with the
+    // same code).
     if (code === 'RESOURCE_INSUFFICIENT') {
       await security.postExecute(tc.name, {
         success: false,
@@ -415,7 +420,7 @@ async function executeHighRiskTool(
       return {
         result: JSON.stringify({
           code: 'RESOURCE_INSUFFICIENT',
-          message: 'insufficient memory for isolated execution',
+          message,
           sandboxId,
         }),
         timedOut: false,
