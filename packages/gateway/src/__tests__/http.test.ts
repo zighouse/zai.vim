@@ -263,6 +263,23 @@ describe('HTTP gateway', () => {
     expect(JSON.parse(res.body).status).toBe('ok');
   });
 
+  it('H1: a forged Host: localhost header cannot bypass non-loopback auth', async () => {
+    // Even if an attacker on a remote machine connects and sends
+    // `Host: localhost`, the request must still go through the auth gate.
+    const gateway = createHttpGateway({
+      port: 0,
+      handlerRegistry: registry,
+      engine,
+      adminToken: 'real-key',
+      enforceAuthAlways: true,
+    });
+    gateways.push(gateway);
+    await gateway.started;
+
+    const res = await jsonGet(gateway.port, '/health', { Host: 'localhost' });
+    expect(res.status).toBe(401);
+  });
+
   it('ACL still applies to JSON-RPC over HTTP', async () => {
     const acl = MethodACL.createDefault();
     const registryWithAcl = new HandlerRegistry(engine, undefined, undefined, acl);

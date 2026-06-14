@@ -21,8 +21,9 @@ import { readAdminToken } from './admin-token.js';
 /** Default request body cap — matches architecture.md maxPayload safety valve. */
 export const DEFAULT_MAX_PAYLOAD_BYTES = 10 * 1024 * 1024; // 10 MiB
 
-/** Loopback hosts that bypass the non-localhost auth requirement (NFR16). */
-const LOCALHOST_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0']);
+/** Loopback addresses that bypass the non-localhost auth requirement (NFR16).
+ *  Host header is intentionally absent — it's client-controlled and forgeable. */
+const LOOPBACK_REMOTE_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
 export interface HttpGatewayOptions {
   /** TCP port. 0 = let the OS assign one. */
@@ -288,19 +289,11 @@ async function readBody(req: IncomingMessage, maxPayload: number): Promise<ReadB
 function isLocalhostRequest(req: IncomingMessage, enforceAlways: boolean): boolean {
   if (enforceAlways) return false;
 
-  // Trust the Host header — clients connecting from another machine cannot
-  // forge a 127.0.0.1/localhost value on a TCP connection that originated elsewhere.
-  const hostHeader = ((req.headers.host ?? '').split(':')[0] ?? '').toLowerCase();
-  if (LOCALHOST_HOSTS.has(hostHeader)) return true;
-
-  // Some proxies expose the peer over X-Forwarded-For; for MVP we treat any
-  // missing/unknown remote as non-local and let the auth gate decide.
+  // SECURITY: do NOT trust req.headers.host — it is client-controlled.
+  // A remote attacker can trivially send `Host: localhost` over the wire
+  // and bypass auth. Only the kernel-populated remoteAddress is reliable.
   const remote = req.socket.remoteAddress ?? '';
-  if (LOCALHOST_HOSTS.has(remote) || LOCALHOST_HOSTS.has(remote.replace(/^::ffff:/, ''))) {
-    return true;
-  }
-
-  return false;
+  return LOOPBACK_REMOTE_ADDRESSES.has(remote);
 }
 
 interface AuthOutcome {
