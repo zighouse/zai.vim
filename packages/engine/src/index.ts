@@ -7,3 +7,4 @@ export * from './config/index.js';
 export * from './security/index.js';
 export * from './lifecycle/index.js';
 export * from './events/index.js';
+export { sanitizeForVim } from './utils/sanitize-terminal.js';

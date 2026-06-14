@@ -13,6 +13,7 @@ import { TransportContext } from './stdio/transport-context.js';
 import { generateAdminToken, removeAdminToken } from './admin-token.js';
 import { createChatRepl, printStreamChunk } from './chat/repl.js';
 import { createMarkdownRenderer } from './chat/markdown-renderer.js';
+import { runVimRpcServer } from './vim-rpc/server.js';
 import { getSecurityStatus, printSecurityStatus } from './cli/security-status.js';
 import { resolve, dirname, join } from 'node:path';
 import { openSync, mkdirSync } from 'node:fs';
@@ -37,6 +38,7 @@ const SUBCOMMANDS = {
   'project-context': 'Detect and display project context information',
   'security-status': 'Show security sandbox status (bwrap, platform, restrictions)',
   'smoke-test': 'Run integration smoke tests',
+  'vim-rpc-server': 'Start JSON-RPC server for Vim adapter (stdio)',
 } as const;
 
 function showHelp(): void {
@@ -62,6 +64,7 @@ Examples:
   zaivim chat               Start interactive chat
   zaivim chat --json        Chat in JSON pipe mode (stdin/stdout)
   zaivim chat --session ID  Resume a previous session
+  zaivim vim-rpc-server     Start JSON-RPC stdio server for Vim adapter
 `);
 }
 
@@ -683,6 +686,9 @@ async function main(): Promise<void> {
       break;
     case 'chat':
       await cmdChat(positionals.slice(1));
+      break;
+    case 'vim-rpc-server':
+      await runVimRpcServer();
       break;
     case 'tui':
     case 'skill':
