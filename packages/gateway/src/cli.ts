@@ -690,7 +690,20 @@ async function main(): Promise<void> {
     case 'vim-rpc-server':
       await runVimRpcServer();
       break;
-    case 'tui':
+    case 'tui': {
+      const tuiScriptPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../tui/dist/cli.js');
+      const { spawn } = await import('node:child_process');
+      const child = spawn(process.execPath, [tuiScriptPath, ...positionals.slice(1)], {
+        stdio: 'inherit',
+        cwd: process.cwd(),
+      });
+      child.on('exit', (code) => process.exit(code ?? 0));
+      child.on('error', (err) => {
+        console.error(`Failed to start TUI: ${err.message}`);
+        process.exit(1);
+      });
+      break;
+    }
     case 'skill':
     case 'import':
       console.log(`Command "${command}" is not yet available. Coming in a future version.`);

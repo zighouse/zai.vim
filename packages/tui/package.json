@@ -1,10 +1,29 @@
 {
   "name": "@zaivim/tui",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
-  "description": "zai.vim terminal UI \u2014 ink-based TUI client (Growth phase)",
+  "description": "zai.vim terminal UI \u2014 ink-based TUI client",
   "type": "module",
+  "bin": {
+    "zaivim-tui": "./dist/cli.js"
+  },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@zaivim/core": "workspace:*",
+    "@zaivim/engine": "workspace:*",
+    "ink": "^5.0.1",
+    "react": "^19.0.0"
+  },
+  "peerDependencies": {
+    "ink": "^5.0.1",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0"
   }
 }
