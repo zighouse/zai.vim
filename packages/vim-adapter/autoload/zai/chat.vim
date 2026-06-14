@@ -114,3 +114,13 @@ function! zai#chat#close() abort
     unlet s:chats[s:current_id]
   endif | let s:current_id = v:null
 endfun
+
+function! zai#chat#switch(id) abort
+  if !has_key(s:chats, a:id) | return | endif
+  let c = s:chats[a:id]
+  let s:current_id = a:id
+  if bufexists(c.bufnr)
+    execute 'buffer ' . c.bufnr
+    call s:render_output(c)
+  endif
+endfun
