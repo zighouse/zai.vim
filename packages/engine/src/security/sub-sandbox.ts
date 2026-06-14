@@ -164,15 +164,6 @@ function ensureSignalHandlers(): void {
     });
   }
 }
-function readBwrapVersion(bwrapPath: string): number[] | null {
-  try {
-    // spawnSync avoided to keep zero sync-blocking during construction;
-    // we instead read version lazily on first executeIsolated() via async spawn.
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * SubSandboxProvider — a single isolated bubblewrap execution context.
