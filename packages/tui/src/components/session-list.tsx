@@ -7,6 +7,7 @@ import type { TuiClient } from '../client.js';
 import type { TuiStore, SessionState, StoreAction } from '../store.js';
 
 interface SessionListProps {
+  focus: 'sessions' | 'chat';
   sessions: Map<string, SessionState>;
   activeSessionId: string | null;
   dispatch: (action: StoreAction) => void;
@@ -26,7 +27,7 @@ function statusIcon(status: SessionState['status']): string {
   }
 }
 
-export function SessionList({ sessions, activeSessionId, dispatch, client }: SessionListProps): React.JSX.Element {
+export function SessionList({ focus, sessions, activeSessionId, dispatch, client }: SessionListProps): React.JSX.Element {
   const sessionList = Array.from(sessions.values());
   const [selectedIndex, setSelectedIndex] = useState(
     activeSessionId ? sessionList.findIndex(s => s.id === activeSessionId) : 0,
@@ -40,15 +41,20 @@ export function SessionList({ sessions, activeSessionId, dispatch, client }: Ses
     }
   }, [activeSessionId, sessionList]);
 
-  // Keyboard navigation (B2.6)
+  // Keyboard navigation (B2.6) — only when this panel is focused
   useInput(async (input, key) => {
+    if (focus !== 'sessions') return;
+
     if (key.upArrow) {
       setSelectedIndex(Math.max(0, selectedIndex - 1));
+      input.handled = true;
     } else if (key.downArrow) {
       setSelectedIndex(Math.min(sessionList.length - 1, selectedIndex + 1));
+      input.handled = true;
     } else if (key.return && sessionList[selectedIndex]) {
       // Enter to switch session
       dispatch({ type: 'SESSION_ACTIVATED', payload: { id: sessionList[selectedIndex].id } });
+      input.handled = true;
     } else if (input === 'n' && key.ctrl) {
       // Ctrl+N: create new session (AC2 / B2.5)
       try {
@@ -60,6 +66,7 @@ export function SessionList({ sessions, activeSessionId, dispatch, client }: Ses
       } catch (err) {
         // Session creation failed silently
       }
+      input.handled = true;
     }
   });
 

@@ -2,7 +2,7 @@
 // Wires the store to ink/React rendering.
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { render, Box, Text } from 'ink';
+import { render, Box, Text, useInput } from 'ink';
 import type { EngineAPI } from '@zaivim/core';
 import type { TuiClient } from './client.js';
 import type { TuiStore } from './store.js';
@@ -20,10 +20,18 @@ interface AppProps {
 
 function App({ store, client, engine }: AppProps) {
   const [state, setState] = useState(store.getState());
+  const [focus, setFocus] = useState<'sessions' | 'chat'>('chat');
 
   useEffect(() => {
     return store.subscribe(() => setState(store.getState()));
   }, [store]);
+
+  // Tab to cycle focus between panels
+  useInput((_input, key) => {
+    if (key.tab) {
+      setFocus(f => (f === 'sessions' ? 'chat' : 'sessions'));
+    }
+  });
 
   const handleExit = useCallback(() => {
     // Trigger cleanup — will be caught by shutdown handlers in index.ts
@@ -39,14 +47,16 @@ function App({ store, client, engine }: AppProps) {
   }
 
   return (
-    <Layout>
+    <Layout focus={focus}>
       <SessionList
+        focus={focus}
         sessions={state.sessions}
         activeSessionId={state.activeSessionId}
         dispatch={store.dispatch}
         client={client}
       />
       <ChatArea
+        focus={focus}
         sessions={state.sessions}
         activeSessionId={state.activeSessionId}
         dispatch={store.dispatch}
