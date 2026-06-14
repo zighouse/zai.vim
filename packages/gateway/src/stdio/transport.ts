@@ -80,12 +80,16 @@ export function createStdioTransport(
 
   // ---- Event forwarding: EventBus → stdout via $/notification ---------------
   let eventDisposers: Array<() => void> = [];
+  let notificationSeq = 0;
 
   if (ctx) {
     const clientId = ctx.clientManager.generateId();
 
     for (const type of FORWARDED_EVENT_TYPES) {
-      const handler = (data: unknown) => output.write(encodeNotification(type, data));
+      const handler = (data: unknown) => {
+        notificationSeq += 1;
+        output.write(encodeNotification(type, data, notificationSeq));
+      };
       const dispose = ctx.eventBus.on(type as any, handler as any);
       eventDisposers.push(dispose);
       ctx.clientManager.trackDisposer(clientId, dispose);

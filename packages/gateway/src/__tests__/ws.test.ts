@@ -142,6 +142,36 @@ describe('WebSocket gateway', () => {
     sock.close();
   });
 
+  it('H3: $/notification frames carry a per-connection monotonic seq (AC5)', async () => {
+    setup = await spinUp();
+    const sock = await connect(setup.port);
+    await new Promise((r) => setTimeout(r, 20));
+
+    const collected: any[] = [];
+    const allReceived = new Promise<void>((resolve) => {
+      const handler = (raw: RawData) => {
+        collected.push(JSON.parse(raw.toString()));
+        if (collected.length >= 2) {
+          sock.off('message', handler);
+          resolve();
+        }
+      };
+      sock.on('message', handler);
+    });
+
+    setup.eventBus.emit('session.created', { sessionId: 's1' } as never);
+    setup.eventBus.emit('session.closed', { sessionId: 's1' } as never);
+
+    await allReceived;
+
+    const [m1, m2] = collected;
+    expect(typeof m1.params.seq).toBe('number');
+    expect(typeof m2.params.seq).toBe('number');
+    expect(m2.params.seq).toBeGreaterThan(m1.params.seq);
+
+    sock.close();
+  });
+
   it('AC3: returns method_not_found for unknown methods', async () => {
     setup = await spinUp();
     const sock = await connect(setup.port);

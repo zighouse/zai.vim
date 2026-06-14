@@ -7,13 +7,19 @@ import type { JsonRpcNotification } from '@zaivim/core';
 /**
  * Encode an engine event as a $/notification JSON-RPC message.
  * The notification follows the format:
- * {"jsonrpc":"2.0","method":"$/notification","params":{"type":"<event-type>","data":{...}}}
+ * {"jsonrpc":"2.0","method":"$/notification","params":{"type":"<event-type>","data":{...},"seq":N}}
+ *
+ * `seq` is a per-transport monotonic counter that lets clients detect gaps
+ * and reorder late-arriving frames (AC5). When omitted, no seq is emitted.
  */
-export function encodeNotification(type: string, data: unknown): string {
+export function encodeNotification(type: string, data: unknown, seq?: number): string {
+  const params: Record<string, unknown> = { type, data };
+  if (seq !== undefined) params.seq = seq;
+
   const notification: JsonRpcNotification = {
     jsonrpc: '2.0',
     method: '$/notification',
-    params: { type, data },
+    params,
   };
   return encodeLine(notification);
 }

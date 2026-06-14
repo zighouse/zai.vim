@@ -55,6 +55,8 @@ interface ConnectionState {
   readonly timestamps: number[];
   /** Timestamp (ms) when the current overage streak started; reset on a successful request. */
   overageStreakStart: number | null;
+  /** Per-connection monotonic counter stamped onto $/notification frames (AC5). */
+  notificationSeq: number;
   /** Heartbeat so we can GC dead sockets promptly. */
   alive: boolean;
 }
@@ -111,16 +113,20 @@ async function handleConnection(
     disposers: [],
     timestamps: [],
     overageStreakStart: null,
+    notificationSeq: 0,
     alive: true,
   };
 
   // ---- Subscribe to every forwarded engine event ---------------------------
   // Each subscription pushes a $/notification frame on the same socket so a
   // WS client receives engine-wide state changes alongside its RPC replies.
+  // Each frame carries a per-connection `seq` so the client can detect gaps
+  // and reorder (AC5).
   for (const type of FORWARDED_EVENT_TYPES) {
     const handler = (data: unknown): void => {
       if (state.alive && socket.readyState === socket.OPEN) {
-        socket.send(encodeNotification(type, data));
+        state.notificationSeq += 1;
+        socket.send(encodeNotification(type, data, state.notificationSeq));
       }
     };
     const dispose = deps.eventBus.on(type as never, handler as never);
