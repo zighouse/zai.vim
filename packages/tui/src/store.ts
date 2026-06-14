@@ -1,7 +1,7 @@
 // @zaivim/tui — Multi-session state management store
 // Drives UI re-renders through a subscribe/notify pattern compatible with ink/React.
 
-import type { ChatChunk, TuiClient, ConnectionStatus } from './client.js';
+import type { ChatChunk, ConnectionStatus } from './client.js';
 
 // ---- Types -------------------------------------------------------------------
 
@@ -237,7 +237,7 @@ export interface TuiStore {
   subscribe(listener: () => void): () => void;
 }
 
-export function createTuiStore(_client: TuiClient): TuiStore {
+export function createTuiStore(): TuiStore {
   let state = createInitialState();
   const listeners = new Set<() => void>();
 

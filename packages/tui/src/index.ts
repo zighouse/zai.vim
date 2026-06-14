@@ -52,7 +52,7 @@ export async function startTui(options?: TuiOptions): Promise<void> {
   const client = createTuiClient(engine);
 
   // Create store
-  const store = createTuiStore(client);
+  const store = createTuiStore();
 
   // Render ink app
   const { waitUntilExit } = renderTuiApp(store, client);
