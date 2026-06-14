@@ -101,7 +101,10 @@ endfun
 function! s:ui_tick(timer) abort
   if empty(s:chats) && s:timer != -1 | call timer_stop(s:timer) | let s:timer = -1 | return | endif
   for [_, c] in items(s:chats)
-    if bufexists(c.bufnr) | let &l:statusline = s:render_statusline(c) | endif
+    if bufexists(c.bufnr)
+      let wn = bufwinnr(c.bufnr)
+      if wn != -1 | call setwinvar(wn, '&statusline', s:render_statusline(c)) | endif
+    endif
   endfor
 endfun
 
