@@ -339,7 +339,7 @@ export async function* chat(
       }
 
       // 8. Execute valid tool calls
-      const toolResults = await executeToolCalls(valid, registry, {
+      const { messages: toolResults, pendingChangeIds } = await executeToolCalls(valid, registry, {
         sessionId: session.id,
         sandbox: session.config?.sandbox?.workDir ?? '/tmp',
         signal,
@@ -378,6 +378,19 @@ export async function* chat(
 
         // Persist to session (fire-and-forget)
         sessionStore.pushMessage(session.id, resultMsg);
+      }
+
+      // Story 3.5 (CR-1): if any tool result is pending user approval, pause agent
+      // by breaking the tool call loop. The pending results are already yielded
+      // to the client above; the engine does not continue to the next AI round
+      // until the approvals are resolved and a new user message triggers chat().
+      if (pendingChangeIds.length > 0) {
+        emit('agent.paused', {
+          sessionId: session.id,
+          reason: 'approval_pending',
+          pendingChangeIds,
+        });
+        break;
       }
 
       round++;

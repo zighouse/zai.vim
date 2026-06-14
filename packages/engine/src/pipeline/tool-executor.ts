@@ -72,7 +72,7 @@ export async function executeToolCall(
   tc: ToolCallRequest,
   registry: ToolRegistry,
   options: ToolExecutorOptions,
-): Promise<{ result: string; timedOut: boolean }> {
+): Promise<{ result: string; timedOut: boolean; pending?: boolean; pendingChangeId?: string }> {
   const toolDef = registry.get(tc.name);
   if (!toolDef) {
     return {
@@ -177,9 +177,18 @@ export async function executeToolCall(
       };
     }
     const output = typeof result === 'string' ? result : JSON.stringify(result);
+
+    // Story 3.5 (CR-1): detect pending approval so the caller can pause the agent
+    let pending = false;
+    let pendingChangeId: string | undefined;
+    if (typeof result === 'object' && result !== null) {
+      const r = result as Record<string, unknown>;
+      pending = r.pending === true;
+      pendingChangeId = pending ? (r.changeId as string) : undefined;
+    }
     // Security enforcement: postExecute audit (AC9 / ADR-5)
     await security.postExecute(tc.name, { success: true, output, sessionId: options.sessionId }).catch(() => {});
-    return { result: output, timedOut: false };
+    return { result: output, timedOut: false, pending, pendingChangeId };
   } catch (err) {
     if (err instanceof DOMException && err.name === 'TimeoutError' ||
         (err instanceof Error && err.message.includes('aborted'))) {
@@ -213,6 +222,11 @@ export async function executeToolCall(
   }
 }
 
+export interface ToolCallsResult {
+  messages: Message[];
+  pendingChangeIds: string[];
+}
+
 /**
  * Execute multiple tool calls (MVP: serial execution).
  * Returns tool result messages ready to be sent back to provider.
@@ -221,23 +235,28 @@ export async function executeToolCalls(
   toolCalls: ToolCallRequest[],
   registry: ToolRegistry,
   options: ToolExecutorOptions,
-): Promise<Message[]> {
-  const results: Message[] = [];
+): Promise<ToolCallsResult> {
+  const messages: Message[] = [];
+  const pendingChangeIds: string[] = [];
 
   for (const tc of toolCalls) {
     options.signal?.throwIfAborted();
 
-    const { result } = await executeToolCall(tc, registry, options);
+    const { result, pending, pendingChangeId } = await executeToolCall(tc, registry, options);
 
     const toolMsg: Message = {
       id: randomUUID(),
       role: 'tool',
       content: result,
     };
-    results.push(toolMsg);
+    messages.push(toolMsg);
+
+    if (pending && pendingChangeId) {
+      pendingChangeIds.push(pendingChangeId);
+    }
   }
 
-  return results;
+  return { messages, pendingChangeIds };
 }
 
 /**
