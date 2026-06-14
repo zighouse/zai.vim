@@ -7,7 +7,8 @@
 // SubSandboxProvider before security.preExecute so they never touch the
 // primary BwrapSecurityProvider sandbox (AC1).
 
-import type { ToolContext, ResponseChunk, Message, ISecurityProvider, SubSandboxConfig } from '@zaivim/core';
+import type { ToolContext, ResponseChunk, Message, ISecurityProvider, SubSandboxConfig, FileChangeProposal } from '@zaivim/core';
+import type { ApprovalManager } from './approval-manager.js';
 import { NullSecurityProvider } from '@zaivim/core';
 import { ToolRegistry, validateAndExecute } from '@zaivim/tools';
 import { randomUUID } from 'node:crypto';
@@ -52,6 +53,12 @@ export interface ToolExecutorOptions {
    * check). When omitted, the manager's built-in config is used.
    */
   readonly subSandboxConfig?: Partial<SubSandboxConfig>;
+  /**
+   * Story 3.5: when present, tools (file_write) can submit file modifications
+   * for async user approval via ToolContext.requestApproval. When absent,
+   * tools apply changes immediately (backward compatible).
+   */
+  readonly approvalManager?: ApprovalManager;
 }
 
 /**
@@ -145,6 +152,10 @@ export async function executeToolCall(
           options.sandboxManager,
           options.sandboxCapabilities,
         )
+      : undefined,
+    // Story 3.5: inject requestApproval callback when ApprovalManager is available
+    requestApproval: options.approvalManager
+      ? async (proposal: FileChangeProposal) => options.approvalManager!.submit(proposal)
       : undefined,
   };
 

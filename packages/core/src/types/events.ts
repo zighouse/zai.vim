@@ -95,6 +95,43 @@ export interface EngineEventMap {
   'provider.fallback': ProviderFallbackEvent;
   'provider.status': ProviderStatusEvent;
   'context.auto_trimmed': ContextAutoTrimmedEvent;
+
+  // ---- Approval events (Story 3.5) -----------------------------------------
+
+  /** A file change proposal is pending user approval (AC1) */
+  'approval.request': {
+    readonly changeId: string;
+    readonly proposal: import('./security.js').FileChangeProposal;
+    readonly timeoutMs: number;
+    readonly agentId: string;
+    readonly sessionId: string;
+  };
+  /** An approval has been resolved (AC2/AC3/AC4) */
+  'approval.resolved': {
+    readonly changeId: string;
+    readonly status: import('./approval.js').ApprovalStatus;
+    readonly acceptedFiles?: string[];
+    readonly rejectedFiles?: string[];
+  };
+  /** Approval timed out (AC5) */
+  'approval.timeout': {
+    readonly changeId: string;
+  };
+  /** Proposal queued behind an earlier one for the same file (AC6) */
+  'approval.queued': {
+    readonly changeId: string;
+    readonly waitingFor: string;
+  };
+  /** File was modified externally while pending — proposal stale (AC9) */
+  'approval.stale': {
+    readonly changeId: string;
+    readonly reason: string;
+  };
+  /** Repeated similar diff rejections detected (AC10) */
+  'approval.loop_detected': {
+    readonly changeId: string;
+    readonly similarRejections: number;
+  };
 }
 
 export type EngineEventType = keyof EngineEventMap;

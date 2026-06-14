@@ -173,6 +173,56 @@ export function createStdioTransport(
     return { status: 'overridden', operationId };
   });
 
+  // ---- Story 3.5: Async diff review approval RPC handlers -------------------
+
+  handlers.set('approval.accept', async (params?: unknown) => {
+    const p = params as Record<string, unknown>;
+    const changeId = p.changeId as string;
+    if (!changeId) throw new Error('Missing required parameter: changeId');
+    await engine.approvalAccept(changeId);
+    return { status: 'accepted', changeId };
+  });
+
+  handlers.set('approval.reject', async (params?: unknown) => {
+    const p = params as Record<string, unknown>;
+    const changeId = p.changeId as string;
+    if (!changeId) throw new Error('Missing required parameter: changeId');
+    await engine.approvalReject(changeId);
+    return { status: 'rejected', changeId };
+  });
+
+  handlers.set('approval.partial', async (params?: unknown) => {
+    const p = params as Record<string, unknown>;
+    const changeId = p.changeId as string;
+    const acceptFiles = p.acceptFiles as string[] | undefined;
+    const rejectFiles = p.rejectFiles as string[] | undefined;
+    if (!changeId) throw new Error('Missing required parameter: changeId');
+    await engine.approvalPartial(changeId, acceptFiles ?? [], rejectFiles ?? []);
+    return { status: 'partial', changeId, acceptedFiles: acceptFiles, rejectedFiles: rejectFiles };
+  });
+
+  handlers.set('approval.batchAccept', async (params?: unknown) => {
+    const p = params as Record<string, unknown>;
+    const changeIds = p.changeIds as string[] | undefined;
+    if (!changeIds || !Array.isArray(changeIds)) throw new Error('Missing required parameter: changeIds');
+    await engine.approvalBatchAccept(changeIds);
+    return { status: 'accepted', changeIds };
+  });
+
+  handlers.set('approval.batchReject', async (params?: unknown) => {
+    const p = params as Record<string, unknown>;
+    const changeIds = p.changeIds as string[] | undefined;
+    if (!changeIds || !Array.isArray(changeIds)) throw new Error('Missing required parameter: changeIds');
+    await engine.approvalBatchReject(changeIds);
+    return { status: 'rejected', changeIds };
+  });
+
+  handlers.set('approval.listPending', async (params?: unknown) => {
+    const p = params as Record<string, unknown> | undefined;
+    const sessionId = p?.sessionId as string | undefined;
+    return engine.approvalListPending(sessionId);
+  });
+
   const input = streams?.stdin ?? process.stdin;
   const output = streams?.stdout ?? process.stdout;
   const rl = createInterface({ input });
@@ -204,6 +254,14 @@ export function createStdioTransport(
       { type: 'provider.fallback', handler: (data) => output.write(encodeNotification('provider.fallback', data)) },
       { type: 'provider.status', handler: (data) => output.write(encodeNotification('provider.status', data)) },
       { type: 'context.auto_trimmed', handler: (data) => output.write(encodeNotification('context.auto_trimmed', data)) },
+
+      // Story 3.5: Approval event forwarding
+      { type: 'approval.request', handler: (data) => output.write(encodeNotification('approval.request', data)) },
+      { type: 'approval.resolved', handler: (data) => output.write(encodeNotification('approval.resolved', data)) },
+      { type: 'approval.timeout', handler: (data) => output.write(encodeNotification('approval.timeout', data)) },
+      { type: 'approval.queued', handler: (data) => output.write(encodeNotification('approval.queued', data)) },
+      { type: 'approval.stale', handler: (data) => output.write(encodeNotification('approval.stale', data)) },
+      { type: 'approval.loop_detected', handler: (data) => output.write(encodeNotification('approval.loop_detected', data)) },
     ];
 
     for (const { type, handler } of eventTypes) {

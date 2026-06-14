@@ -30,6 +30,7 @@ import { AsyncGeneratorAgent } from '../agent/index.js';
 import type { AgentDeps } from '../agent/index.js';
 import { chat as pipelineChat } from './chat.js';
 import type { ChatDeps } from './chat.js';
+import { ApprovalManager } from './approval-manager.js';
 import { findProjectRoot, scanProjectMeta, type ProjectRootResult } from './project-detector.js';
 import { SecurityEnricher } from './security-enricher.js';
 import { validatePatternTemplateSync } from '../security/risk-card.js';
@@ -43,6 +44,8 @@ export { assembleContext, estimateTokens, trimContext, PIPELINE_DEFAULTS } from 
 export { executeToolCall, executeToolCalls, validateToolCalls } from './tool-executor.js';
 export { classifyProviderError } from './error-classifier.js';
 export { SecurityEnricher } from './security-enricher.js';
+export { ApprovalManager } from './approval-manager.js';
+export type { ApprovalManagerOptions } from './approval-manager.js';
 export { ShellExecutorFactory } from './shell-executor.js';
 export type { SandboxCapabilities } from './shell-executor.js';
 export { resolveAttachments, formatAttachments } from './file-attachment.js';
@@ -72,6 +75,8 @@ export class Engine implements EngineAPI {
   #securityEnricher: SecurityEnricher;
   /** Story 3.4: high-risk tool sub-sandbox lifecycle manager. */
   #subSandboxManager: SubSandboxManager;
+  /** Story 3.5: async approval manager for file change review. */
+  #approvalManager: ApprovalManager;
   /** Project context cache — keyed by session ID (Story 1b.4) */
   readonly #projectContextCache = new Map<string, ProjectContext>();
   /** Timestamp of last mtime check per session */
@@ -197,6 +202,17 @@ export class Engine implements EngineAPI {
     this.#subSandboxManager = new SubSandboxManager({
       workspaceDir: this.#config.sandbox.workDir,
       onAudit: (action, detail) => this.#auditor.log(detail.sessionId as string ?? '', action, detail),
+    });
+
+    // Story 3.5: instantiate ApprovalManager for async diff review.
+    // All approval lifecycle events are funnelled through the engine's EventEmitter
+    // so Gateway's transport layer picks them up for $/notification forwarding.
+    this.#approvalManager = new ApprovalManager({
+      onAudit: (action, detail) => this.#auditor.log(detail.sessionId as string ?? '', action, detail),
+      onEmit: (event, data) => {
+        this.events.emit(event, data);
+        this.#auditor.log('', event, data);
+      },
     });
 
     const providerConfigs: Record<string, import('../provider/index.js').ProviderConfig> = {};
@@ -334,6 +350,8 @@ export class Engine implements EngineAPI {
       sessionId,
       // Story 3.4: wire SubSandboxManager for high-risk tool routing
       subSandboxManager: this.#subSandboxManager,
+      // Story 3.5: wire ApprovalManager for async diff review
+      approvalManager: this.#approvalManager,
     };
 
     yield* pipelineChat(session, message, deps, signal);
@@ -364,6 +382,32 @@ export class Engine implements EngineAPI {
       activeAgents: 0, // Growth: track active agent handles
       reason: sandboxAvailable ? undefined : 'sandbox unavailable',
     };
+  }
+
+  // ---- Story 3.5: Approval methods ----
+
+  async approvalAccept(changeId: string): Promise<void> {
+    await this.#approvalManager.accept(changeId);
+  }
+
+  async approvalReject(changeId: string): Promise<void> {
+    await this.#approvalManager.reject(changeId);
+  }
+
+  async approvalPartial(changeId: string, acceptFiles: string[], rejectFiles: string[]): Promise<void> {
+    await this.#approvalManager.partial(changeId, acceptFiles, rejectFiles);
+  }
+
+  async approvalBatchAccept(changeIds: string[]): Promise<void> {
+    await this.#approvalManager.batchAccept(changeIds);
+  }
+
+  async approvalBatchReject(changeIds: string[]): Promise<void> {
+    await this.#approvalManager.batchReject(changeIds);
+  }
+
+  approvalListPending(sessionId?: string): import('@zaivim/core').PendingApproval[] {
+    return this.#approvalManager.listPending(sessionId);
   }
 
   // ---- User Override (Story 2.2, FR66) ----
@@ -402,6 +446,9 @@ export class Engine implements EngineAPI {
     // Story 3.4 (AC3): tear down all active sub-sandboxes on engine shutdown so
     // no bwrap process or tmpfs residue outlives the engine.
     await this.#subSandboxManager.destroyAll().catch(() => {});
+    // Story 3.5: cancel all pending approvals on engine shutdown so no orphaned
+    // changeId remains in memory.
+    this.#approvalManager.cancelAll();
     // Close all active sessions
     for (const session of this.#sessionStore.list()) {
       if (session.status === 'active') {

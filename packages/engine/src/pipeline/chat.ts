@@ -42,6 +42,11 @@ export interface ChatDeps {
    * tool calls return ISOLATED_UNAVAILABLE instead of failing the pipeline.
    */
   readonly subSandboxManager?: import('../security/index.js').SubSandboxManager;
+  /**
+   * Story 3.5: approval manager for async diff review. When present, file_write
+   * tools can submit changes for user approval instead of applying immediately.
+   */
+  readonly approvalManager?: import('./approval-manager.js').ApprovalManager;
 }
 
 type EmitFn = (event: string, data: Record<string, unknown>) => void;
@@ -344,6 +349,8 @@ export async function* chat(
         emit,
         // Story 3.4: thread sub-sandbox manager so high-risk tools route to isolation
         subSandboxManager: deps.subSandboxManager,
+        // Story 3.5: thread approval manager for async diff review
+        approvalManager: deps.approvalManager,
       });
 
       // 9. Yield tool_result chunks and add to working messages

@@ -46,6 +46,10 @@ export interface FileWriteResult {
   path: string;
   proposal?: FileChangeProposal;
   size: number;
+  /** Story 3.5: true when the write is pending user approval */
+  pending?: boolean;
+  /** Story 3.5: changeId for the pending approval */
+  changeId?: string;
 }
 
 export interface FileChangeProposal {
@@ -263,11 +267,47 @@ export const fileWriteTool: ToolDefinition<FileWriteParams, FileWriteResult> = {
         proposedContent: params.content,
         operation: 'modify',
       };
+
+      // 4a. Story 3.5: Async approval path — submit for review instead of writing
+      if (ctx.requestApproval) {
+        // Build core-compatible proposal with required fields
+        const coreProposal: import('@zaivim/core').FileChangeProposal = {
+          path: params.path,
+          operation: 'modify',
+          diff,
+          reason: `Modify ${params.path}`,
+          originalPath: params.path,
+          backupPath,
+          proposedContent: params.content,
+          sessionId: ctx.sessionId,
+        };
+
+        const pending = await ctx.requestApproval(coreProposal);
+        const byteLen = Buffer.byteLength(params.content, 'utf-8');
+
+        ctx.audit('file_write', {
+          path: params.path,
+          size: byteLen,
+          isNew: !exists,
+          pending: true,
+          changeId: pending.changeId,
+        });
+
+        return {
+          path: params.path,
+          proposal,
+          size: byteLen,
+          pending: true,
+          changeId: pending.changeId,
+        };
+      }
     }
 
     // 5. Atomic write: write to temp file in the same directory, then rename.
     // POSIX rename() is atomic — a crash mid-write leaves the original file
     // intact and the temp file orphaned, never a half-written target.
+    // (Skipped when approval path was taken above; reaching here means either
+    // this is a new file or ctx.requestApproval was undefined.)
     mkdirSync(dirname(targetPath), { recursive: true });
     const tempPath = resolve(dirname(targetPath), `.${basename(targetPath)}.${randomBytes(6).toString('hex')}.tmp`);
     writeFileSync(tempPath, params.content, 'utf-8');

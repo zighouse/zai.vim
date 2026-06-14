@@ -180,6 +180,30 @@ export class EngineImpl extends EventEmitter implements EngineAPI {
     throw new Error('chat() is not available on the lifecycle engine. Use the pipeline Engine from @zaivim/engine/pipeline.');
   }
 
+  async approvalAccept(_changeId: string): Promise<void> {
+    throw new Error('approvalAccept() is not available on the lifecycle engine. Use the pipeline Engine from @zaivim/engine/pipeline.');
+  }
+
+  async approvalReject(_changeId: string): Promise<void> {
+    throw new Error('approvalReject() is not available on the lifecycle engine. Use the pipeline Engine from @zaivim/engine/pipeline.');
+  }
+
+  async approvalPartial(_changeId: string, _acceptFiles: string[], _rejectFiles: string[]): Promise<void> {
+    throw new Error('approvalPartial() is not available on the lifecycle engine. Use the pipeline Engine from @zaivim/engine/pipeline.');
+  }
+
+  async approvalBatchAccept(_changeIds: string[]): Promise<void> {
+    throw new Error('approvalBatchAccept() is not available on the lifecycle engine. Use the pipeline Engine from @zaivim/engine/pipeline.');
+  }
+
+  async approvalBatchReject(_changeIds: string[]): Promise<void> {
+    throw new Error('approvalBatchReject() is not available on the lifecycle engine. Use the pipeline Engine from @zaivim/engine/pipeline.');
+  }
+
+  approvalListPending(_sessionId?: string): import('@zaivim/core').PendingApproval[] {
+    throw new Error('approvalListPending() is not available on the lifecycle engine. Use the pipeline Engine from @zaivim/engine/pipeline.');
+  }
+
   getHealth(): EngineHealth {
     return {
       status: this.#stateMachine.isRunning ? 'ok' : 'down',

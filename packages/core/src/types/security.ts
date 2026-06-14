@@ -80,12 +80,25 @@ export interface AuditEntry {
  * File change proposal for approval flow
  *
  * Proposed file changes that require user approval.
+ * Story 3.5 (async approval): enhanced with changeId, agentId, sessionId,
+ * timestamp, timeoutMs, baseFileHash for the full async approval lifecycle.
  */
 export interface FileChangeProposal {
   readonly path: string;
   readonly operation: 'create' | 'modify' | 'delete';
   readonly diff?: string;
   readonly reason: string;
+  // --- Write-backup fields (tools/src/file.ts original) ---
+  readonly originalPath?: string;
+  readonly backupPath?: string;
+  readonly proposedContent?: string;
+  // --- Story 3.5 async approval fields ---
+  readonly changeId?: string;
+  readonly agentId?: string;
+  readonly sessionId?: string;
+  readonly timestamp?: number;
+  readonly timeoutMs?: number;
+  readonly baseFileHash?: string;
 }
 
 // =============================================================================

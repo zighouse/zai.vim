@@ -159,6 +159,11 @@ export interface AgentPool {
 import type { HarmLevel, SecurityDecision, SecurityStatus, AuditEntry, ISecurityProvider, SecurityContext, FileChangeProposal, FileOperationType, FileClassification, HarmLevelBadge, RiskCard, RiskCardSeverity, OverrideRequest, OverrideRecord, SecurityDegradedNotification, SecuritySecureNotification, SecurityNotification, ToolSecurityNotification, SafeFileHandle, WriteApproval, FileOperation } from './security.js';
 export type { HarmLevel, SecurityDecision, SecurityStatus, AuditEntry, ISecurityProvider, SecurityContext, FileChangeProposal, FileOperationType, FileClassification, HarmLevelBadge, RiskCard, RiskCardSeverity, OverrideRequest, OverrideRecord, SecurityDegradedNotification, SecuritySecureNotification, SecurityNotification, ToolSecurityNotification, SafeFileHandle, WriteApproval, FileOperation };
 
+// ---- Approval types (Story 3.5) -----------------------------------------------
+
+import type { ApprovalStatus, PendingApproval, ApprovalLoopDetection, ApprovalEvent, RequestApprovalFn } from './approval.js';
+export type { ApprovalStatus, PendingApproval, ApprovalLoopDetection, ApprovalEvent, RequestApprovalFn };
+
 // ---- Audit types (Story 2.3) -----------------------------------------------
 
 import type { SafetyLevel, AuditEventType, AuditEvent, AuditQueryFilter, AuditSummary, IAuditor } from './audit.js';
@@ -300,6 +305,19 @@ export interface ToolContext {
       readonly stdio?: import('child_process').StdioOptions;
     },
   ): import('child_process').ChildProcess;
+  /**
+   * Story 3.5: Async approval callback for file modifications.
+   *
+   * When present, file_write tools submit changes for user approval instead of
+   * applying them immediately. The tool returns a PendingApproval with changeId
+   * and the engine pauses the agent until the user accepts/rejects/times out.
+   *
+   * When absent (test environments, CLI batch mode), file_write applies changes
+   * immediately — fully backward compatible.
+   *
+   * Only file_write checks this callback; other tools ignore it.
+   */
+  readonly requestApproval?: import('./approval.js').RequestApprovalFn;
 }
 
 // ---- Web tool types (Story 3.2b) -----------------------------------------
@@ -465,6 +483,18 @@ export interface EngineAPI {
   getHealth(): EngineHealth;
   /** Request user override of a blocked security operation (Story 2.2, FR66) */
   requestOverride(operationId: string, acknowledgment: string, sessionId: string): Promise<boolean>;
+  /** Story 3.5: Accept a pending file change approval (AC2) */
+  approvalAccept(changeId: string): Promise<void>;
+  /** Story 3.5: Reject a pending file change approval (AC3) */
+  approvalReject(changeId: string): Promise<void>;
+  /** Story 3.5: Partially accept a multi-file change approval (AC4) */
+  approvalPartial(changeId: string, acceptFiles: string[], rejectFiles: string[]): Promise<void>;
+  /** Story 3.5: Batch accept multiple approvals (AC11) */
+  approvalBatchAccept(changeIds: string[]): Promise<void>;
+  /** Story 3.5: Batch reject multiple approvals (AC11) */
+  approvalBatchReject(changeIds: string[]): Promise<void>;
+  /** Story 3.5: List pending approvals, optionally filtered by session (AC8) */
+  approvalListPending(sessionId?: string): import('./approval.js').PendingApproval[];
   destroy(options?: Partial<ShutdownOptions>): Promise<void>;
 }
 
