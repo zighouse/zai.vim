@@ -107,6 +107,11 @@ class FileLockManager {
       }
     }
   }
+
+  /** Release all file locks (engine shutdown). */
+  releaseAll(): void {
+    this.#locks.clear();
+  }
 }
 
 // ─── ApprovalManager ───────────────────────────────────────────────────────────
@@ -471,7 +476,7 @@ export class ApprovalManager {
       this.#cancelSingle(cid);
     }
     this.#agentPauseStates.clear();
-    this.#fileLocks.releaseSession('*');
+    this.#fileLocks.releaseAll();
   }
 
   // ─── Private ───────────────────────────────────────────────────────────────
