@@ -23,6 +23,49 @@ export interface DispatchResult {
   readonly errorData?: unknown;
 }
 
+/** ADR-24 — /health 三项检查 + 60s 缓存. */
+export const HEALTH_CACHE_TTL_MS = 60_000;
+
+/** Shape returned by both the `health` JSON-RPC handler and the HTTP /health route. */
+export interface HealthSnapshot {
+  status: string;
+  version: string;
+  sandboxAvailable: boolean;
+  activeSessions: number;
+  methods?: Record<string, string>;
+}
+
+/**
+ * TTL cache for the /health snapshot. ADR-24 requires a 60s cache so
+ * polling clients don't re-run provider/sandbox/session checks on every
+ * request. Exposes `invalidate()` for tests and shutdown.
+ */
+export class HealthCache {
+  #snapshot: HealthSnapshot | undefined;
+  #expiresAt = 0;
+  readonly #ttlMs: number;
+  readonly #compute: () => HealthSnapshot;
+
+  constructor(compute: () => HealthSnapshot, ttlMs: number = HEALTH_CACHE_TTL_MS) {
+    this.#compute = compute;
+    this.#ttlMs = ttlMs;
+  }
+
+  get(): HealthSnapshot {
+    const now = Date.now();
+    if (this.#snapshot === undefined || now >= this.#expiresAt) {
+      this.#snapshot = this.#compute();
+      this.#expiresAt = now + this.#ttlMs;
+    }
+    return this.#snapshot;
+  }
+
+  invalidate(): void {
+    this.#snapshot = undefined;
+    this.#expiresAt = 0;
+  }
+}
+
 /**
  * HandlerRegistry owns every JSON-RPC method handler. Transports (stdio,
  * HTTP, WS) call `dispatch()` for each incoming request; they never touch
@@ -34,18 +77,51 @@ export class HandlerRegistry {
   readonly #pidPath?: string;
   readonly #transportContext?: TransportContext;
   readonly #standaloneAcl?: MethodACL;
+  readonly #healthCache: HealthCache;
 
   constructor(
     engine: EngineAPI,
     pidPath?: string,
     transportContext?: TransportContext,
     standaloneAcl?: MethodACL,
+    healthCacheTtlMs?: number,
   ) {
     this.#engine = engine;
     this.#pidPath = pidPath;
     this.#transportContext = transportContext;
     this.#standaloneAcl = standaloneAcl;
+    this.#healthCache = new HealthCache(() => this.#computeHealth(), healthCacheTtlMs);
     this.#registerBuiltins();
+  }
+
+  /** Current /health snapshot — cached for `healthCacheTtlMs` (default 60s, ADR-24). */
+  getHealthSnapshot(): HealthSnapshot {
+    return this.#healthCache.get();
+  }
+
+  /** Force the next /health read to re-run the three checks. */
+  invalidateHealthCache(): void {
+    this.#healthCache.invalidate();
+  }
+
+  #computeHealth(): HealthSnapshot {
+    const health = this.#engine.getHealth();
+    let status = health.status;
+
+    if (status === 'ok' && this.#pidPath) {
+      const pidData = readPidFile(this.#pidPath);
+      if (!pidData || !isProcessAlive(pidData.pid)) {
+        status = 'down';
+      }
+    }
+
+    return {
+      status,
+      version: this.#engine.version,
+      sandboxAvailable: health.sandboxAvailable,
+      activeSessions: health.activeSessions,
+      ...(this.acl ? { methods: this.acl.listMethods() } : {}),
+    };
   }
 
   /** Register (or override) a method handler. */
@@ -126,28 +202,9 @@ export class HandlerRegistry {
    */
   #registerBuiltins(): void {
     const engine = this.#engine;
-    const pidPath = this.#pidPath;
     const ctx = this.#transportContext;
 
-    this.register('health', (params?: unknown) => {
-      const health = engine.getHealth();
-      let status = health.status;
-
-      if (status === 'ok' && pidPath) {
-        const pidData = readPidFile(pidPath);
-        if (!pidData || !isProcessAlive(pidData.pid)) {
-          status = 'down';
-        }
-      }
-
-      return {
-        status,
-        version: engine.version,
-        sandboxAvailable: health.sandboxAvailable,
-        activeSessions: health.activeSessions,
-        ...(this.acl ? { methods: this.acl.listMethods() } : {}),
-      };
-    });
+    this.register('health', () => this.#healthCache.get());
 
     this.register('ping', () => ({
       status: 'ok',

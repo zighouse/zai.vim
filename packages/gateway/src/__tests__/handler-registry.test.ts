@@ -47,6 +47,35 @@ describe('HandlerRegistry', () => {
     expect(result.result).toMatchObject({ status: 'ok', version: '0.1.0' });
   });
 
+  it('H2: /health snapshot is cached for the TTL window (ADR-24)', async () => {
+    const engine = createMockEngine();
+    // TTL of 60ms so the test resolves fast — the production default is 60_000ms.
+    const registry = new HandlerRegistry(engine, undefined, undefined, undefined, 60);
+
+    registry.getHealthSnapshot();
+    registry.getHealthSnapshot();
+    registry.getHealthSnapshot();
+    expect(engine.getHealth).toHaveBeenCalledTimes(1);
+
+    // After the TTL expires, the next call re-computes.
+    await new Promise((r) => setTimeout(r, 80));
+    registry.getHealthSnapshot();
+    expect(engine.getHealth).toHaveBeenCalledTimes(2);
+  });
+
+  it('H2: invalidateHealthCache forces re-computation on next read', () => {
+    const engine = createMockEngine();
+    const registry = new HandlerRegistry(engine);
+
+    registry.getHealthSnapshot();
+    registry.getHealthSnapshot();
+    expect(engine.getHealth).toHaveBeenCalledTimes(1);
+
+    registry.invalidateHealthCache();
+    registry.getHealthSnapshot();
+    expect(engine.getHealth).toHaveBeenCalledTimes(2);
+  });
+
   it('returns method_not_found for unregistered methods', async () => {
     const engine = createMockEngine();
     const registry = new HandlerRegistry(engine);

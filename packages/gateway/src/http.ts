@@ -12,7 +12,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { JSONRPC_ERROR_CODES } from '@zaivim/core';
 import type { JsonRpcMessage, JsonRpcRequest } from '@zaivim/core';
-import { readPidFile, isProcessAlive } from '@zaivim/engine';
 import { decode, successResponse, errorResponse } from '@zaivim/core';
 import type { EngineAPI } from '@zaivim/core';
 import { HandlerRegistry } from './handler-registry.js';
@@ -182,26 +181,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, deps: Ha
   res.end(JSON.stringify({ error: { code: -32601, message: `Not found: ${req.method} ${path}` } }));
 }
 
-/** AC1 — GET /health returns the same structure as the JSON-RPC health handler. */
+/** AC1 — GET /health returns the same structure as the JSON-RPC health handler.
+ *  Delegates to HandlerRegistry.getHealthSnapshot() so HTTP and JSON-RPC share
+ *  the ADR-24 60s TTL cache. */
 function handleHealth(res: ServerResponse, deps: HandleRequestDeps): void {
-  const health = deps.engine.getHealth();
-  let status = health.status;
-
-  if (status === 'ok' && deps.pidPath) {
-    const pidData = readPidFile(deps.pidPath);
-    if (!pidData || !isProcessAlive(pidData.pid)) {
-      status = 'down';
-    }
-  }
-
-  const body = {
-    status,
-    version: deps.engine.version,
-    sandboxAvailable: health.sandboxAvailable,
-    activeSessions: health.activeSessions,
-    ...(deps.registry.acl ? { methods: deps.registry.acl.listMethods() } : {}),
-  };
-
+  const body = deps.registry.getHealthSnapshot();
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
 }
