@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-06-14
+
+### Added
+
+#### Epic 4: Editor & Terminal Clients (MVP+Growth)
+
+**Story 4.1: Vim JSON-RPC Client Adapter**
+- `vim-rpc-server` subcommand: JSON-RPC over stdio bridge for Vim integration
+- `sanitize-terminal.ts`: shared terminal sanitizer (ANSI escape stripping, control char replacement, Vim command injection protection) — 31 unit tests
+- VimScript adapter layer (227 non-comment lines): `rpc.vim` (JSON-RPC channel), `chat.vim` (chat buffer + compact/verbose modes + phase statusline), `agent.vim` (agent lifecycle), `sessions.vim` (session list window with alive-state icons)
+- Forward-compat chunk dispatcher (AC10): unknown chunk types pass through without error, phase chunks forwarded as notifications
+- Phase statusline (AC11): 6 phase-to-icon mappings with 200ms `ui_tick` refresh
+- Vim 8.x + Neovim 0.10+ dual path with GBK/UTF-8 encoding handling
+- ACL integration: session-scoped method tokens, admin token for config.reload
+- Smoke test: 5 JSON-RPC protocol tests (health, session, ping, error, ACL)
+- Stress test: 600-chunk streaming with multi-session operations
+
+### Fixed
+
+- `handleChatCancel` now respects session id parameter instead of cancelling first active stream
+- `agent.cancel` handler implemented in vim-rpc-server (was registered in ACL but missing from dispatch)
+- Vim 8.x `out_cb` function signature mismatch: wrapper normalizes parsed JSON dict back to string
+- `zai#chat#switch` implemented (was called from sessions list but undefined)
+- `s:ui_tick` uses `setwinvar` to target correct window instead of current window's `&l:statusline`
+- `s:render_output` no longer appends duplicate `stream_buf[-1]` on mode toggle
+- vim-rpc-server ACL aligned with actually implemented methods (removed stale entries)
+- Stderr logging callback writes vim-rpc-server debug output to message history
+
+### Changed
+
+- `@zaivim/vim-adapter` bumped from 0.0.0 (stub) to 0.1.4
+
 ## [0.1.3] - 2026-06-14
 
 ### Added
