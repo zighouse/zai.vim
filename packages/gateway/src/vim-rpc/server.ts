@@ -134,12 +134,10 @@ export async function runVimRpcServer(
     const id = params.id as string;
     if (!id) throw new Error('Missing parameter: id');
 
-    // Find session by matching abort controller
-    for (const [, vs] of sessions) {
-      if (vs.abortController && vs.isStreaming) {
-        vs.abortController.abort();
-        return { status: 'cancelled' };
-      }
+    const vs = sessions.get(id);
+    if (vs?.abortController && vs.isStreaming) {
+      vs.abortController.abort();
+      return { status: 'cancelled' };
     }
     return { status: 'no_active_stream' };
   }
