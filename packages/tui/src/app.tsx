@@ -24,10 +24,19 @@ function App({ store, client }: AppProps) {
     return store.subscribe(() => setState(store.getState()));
   }, [store]);
 
-  // Tab to cycle focus between panels
-  useInput((_input, key) => {
+  // Tab to cycle focus between panels; Ctrl+N always creates a new session
+  useInput(async (_input, key) => {
     if (key.tab) {
       setFocus(f => (f === 'sessions' ? 'chat' : 'sessions'));
+    } else if (key.ctrl && _input === 'n') {
+      try {
+        const result = await client.send('session.create') as { sessionId: string };
+        const name = `Session ${store.getState().sessions.size + 1}`;
+        store.dispatch({ type: 'SESSION_CREATED', payload: { id: result.sessionId, name } });
+        store.dispatch({ type: 'SESSION_ACTIVATED', payload: { id: result.sessionId } });
+      } catch {
+        // Session creation failed silently
+      }
     }
   });
 

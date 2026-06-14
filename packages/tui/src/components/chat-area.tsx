@@ -107,8 +107,8 @@ export function ChatArea({
 
   // All keyboard input goes through one hook — only active when this panel is focused
   useInput((inputChar, key) => {
-    if (key.ctrl && inputChar === 'c') {
-      // Ctrl+C — let ink handle default behavior
+    if (key.ctrl) {
+      // Ctrl+letter combos (Ctrl+N, Ctrl+C) are handled at App level
       return;
     }
 
