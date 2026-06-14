@@ -166,10 +166,18 @@ function onMessage(
       socket.close(CLOSE_CODE_POLICY_VIOLATION, 'rate limit sustained overage');
       return;
     }
+    // AC6 message text is preserved verbatim (code + message), wrapped in a
+    // JSON-RPC error envelope so clients can correlate via id and treat it
+    // like every other error path. id is null because the rate-limit check
+    // runs before decode — we don't yet know which request triggered it.
     socket.send(
       JSON.stringify({
-        code: 'RATE_LIMITED',
-        message: `too many requests: max ${deps.rateLimit}/sec per connection`,
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: 'RATE_LIMITED',
+          message: `too many requests: max ${deps.rateLimit}/sec per connection`,
+        },
       }),
     );
     return;

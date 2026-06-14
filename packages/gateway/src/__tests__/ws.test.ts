@@ -238,9 +238,11 @@ describe('WebSocket gateway', () => {
       });
     });
 
-    const rateLimited = messages.filter((m) => m.code === 'RATE_LIMITED');
+    const rateLimited = messages.filter((m) => m.error?.code === 'RATE_LIMITED');
     expect(rateLimited.length).toBeGreaterThan(0);
-    expect(rateLimited[0].message).toContain('max 3/sec');
+    expect(rateLimited[0].error.message).toContain('max 3/sec');
+    expect(rateLimited[0].jsonrpc).toBe('2.0');
+    expect(rateLimited[0].id).toBeNull();
 
     sock.close();
   });
