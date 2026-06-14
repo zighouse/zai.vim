@@ -10,6 +10,9 @@ import type { EngineConfig, EngineStatus, EngineAPI } from '@zaivim/core';
 import { ZaiConfigError, ZaiInstanceConflictError } from '@zaivim/core';
 import { createStdioTransport } from './stdio/transport.js';
 import { TransportContext } from './stdio/transport-context.js';
+import { HandlerRegistry } from './handler-registry.js';
+import { createHttpGateway, type HttpGateway } from './http.js';
+import { createWebSocketGateway, type WebSocketGateway } from './ws.js';
 import { generateAdminToken, removeAdminToken } from './admin-token.js';
 import { createChatRepl, printStreamChunk } from './chat/repl.js';
 import { createMarkdownRenderer } from './chat/markdown-renderer.js';
@@ -104,6 +107,14 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean; yes?
   const clientManager = new ClientManager(eventBus);
   const transportContext = new TransportContext({ eventBus, clientManager });
 
+  // Story 4.3 — Build the shared HandlerRegistry once; stdio/HTTP/WS all reuse it.
+  const handlerRegistry = new HandlerRegistry(engine, config.pidFile, transportContext);
+
+  // Story 4.3 — Optionally start HTTP/WS gateways when ZAI_GATEWAY_HTTP_PORT > 0.
+  const httpPort = parseGatewayPort(process.env.ZAI_GATEWAY_HTTP_PORT);
+  let httpGateway: HttpGateway | undefined;
+  let wsGateway: WebSocketGateway | undefined;
+
   // Enforce startup timeout (NFR4)
   const startupTimer = setTimeout(() => {
     console.error(`Engine startup timed out after ${config.startupTimeout}ms`);
@@ -115,15 +126,47 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean; yes?
 
   const shutdown = () => {
     removeAdminToken();
-    transportContext.dispose();
-    engine.destroy().then(() => {
-      removePidFile(config.pidFile);
-      process.exit(0);
-    });
+    // Close HTTP/WS first so no new requests arrive mid-teardown (Story 4.3).
+    Promise.resolve()
+      .then(() => (wsGateway ? wsGateway.close() : undefined))
+      .then(() => (httpGateway ? httpGateway.close() : undefined))
+      .catch(() => undefined) // best-effort
+      .finally(() => {
+        transportContext.dispose();
+        engine.destroy().then(() => {
+          removePidFile(config.pidFile);
+          process.exit(0);
+        });
+      });
   };
 
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
+
+  // Story 4.3 — daemon mode also starts HTTP/WS (management surface when stdio is /dev/null).
+  if (httpPort > 0) {
+    httpGateway = createHttpGateway({
+      port: httpPort,
+      handlerRegistry,
+      engine,
+      pidPath: config.pidFile,
+      adminToken,
+    });
+    wsGateway = createWebSocketGateway({
+      server: httpGateway.server,
+      handlerRegistry,
+      eventBus,
+    });
+    // Wait until the server is actually listening so the log line is accurate.
+    httpGateway.started
+      .then(() => {
+        console.log(`HTTP gateway listening on port ${httpGateway!.port}`);
+      })
+      .catch((err: Error) => {
+        console.error(`HTTP gateway failed to start: ${err.message}`);
+        process.exit(1);
+      });
+  }
 
   if (opts?.daemon) {
     // Daemon mode: no stdio transport (stdio is /dev/null)
@@ -151,7 +194,11 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean; yes?
   }
 
   // Wire stdio transport for JSON-RPC with ACL + event support (AC1, AC5, AC6)
-  createStdioTransport(engine, config.pidFile, undefined, { transportContext });
+  // Reuse the same HandlerRegistry so HTTP/WS see identical method dispatch.
+  createStdioTransport(engine, config.pidFile, undefined, {
+    transportContext,
+    handlerRegistry,
+  });
 
   // Engine is ready — clear startup timeout
   clearTimeout(startupTimer);
@@ -164,6 +211,14 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean; yes?
 
   // Keep process alive
   process.stdin.resume();
+}
+
+/** Parse ZAI_GATEWAY_HTTP_PORT — 0/disabled/invalid disables the gateway. */
+function parseGatewayPort(raw: string | undefined): number {
+  if (!raw) return 0;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return n;
 }
 
 async function cmdServe(daemon: boolean, yes?: boolean): Promise<void> {
