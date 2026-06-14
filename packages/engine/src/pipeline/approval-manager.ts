@@ -370,7 +370,12 @@ export class ApprovalManager {
 
   /**
    * Partially accept a multi-file change (AC4).
-   * Only the files listed in acceptFiles are written; rejectFiles are left untouched.
+   *
+   * MVP limitation: FileChangeProposal models a single file. When acceptFiles
+   * includes the proposal's path (or acceptFiles is empty/unrelated), the
+   * proposal is written. When the path is explicitly in rejectFiles, the write
+   * is skipped. True multi-file proposals (one changeId → N files) require a
+   * data model extension.
    */
   async partial(changeId: string, acceptFiles: string[], rejectFiles: string[]): Promise<void> {
     const entry = this.#pending.get(changeId);
@@ -390,11 +395,23 @@ export class ApprovalManager {
 
     this.#clearTimeout(changeId);
 
-    // For MVP, partial approve is primarily a notification — the client handles
-    // per-file granularity by calling accept/reject per file or working with
-    // the result. The actual file write applies accepted changes.
-    if (acceptFiles.length > 0) {
+    // Decide whether to write: write if proposal's path is in acceptFiles,
+    // OR if acceptFiles is non-empty but non-matching (upgrade to accept),
+    // BUT skip if the path is explicitly in rejectFiles.
+    const proposalPath = entry.proposal.path;
+    const shouldWrite = acceptFiles.length > 0
+      ? acceptFiles.includes(proposalPath) || !rejectFiles.includes(proposalPath)
+      : !rejectFiles.includes(proposalPath);
+
+    if (shouldWrite) {
       await this.#applyPendingWrite(entry);
+    } else {
+      this.#onAudit('approval.partial_skipped', {
+        changeId,
+        reason: proposalPath && rejectFiles.includes(proposalPath)
+          ? 'file in rejectFiles'
+          : 'no accepted files',
+      });
     }
 
     this.#onEmit('approval.resolved', {

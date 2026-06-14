@@ -2,7 +2,7 @@
 // Covers AC1–AC13 with focused assertions on each acceptance criterion.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ApprovalManager } from '../pipeline/approval-manager.js';
@@ -189,6 +189,17 @@ describe('ApprovalManager — AC4: Partial accept', () => {
       acceptFiles: 'a.ts',
       rejectFiles: 'b.ts',
     }));
+  });
+
+  it('partial with file in rejectFiles skips write', async () => {
+    const { manager } = makeManager();
+    const testFile = initTestFile('src/partial-skip.ts', 'original content');
+    const { changeId } = manager.submit(makeProposal({ path: testFile, proposedContent: 'new content' }));
+
+    await manager.partial(changeId, [], [testFile]);
+
+    // File content should remain unchanged
+    expect(readFileSync(testFile, 'utf-8')).toBe('original content');
   });
 });
 
