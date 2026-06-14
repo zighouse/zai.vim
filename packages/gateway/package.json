@@ -2,7 +2,7 @@
   "name": "@zaivim/gateway",
   "version": "0.1.3",
   "private": false,
-  "description": "zai.vim gateway \u2014 CLI, stdio, HTTP transports + JSON-RPC",
+  "description": "zai.vim gateway \u2014 CLI, stdio, HTTP + WebSocket transports, JSON-RPC",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",

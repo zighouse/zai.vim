@@ -143,8 +143,13 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean; yes?
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 
-  // Story 4.3 — daemon mode also starts HTTP/WS (management surface when stdio is /dev/null).
-  if (httpPort > 0) {
+  // Story 4.3 — start HTTP/WS gateways when ZAI_GATEWAY_HTTP_PORT > 0. Called
+  // from both the daemon path (where stdio is /dev/null — gateway is the only
+  // management surface) and the foreground path (after stdio is wired, before
+  // the startup timer is cleared). Both paths share the same HandlerRegistry
+  // so HTTP/WS see identical method dispatch as stdio.
+  const startGateways = (): void => {
+    if (httpPort <= 0) return;
     httpGateway = createHttpGateway({
       port: httpPort,
       handlerRegistry,
@@ -166,11 +171,12 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean; yes?
         console.error(`HTTP gateway failed to start: ${err.message}`);
         process.exit(1);
       });
-  }
+  };
 
   if (opts?.daemon) {
-    // Daemon mode: no stdio transport (stdio is /dev/null)
-    // Engine runs until SIGTERM
+    // Daemon mode: no stdio transport (stdio is /dev/null).
+    // Gateway is the management surface — start it before the early return.
+    startGateways();
     clearTimeout(startupTimer);
 
     console.log(`Engine running in daemon mode (pid: ${process.pid})`);
@@ -199,6 +205,10 @@ async function startEngine(config: EngineConfig, opts?: { daemon?: boolean; yes?
     transportContext,
     handlerRegistry,
   });
+
+  // Story 4.3 — start HTTP/WS AFTER stdio is wired and BEFORE the startup
+  // timer is cleared, per Task 4. Daemon path starts the gateway above.
+  startGateways();
 
   // Engine is ready — clear startup timeout
   clearTimeout(startupTimer);
