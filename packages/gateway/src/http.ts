@@ -3,11 +3,16 @@
 // Same JSON-RPC semantics as stdio, over a small HTTP surface:
 //   GET  /health    — ADR-24 三项检查的 HTTP 表达，application/json
 //   POST /jsonrpc   — JSON-RPC request body → JSON-RPC response body
-//                     (or text/event-stream when handler returns AsyncIterable)
 //
 // All dispatch goes through the shared HandlerRegistry — no method is
 // re-registered here. ACL still applies: session-scoped / admin methods
 // require a `token` field in params, exactly like stdio.
+//
+// NOTE: streaming output (SSE / text/event-stream for AsyncIterable handlers
+// such as chat.send) is intentionally not implemented in MVP. The shared
+// chat.send handler aggregates chunks into a single JSON response. SSE
+// support is deferred to a follow-up story along with per-session
+// AbortController tracking.
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { JSONRPC_ERROR_CODES } from '@zaivim/core';

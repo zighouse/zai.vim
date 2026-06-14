@@ -57,8 +57,6 @@ interface ConnectionState {
   overageStreakStart: number | null;
   /** Per-connection monotonic counter stamped onto $/notification frames (AC5). */
   notificationSeq: number;
-  /** Heartbeat so we can GC dead sockets promptly. */
-  alive: boolean;
 }
 
 /**
@@ -76,11 +74,21 @@ export function createWebSocketGateway(opts: WebSocketGatewayOptions): WebSocket
   const wss = new WebSocketServer({ server: opts.server, path });
 
   wss.on('connection', (socket, req) => {
-    void handleConnection(socket, req, {
+    handleConnection(socket, req, {
       registry: opts.handlerRegistry,
       eventBus: opts.eventBus,
       rateLimit,
       sustainedMs,
+    }).catch((err) => {
+      // handleConnection is expected to never throw — its internals are
+      // defensive — but if it does, log and tear the socket down rather
+      // than silently drop the error.
+      process.stderr.write(`[gateway/ws] connection setup failed: ${(err as Error).message}\n`);
+      try {
+        socket.close(CLOSE_CODE_POLICY_VIOLATION, 'connection setup failed');
+      } catch {
+        // socket may already be closed
+      }
     });
   });
 
@@ -114,7 +122,6 @@ async function handleConnection(
     timestamps: [],
     overageStreakStart: null,
     notificationSeq: 0,
-    alive: true,
   };
 
   // ---- Subscribe to every forwarded engine event ---------------------------
@@ -124,7 +131,7 @@ async function handleConnection(
   // and reorder (AC5).
   for (const type of FORWARDED_EVENT_TYPES) {
     const handler = (data: unknown): void => {
-      if (state.alive && socket.readyState === socket.OPEN) {
+      if (socket.readyState === socket.OPEN) {
         state.notificationSeq += 1;
         socket.send(encodeNotification(type, data, state.notificationSeq));
       }
@@ -134,9 +141,6 @@ async function handleConnection(
   }
 
   socket.on('message', (raw: RawData) => onMessage(socket, state, raw, deps));
-  socket.on('pong', () => {
-    state.alive = true;
-  });
   socket.on('close', () => cleanup(state));
   socket.on('error', () => cleanup(state));
 }
@@ -246,12 +250,13 @@ function onMessage(
 }
 
 function cleanup(state: ConnectionState): void {
-  state.alive = false;
   for (const dispose of state.disposers) {
     try {
       dispose();
-    } catch {
-      // EventBus subscriptions may already be torn down during shutdown — ignore.
+    } catch (err) {
+      // EventBus subscriptions may already be torn down during shutdown —
+      // log so a leak is diagnosable instead of silent.
+      process.stderr.write(`[gateway/ws] disposer threw during cleanup: ${(err as Error).message}\n`);
     }
   }
   state.disposers.length = 0;
