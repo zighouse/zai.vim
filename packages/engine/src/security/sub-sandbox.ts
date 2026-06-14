@@ -464,11 +464,12 @@ export class SubSandboxProvider implements Disposable {
     args.push('--ro-bind', '/bin', '/bin');
     args.push('--ro-bind', '/sbin', '/sbin');
 
-    // Minimal device access
+    // Minimal device access.
+    // --dev /dev already mounts a tmpfs at /dev with null/zero/random/urandom
+    // as bind-mounted device nodes; the previous explicit --dev-bind of
+    // /dev/null / /dev/zero / /dev/urandom was redundant AND weakened the
+    // devtmpfs isolation by pulling host device files directly.
     args.push('--dev', '/dev');
-    args.push('--dev-bind', '/dev/null', '/dev/null');
-    args.push('--dev-bind', '/dev/zero', '/dev/zero');
-    args.push('--dev-bind', '/dev/urandom', '/dev/urandom');
 
     // Forced network isolation — AC1 (cannot be overridden)
     args.push('--unshare-net');
