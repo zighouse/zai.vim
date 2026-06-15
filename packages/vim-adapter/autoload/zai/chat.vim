@@ -14,12 +14,13 @@ function! s:on_session(msg) abort
   if has_key(a:msg, 'error') | return | endif
   let id = a:msg.result.sessionId
   rightbelow vertical new
-  setlocal buftype=nofile bufhidden=hide nobuflisted noswapfile filetype=markdown
+  setlocal buftype=acwrite bufhidden=hide nobuflisted noswapfile filetype=markdown
   let s:chats[id] = {'bufnr': bufnr('%'), 'sessionId': id, 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': v:null, 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': []}
   let s:current_id = id
   nnoremap <buffer> <CR> :call <SID>send()<CR>
   nnoremap <buffer> <C-c> :call <SID>cancel()<CR>
   nnoremap <buffer> <silent> <C-o> :call <SID>toggle_mode()<CR>
+  execute 'autocmd BufWriteCmd <buffer=' . bufnr('%') . '> call s:on_write()'
   if s:timer == -1 | let s:timer = timer_start(200, function('s:ui_tick'), {'repeat': -1}) | endif
 endfun
 
@@ -42,6 +43,15 @@ function! s:toggle_mode() abort
   let c = s:chats[s:current_id]
   let c.mode = c.mode ==# 'compact' ? 'verbose' : 'compact'
   call s:render_output(c)
+endfun
+
+" BufWriteCmd handler for acwrite chat buffers. Saves transcript to disk.
+function! s:on_write() abort
+  let path = expand('<afile>')
+  if empty(path) | return | endif
+  let lines = getbufline('%', 1, '$')
+  call writefile(lines, path)
+  setlocal nomodified
 endfun
 
 function! s:render_output(c) abort
