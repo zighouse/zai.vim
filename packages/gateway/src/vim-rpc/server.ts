@@ -6,16 +6,14 @@
 import { createInterface } from 'node:readline';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { sanitizeForVim } from '@zaivim/engine';
-import { createEngine, loadConfig, EventBus, ClientManager, getEngineInstance } from '@zaivim/engine';
+import { createEngine, loadConfig, EventBus } from '@zaivim/engine';
 import type { EngineAPI, ResponseChunk, Message, AgentHandle, Session } from '@zaivim/core';
 import { ZaiConfigError } from '@zaivim/core';
 import { decodeLine, isRequest, isError, encodeLine, successResponse, errorResponse } from '../stdio/jsonrpc-codec.js';
 import { JSONRPC_ERROR_CODES } from '@zaivim/core';
 import type { JsonRpcRequest } from '@zaivim/core';
 import { encodeNotification, encodeChatChunk } from '../stdio/notification-sender.js';
-import { generateAdminToken, readAdminToken } from '../admin-token.js';
 import { requireAuth, MethodACL } from '../method-acl.js';
-import type { TransportContext } from '../stdio/transport-context.js';
 
 /** Per-session state for Vim chat sessions. */
 interface VimSession {
@@ -172,8 +170,6 @@ export async function runVimRpcServer(
   const pendingCallbacks = new Map<number, { resolve: (result: unknown) => void; reject: (err: Error) => void }>();
   let idCounter = 0;
 
-  // ---- Admin token for ACL ----
-  const adminToken = generateAdminToken();
   const acl = createVimRpcACL();
 
   const input = streams?.stdin ?? process.stdin;
