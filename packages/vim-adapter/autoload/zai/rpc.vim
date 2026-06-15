@@ -12,8 +12,8 @@ function! s:handle_msg(raw) abort
   try | let msg = json_decode(line) | catch | return | endtry
   if type(msg) != v:t_dict | return | endif
   if has_key(msg, 'id') && (has_key(msg, 'result') || has_key(msg, 'error'))
-    let cb = get(s:pending, msg.id, v:null)
-    if cb != v:null | call cb(msg) | unlet s:pending[msg.id] | endif
+    let Cb = get(s:pending, msg.id, v:null)
+    if Cb != v:null | call Cb(msg) | unlet s:pending[msg.id] | endif
   elseif has_key(msg, 'method')
     if msg.method ==# '$/chat/chunk' | call zai#chat#on_chunk(msg.params)
     elseif msg.method ==# '$/notification' | call zai#chat#on_notification(msg.params)
@@ -39,11 +39,22 @@ function! zai#rpc#connect_nvim() abort
   let s:job = jobstart([g:zaivim_engine_path, 'vim-rpc-server'], {'on_stdout': function('s:nvim_stdout'), 'on_stderr': function('s:err_cb'), 'on_exit': function('s:exit_cb')})
 endfun
 
+" Neovim on_stdout delivers data as a list of lines (newlines stripped).
+" The LAST element is the partial line buffered for the next call (often
+" empty if data ended on a line boundary). The previous implementation
+" split by "\n", but Neovim's list elements don't contain newlines — so
+" the response was getting buffered in s:nvim_buf forever and never
+" dispatched to handlers.
 function! s:nvim_stdout(j, d, e) abort
-  let s:nvim_buf .= join(a:d, '')
-  let lines = split(s:nvim_buf, "\n", 1)
-  let s:nvim_buf = remove(lines, -1)
-  for l in lines | call s:handle_msg(l) | endfor
+  if empty(a:d) | return | endif
+  let l:lines = a:d[:-2]
+  if !empty(s:nvim_buf) && !empty(l:lines)
+    let l:lines[0] = s:nvim_buf . l:lines[0]
+  endif
+  let s:nvim_buf = a:d[-1]
+  for l:line in l:lines
+    if !empty(l:line) | call s:handle_msg(l:line) | endif
+  endfor
 endfun
 
 " Log stderr from vim-rpc-server to message history (:messages to view)
@@ -52,7 +63,10 @@ function! s:err_cb(...) abort
   let data = type(a:2) == v:t_list ? join(a:2, '') : a:2
   if !empty(data) | echom '[zaivim:stderr] ' . data | endif
 endfun
-function! s:exit_cb(j, s) abort | let s:job = v:null | let s:channel = v:null | endfun
+function! s:exit_cb(...) abort
+  let s:job = v:null
+  let s:channel = v:null
+endfunction
 
 function! zai#rpc#connect() abort
   if has('nvim') | call zai#rpc#connect_nvim() | else | call zai#rpc#connect_vim() | endif
