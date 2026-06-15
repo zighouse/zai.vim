@@ -17,6 +17,9 @@ function! s:handle_msg(raw) abort
   elseif has_key(msg, 'method')
     if msg.method ==# '$/chat/chunk' | call zai#chat#on_chunk(msg.params)
     elseif msg.method ==# '$/notification' | call zai#chat#on_notification(msg.params)
+    elseif msg.method ==# 'agent.progress' | call zai#agent#on_progress(msg.params)
+    elseif msg.method ==# 'agent.error' | call zai#agent#on_progress({'status': 'error'})
+    elseif msg.method ==# 'agent.tool_budget_exhausted' | call zai#agent#on_progress({'status': 'tool_budget_exhausted'})
     endif
   endif
 endfun
