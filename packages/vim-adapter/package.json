@@ -2,8 +2,8 @@
   "name": "@zaivim/vim-adapter",
   "version": "0.1.4",
   "private": false,
-  "description": "zai.vim Vim adapter — VimScript glue layer + Python fallback shim",
+  "description": "Zai.Vim Vim/Neovim adapter — VimScript JSON-RPC client for zaivim gateway",
   "scripts": {
-    "lint": "vint autoload plugin || true"
+    "lint": "vint autoload plugin"
   }
 }
