@@ -106,6 +106,7 @@ function! s:ui_tick(timer) abort
       if wn != -1 | call setwinvar(wn, '&statusline', s:render_statusline(c)) | endif
     endif
   endfor
+  call zai#sessions#render(s:chats)
 endfun
 
 function! zai#chat#close() abort
