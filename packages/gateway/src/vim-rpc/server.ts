@@ -179,6 +179,33 @@ export async function runVimRpcServer(
   const input = streams?.stdin ?? process.stdin;
   const output = streams?.stdout ?? process.stdout;
 
+  // ---- Signal handlers ----
+  function onSignal(signal: string): void {
+    cleanup();
+    process.exit(128 + (signal === 'SIGINT' ? 2 : 15));
+  }
+  process.on('SIGTERM', onSignal);
+  process.on('SIGINT', onSignal);
+  process.on('SIGHUP', onSignal);
+
+  // ---- Shared cleanup ----
+  let cleanedUp = false;
+  function cleanup(): void {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    process.off('SIGTERM', onSignal);
+    process.off('SIGINT', onSignal);
+    process.off('SIGHUP', onSignal);
+    for (const dispose of eventDisposers) {
+      dispose();
+    }
+    eventDisposers = [];
+    for (const [, vs] of sessions) {
+      activeEngine.closeSession(vs.sessionId).catch(() => {});
+    }
+    sessions.clear();
+  }
+
   // ---- Sanitize-aware write helper ----
   function writeLine(raw: string): void {
     output.write(sanitizeForVim(raw) + '\n');
@@ -457,18 +484,7 @@ export async function runVimRpcServer(
   // ---- Cleanup on stdin EOF ----
 
   rl.on('close', () => {
-    // Cleanup event listeners
-    for (const dispose of eventDisposers) {
-      dispose();
-    }
-    eventDisposers = [];
-
-    // Close all sessions
-    for (const [, vs] of sessions) {
-      activeEngine.closeSession(vs.sessionId).catch(() => {});
-    }
-    sessions.clear();
-
+    cleanup();
     process.exit(0);
   });
 }
