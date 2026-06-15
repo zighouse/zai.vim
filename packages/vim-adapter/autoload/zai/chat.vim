@@ -15,9 +15,10 @@ endfun
 function! s:on_session(msg) abort
   if has_key(a:msg, 'error') | return | endif
   let id = a:msg.result.sessionId
+  let token = get(a:msg.result, '_token', '')
   rightbelow vertical new
   setlocal buftype=acwrite bufhidden=hide nobuflisted noswapfile filetype=markdown
-  let s:chats[id] = {'bufnr': bufnr('%'), 'sessionId': id, 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': v:null, 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': [], 'spinner_idx': 0, 'spinner_lnum': -1, 'info_lnum': -1}
+  let s:chats[id] = {'bufnr': bufnr('%'), 'sessionId': id, 'token': token, 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': v:null, 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': [], 'spinner_idx': 0, 'spinner_lnum': -1, 'info_lnum': -1}
   let s:current_id = id
   nnoremap <buffer> <CR> :call <SID>send()<CR>
   nnoremap <buffer> <C-c> :call <SID>cancel()<CR>
@@ -31,13 +32,14 @@ function! s:send() abort
   let c = s:chats[s:current_id]
   let line = getline('.')
   if empty(line) | return | endif
-  call zai#rpc#request('chat.send', {'sessionId': c.sessionId, 'text': line})
+  call zai#rpc#request('chat.send', {'sessionId': c.sessionId, 'token': c.token, 'text': line})
   call appendbufline(c.bufnr, '$', '> ' . line)
 endfun
 
 function! s:cancel() abort
   if s:current_id == v:null | return | endif
-  call zai#rpc#request('chat.cancel', {'id': s:chats[s:current_id].sessionId})
+  let c = s:chats[s:current_id]
+  call zai#rpc#request('chat.cancel', {'id': c.sessionId, 'token': c.token})
 endfun
 
 function! s:toggle_mode() abort
@@ -167,7 +169,7 @@ endfun
 function! zai#chat#close() abort
   if s:current_id != v:null && has_key(s:chats, s:current_id)
     let c = s:chats[s:current_id]
-    call zai#rpc#request('session.close', {'sessionId': c.sessionId})
+    call zai#rpc#request('session.close', {'sessionId': c.sessionId, 'token': c.token})
     if bufexists(c.bufnr) | execute 'bwipeout! ' . c.bufnr | endif
     unlet s:chats[s:current_id]
   endif | let s:current_id = v:null

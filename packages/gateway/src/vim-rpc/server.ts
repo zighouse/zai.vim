@@ -6,7 +6,7 @@
 import { createInterface } from 'node:readline';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { sanitizeForVim } from '@zaivim/engine';
-import { createEngine, loadConfig, EventBus } from '@zaivim/engine';
+import { createPipelineEngine, loadConfig, EventBus } from '@zaivim/engine';
 import type { EngineAPI, ResponseChunk, Message, AgentHandle, Session } from '@zaivim/core';
 import { ZaiConfigError } from '@zaivim/core';
 import { decodeLine, isRequest, isError, encodeLine, successResponse, errorResponse } from '../stdio/jsonrpc-codec.js';
@@ -492,9 +492,7 @@ export async function runVimRpcServer(
 function createInProcessEngine(): EngineAPI {
   try {
     loadConfig();
-    const config = { pidFile: '', version: VERSION, startupTimeout: 3000, healthCheckInterval: 30000 };
-    const engine = createEngine(config);
-    return engine as EngineAPI;
+    return createPipelineEngine();
   } catch (err) {
     if (err instanceof ZaiConfigError) {
       console.error(`Configuration error: ${err.message}`);

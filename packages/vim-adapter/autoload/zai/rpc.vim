@@ -33,7 +33,7 @@ endfun
 
 function! zai#rpc#connect_vim() abort
   if !has('job') || !has('channel') | return | endif
-  let s:job = job_start([g:zaivim_engine_path, 'vim-rpc-server'], {'mode': 'json', 'out_cb': function('s:vim_out_cb'), 'err_cb': function('s:err_cb'), 'exit_cb': function('s:exit_cb'), 'in_io': 'file', 'in_name': '/dev/null'})
+  let s:job = job_start([g:zaivim_engine_path, 'vim-rpc-server'], {'mode': 'json', 'out_cb': function('s:vim_out_cb'), 'err_cb': function('s:err_cb'), 'exit_cb': function('s:exit_cb')})
   let s:channel = job_getchannel(s:job)
 endfun
 
