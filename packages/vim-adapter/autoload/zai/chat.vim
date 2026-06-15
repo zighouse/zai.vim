@@ -4,6 +4,8 @@ let s:timer = -1
 let s:current_id = v:null
 let s:phase_icons = {'request':'📤','thinking':'🤔','tool':'🔧','response':'💬','done':'✅','error':'❌'}
 let s:phase_labels = {'request':'发送中','thinking':'思考','tool':'','response':'生成','done':'完成','error':'错误'}
+let s:spinner = ['◐', '◓', '◑', '◒']
+let s:spinner_phase_labels = {'thinking':' 思考 ','tool':' 工具 '}
 
 function! zai#chat#start(args) abort
   call zai#rpc#connect()
@@ -15,7 +17,7 @@ function! s:on_session(msg) abort
   let id = a:msg.result.sessionId
   rightbelow vertical new
   setlocal buftype=acwrite bufhidden=hide nobuflisted noswapfile filetype=markdown
-  let s:chats[id] = {'bufnr': bufnr('%'), 'sessionId': id, 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': v:null, 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': []}
+  let s:chats[id] = {'bufnr': bufnr('%'), 'sessionId': id, 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': v:null, 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': [], 'spinner_idx': 0, 'spinner_lnum': -1, 'info_lnum': -1}
   let s:current_id = id
   nnoremap <buffer> <CR> :call <SID>send()<CR>
   nnoremap <buffer> <C-c> :call <SID>cancel()<CR>
@@ -59,10 +61,28 @@ function! s:render_output(c) abort
   call deletebufline(a:c.bufnr, 1, '$')
   for e in a:c.events
     if e.type ==# 'text' | call appendbufline(a:c.bufnr, '$', e.content)
-    elseif e.type ==# 'tool_call' | call appendbufline(a:c.bufnr, '$', '📎 ' . e.name)
+    elseif e.type ==# 'tool_call'
+      if a:c.mode ==# 'compact'
+        call appendbufline(a:c.bufnr, '$', '🔧 ' . get(e,'name',''))
+      else
+        call appendbufline(a:c.bufnr, '$', '📎 ' . get(e,'name',''))
+      endif
+    elseif e.type ==# 'tool_result'
+      if a:c.mode ==# 'compact'
+        let last = line('$', a:c.bufnr)
+        let prev = getbufline(a:c.bufnr, last)[0]
+        if prev =~# '^🔧'
+          call setbufline(a:c.bufnr, last, prev . ' ✓')
+        else
+          call appendbufline(a:c.bufnr, '$', '✅ ' . get(e,'content',''))
+        endif
+      else
+        call appendbufline(a:c.bufnr, '$', '✅ ' . get(e,'content',''))
+      endif
     elseif e.type ==# 'error' | call appendbufline(a:c.bufnr, '$', '❌ ' . e.message)
     endif
   endfor
+  let a:c.spinner_idx = 0 | let a:c.spinner_lnum = -1
 endfun
 
 function! zai#chat#on_chunk(p) abort
@@ -75,9 +95,23 @@ function! zai#chat#on_chunk(p) abort
     call appendbufline(c.bufnr, '$', get(a:p,'content',''))
   elseif t ==# 'error'
     call appendbufline(c.bufnr, '$', '❌ ' . get(a:p,'message',''))
+  elseif t ==# 'tool_call'
+    if c.mode ==# 'compact'
+      call appendbufline(c.bufnr, '$', '🔧 ' . get(a:p,'name',''))
+    else
+      call appendbufline(c.bufnr, '$', '📎 ' . json_encode(a:p))
+    endif
+  elseif t ==# 'tool_result'
+    if c.mode ==# 'compact'
+      let last = line('$', c.bufnr)
+      let prev = getbufline(c.bufnr, last)[0]
+      if prev =~# '^🔧'
+        call setbufline(c.bufnr, last, prev . ' ✓')
+      endif
+    else
+      call appendbufline(c.bufnr, '$', '✅ ' . get(a:p,'content',''))
+    endif
   elseif t ==# 'done' | return
-  else
-    call appendbufline(c.bufnr, '$', c.mode ==# 'compact' ? '…' : json_encode(a:p))
   endif
 endfun
 
@@ -90,6 +124,12 @@ function! zai#chat#on_notification(p) abort
     let p = get(d,'phase','')
     if !empty(p) && has_key(s:phase_icons, p)
       let c.phase = p | let c.elapsed_ms = get(d,'elapsed',c.elapsed_ms) | let c.tokens_out = get(d,'tokens',c.tokens_out) | let c.tool_name = get(d,'toolName',c.tool_name)
+    endif
+    if p ==# 'thinking' || p ==# 'tool'
+      call appendbufline(c.bufnr, '$', s:phase_icons[p] . get(s:spinner_phase_labels, p, ' ') . s:spinner[0])
+      let c.spinner_lnum = line('$', c.bufnr)
+    elseif p ==# 'done' || p ==# 'error'
+      let c.spinner_lnum = -1
     endif
     return
   endif
@@ -114,6 +154,11 @@ function! s:ui_tick(timer) abort
     if bufexists(c.bufnr)
       let wn = bufwinnr(c.bufnr)
       if wn != -1 | call setwinvar(wn, '&statusline', s:render_statusline(c)) | endif
+      " Animate spinner during thinking/tool phases
+      if c.spinner_lnum > 0
+        let c.spinner_idx = (c.spinner_idx + 1) % len(s:spinner)
+        call setbufline(c.bufnr, c.spinner_lnum, s:phase_icons[c.phase] . get(s:spinner_phase_labels, c.phase, ' ') . s:spinner[c.spinner_idx])
+      endif
     endif
   endfor
   call zai#sessions#render(s:chats)
