@@ -1,5 +1,7 @@
 let s:job = v:null | let s:channel = v:null | let s:pending = {} | let s:next_id = 1
 let s:vim_buf = ''
+let s:ready = 0
+let s:queue = []
 
 function! s:enc(msg) abort
   return &encoding !=# 'utf-8' && has('iconv') ? iconv(json_encode(a:msg), &encoding, 'utf-8') : json_encode(a:msg)
@@ -21,28 +23,46 @@ function! s:handle_msg(raw) abort
     elseif msg.method ==# 'agent.progress' | call zai#agent#on_progress(msg.params)
     elseif msg.method ==# 'agent.error' | call zai#agent#on_progress({'status': 'error'})
     elseif msg.method ==# 'agent.tool_budget_exhausted' | call zai#agent#on_progress({'status': 'tool_budget_exhausted'})
+    elseif msg.method ==# '$/ready' | call s:on_ready()
     endif
   endif
 endfun
 
-" Vim 8.x raw out_cb: data may be partial or multi-line. Buffer by newline.
+" Vim 8.x out_cb delivers complete lines (trailing \n stripped by Vim itself,
+" since Vim's job pipe reader buffers by newline). Each call is one line.
+" Defensive: if a future Vim version preserves \n, still split correctly.
 function! s:vim_stdout(ch, data) abort
   if empty(a:data) | return | endif
-  let parts = split(s:vim_buf . a:data, "\n", 1)
-  let s:vim_buf = remove(parts, -1)
-  for line in parts
+  " If data contains a newline, split + buffer the last (partial) part.
+  if a:data =~# "\n"
+    let parts = split(s:vim_buf . a:data, "\n", 1)
+    let s:vim_buf = remove(parts, -1)
+    for line in parts
+      if !empty(line) | call s:handle_msg(line) | endif
+    endfor
+  else
+    " No newline → Vim already split for us. Prepend any pending buffer.
+    let line = empty(s:vim_buf) ? a:data : s:vim_buf . a:data
+    let s:vim_buf = ''
     if !empty(line) | call s:handle_msg(line) | endif
-  endfor
+  endif
 endfun
 
 function! zai#rpc#connect_vim() abort
   if !has('job') || !has('channel') | return | endif
+  if empty(g:zaivim_engine_path) | return | endif
+  let s:ready = 0
   let s:vim_buf = ''
-  let s:job = job_start([g:zaivim_engine_path, 'vim-rpc-server'], {'out_cb': function('s:vim_stdout'), 'err_cb': function('s:err_cb'), 'exit_cb': function('s:exit_cb')})
+  let opts = {'out_cb': function('s:vim_stdout'), 'err_cb': function('s:err_cb'), 'exit_cb': function('s:exit_cb'), 'in_io': 'pipe', 'out_io': 'pipe', 'err_io': 'pipe'}
+  let s:job = job_start([g:zaivim_engine_path, 'vim-rpc-server'], opts)
+  if job_status(s:job) !=# 'run'
+    let s:job = v:null | return
+  endif
   let s:channel = job_getchannel(s:job)
 endfun
 
 function! zai#rpc#connect_nvim() abort
+  let s:ready = 0
   let s:nvim_buf = ''
   let s:job = jobstart([g:zaivim_engine_path, 'vim-rpc-server'], {'on_stdout': function('s:nvim_stdout'), 'on_stderr': function('s:err_cb'), 'on_exit': function('s:exit_cb')})
 endfun
@@ -81,18 +101,28 @@ function! zai#rpc#connect() abort
   if has('nvim') | call zai#rpc#connect_nvim() | else | call zai#rpc#connect_vim() | endif
 endfun
 
+function! s:send_raw(raw) abort
+  if has('nvim') && s:job != v:null | call jobsend(s:job, a:raw)
+  elseif s:channel != v:null | call ch_sendraw(s:channel, a:raw) | endif
+endfun
+
+function! s:on_ready() abort
+  let s:ready = 1
+  for item in s:queue
+    call s:send_raw(item)
+  endfor | let s:queue = []
+endfun
+
 function! zai#rpc#request(method, params, ...) abort
   let id = s:next_id | let s:next_id += 1
   if a:0 > 0 | let s:pending[id] = a:1 | endif
-  let msg = {'jsonrpc': '2.0', 'id': id, 'method': a:method, 'params': a:params}
-  if has('nvim') && s:job != v:null | call jobsend(s:job, s:enc(msg) . "\n")
-  elseif s:channel != v:null | call ch_sendraw(s:channel, s:enc(msg) . "\n") | endif
+  let msg = s:enc({'jsonrpc': '2.0', 'id': id, 'method': a:method, 'params': a:params}) . "\n"
+  if s:ready | call s:send_raw(msg) | else | call add(s:queue, msg) | endif
 endfun
 
 function! zai#rpc#notify(method, params) abort
-  let msg = {'jsonrpc': '2.0', 'method': a:method, 'params': a:params}
-  if has('nvim') && s:job != v:null | call jobsend(s:job, s:enc(msg) . "\n")
-  elseif s:channel != v:null | call ch_sendraw(s:channel, s:enc(msg) . "\n") | endif
+  let msg = s:enc({'jsonrpc': '2.0', 'method': a:method, 'params': a:params}) . "\n"
+  if s:ready | call s:send_raw(msg) | else | call add(s:queue, msg) | endif
 endfun
 
 function! zai#rpc#close() abort

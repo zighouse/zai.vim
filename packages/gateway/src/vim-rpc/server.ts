@@ -333,6 +333,9 @@ export async function runVimRpcServer(
 
   const rl = createInterface({ input });
 
+  // Signal ready — engine is initialized and stdin reader is active.
+  output.write(sanitizeForVim('{"jsonrpc":"2.0","method":"$/ready","params":{}}') + '\n');
+
   rl.on('line', async (line: string) => {
     const trimmed = line.trim();
     if (!trimmed) return;
