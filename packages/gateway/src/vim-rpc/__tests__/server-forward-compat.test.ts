@@ -1,131 +1,190 @@
 // @zaivim/gateway — Forward-compat chunk dispatcher tests (AC10/AC11)
-// Verifies that the vim-rpc-server chunk dispatcher handles unknown chunk types
-// without errors, and forwards phase chunks as notifications.
+// Exercises the actual streamChatResponse() dispatcher end-to-end with a mock
+// engine + spy stdout. Verifies that known chunk types are routed as
+// $/chat/chunk, unknown chunk types pass through as forward:unknown_chunk
+// (sanitized), phase chunks become phase notifications, and illegal phase
+// values produce only a stderr warning.
 
-import { describe, it, expect, vi } from 'vitest';
-import { encodeLine, encodeNotification, encodeChatChunk } from '../../stdio/notification-sender.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { streamChatResponse } from '../server.js';
+import { decodeLine } from '../../stdio/jsonrpc-codec.js';
+import type { EngineAPI, ResponseChunk, Message } from '@zaivim/core';
 
-describe('forward-compat dispatcher', () => {
-  // AC10.1: Open-ended switch — known types dispatched, unknown pass through
+/** Build a mock engine whose chat() yields the provided chunks. */
+function mockEngine(chunks: ResponseChunk[]): EngineAPI {
+  return {
+    chat: async function* (_sid: string, _msg: Message, _signal?: AbortSignal): AsyncIterable<ResponseChunk> {
+      for (const c of chunks) yield c;
+    },
+  } as unknown as EngineAPI;
+}
 
-  it('encodes known chunk types without error', () => {
-    const knownChunks = [
-      { type: 'text', content: 'hello' },
-      { type: 'tool_call', id: 't1', name: 'read_file', arguments: { path: '/tmp/test' } },
-      { type: 'tool_result', toolCallId: 't1', content: 'file contents' },
-      { type: 'error', code: 'ERR', message: 'something failed' },
-      { type: 'done', finishReason: 'stop' },
-    ];
-
-    for (const chunk of knownChunks) {
-      expect(() => {
-        const encoded = encodeChatChunk(chunk as Record<string, unknown>);
-        expect(encoded).toContain('$/chat/chunk');
-        expect(encoded).toContain(chunk.type);
-      }).not.toThrow();
-    }
+/** Spy Writable that captures every write() call as a string. */
+function spyStream(): { stream: { write: ReturnType<typeof vi.fn> }; collected: string[] } {
+  const collected: string[] = [];
+  const write = vi.fn((s: string) => {
+    collected.push(s);
+    return true;
   });
+  return { stream: { write }, collected };
+}
 
-  // AC10.2: Unknown chunk — doesn't throw, sanitizes content
+/** Decode all JSON-RPC frames captured on the spy stream. */
+function decodeFrames(lines: string[]): any[] {
+  return lines
+    .flatMap((l) => l.split('\n'))
+    .filter((l) => l.trim().length > 0)
+    .map((l) => decodeLine(l));
+}
 
-  it('handles unknown chunk type without throwing', () => {
-    const unknownChunk = { type: 'future_unknown', data: 'some future data \x1b[31mred\x1b[0m' };
-    expect(() => {
-      // Should encode without throwing — this is the forward-compat guarantee
-      const encoded = encodeNotification('forward:unknown_chunk', {
-        type: unknownChunk.type,
-        data: unknownChunk.data,
-      });
-      expect(encoded).toContain('$/notification');
-    }).not.toThrow();
-  });
+describe('streamChatResponse dispatcher — known chunk types (AC10.1)', () => {
+  const knownCases: Array<[string, Record<string, unknown>]> = [
+    ['text', { type: 'text', content: 'hello world' }],
+    ['tool_call', { type: 'tool_call', id: 't1', name: 'read_file', arguments: { path: '/tmp' } }],
+    ['tool_result', { type: 'tool_result', toolCallId: 't1', content: 'data' }],
+    ['error', { type: 'error', code: 'ERR', message: 'boom' }],
+  ];
 
-  it('handles stats chunk type', () => {
-    const statsChunk = { type: 'stats', tokensIn: 150, tokensOut: 200, latencyMs: 1200 };
-    expect(() => {
-      const encoded = encodeChatChunk(statsChunk as Record<string, unknown>);
-      expect(encoded).toContain('$/chat/chunk');
-    }).not.toThrow();
-  });
+  for (const [label, chunk] of knownCases) {
+    it(`routes ${label} chunk as $/chat/chunk`, async () => {
+      const engine = mockEngine([chunk as ResponseChunk]);
+      const out = spyStream();
+      await streamChatResponse(engine, 's1', { id: 'm1', role: 'user', content: 'hi', createdAt: 0 } as Message, new AbortController().signal, out.stream as any);
 
-  it('handles thinking chunk type', () => {
-    const thinkingChunk = { type: 'thinking', content: 'reasoning step', elapsed: 5 };
-    expect(() => {
-      const encoded = encodeChatChunk(thinkingChunk as Record<string, unknown>);
-      expect(encoded).toContain('$/chat/chunk');
-    }).not.toThrow();
-  });
-
-  it('writes unknown chunk debug log to stderr', () => {
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-
-    const type = 'future_unknown';
-    process.stderr.write(`[vim-rpc-server] unknown chunk type: ${type}\n`);
-
-    expect(stderrSpy).toHaveBeenCalledWith(
-      expect.stringContaining('unknown chunk type: future_unknown'),
-    );
-
-    stderrSpy.mockRestore();
-  });
-
-  // AC10.4: Dispatcher uses open-ended switch (no default: throw)
-
-  it('follows open-ended switch pattern', () => {
-    // AC10 requires: if (handler[type]) handler[type](chunk) else passthrough(chunk)
-    // NOT: switch(type) { default: throw }
-    const knownTypes = new Set(['text', 'tool_call', 'tool_result', 'error', 'done']);
-
-    // Known types are dispatched
-    expect(knownTypes.has('text')).toBe(true);
-    expect(knownTypes.has('done')).toBe(true);
-
-    // Unknown types pass through (don't throw)
-    expect(knownTypes.has('thinking')).toBe(false);
-    expect(knownTypes.has('stats')).toBe(false);
-    expect(knownTypes.has('phase')).toBe(false);
-    expect(knownTypes.has('future_unknown')).toBe(false);
-  });
-});
-
-describe('phase chunk forwarding (AC11)', () => {
-  // AC11 valid phase values
-  const VALID_PHASES = ['request', 'thinking', 'tool', 'response', 'done', 'error'] as const;
-
-  for (const phase of VALID_PHASES) {
-    it(`encodes phase '${phase}' notification`, () => {
-      const notification = encodeNotification('phase', {
-        phase,
-        elapsed: 1000,
-        tokens: 50,
-        toolName: phase === 'tool' ? 'read_file' : '',
-      });
-      expect(notification).toContain('$/notification');
-      expect(notification).toContain(phase);
+      const frames = decodeFrames(out.collected);
+      const chunkFrames = frames.filter((f) => f.method === '$/chat/chunk');
+      expect(chunkFrames.length).toBeGreaterThanOrEqual(1);
+      // First chunk frame carries the dispatched chunk
+      expect(chunkFrames[0].params.type).toBe(label);
+      // Stream terminates with a 'done' chunk
+      const done = frames.find((f) => f.params?.type === 'done');
+      expect(done).toBeDefined();
     });
   }
 
-  it('skips illegal phase value via stderr warning', () => {
-    const illegalPhase = 'invalid_phase_value';
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  it('does NOT emit forward:unknown_chunk for known types', async () => {
+    const engine = mockEngine([{ type: 'text', content: 'hi' } as unknown as ResponseChunk]);
+    const out = spyStream();
+    await streamChatResponse(engine, 's1', { id: 'm1', role: 'user', content: 'hi', createdAt: 0 } as Message, new AbortController().signal, out.stream as any);
 
-    process.stderr.write(`[vim-rpc-server] illegal phase value: ${illegalPhase}\n`);
+    const frames = decodeFrames(out.collected);
+    const unknown = frames.find((f) => f.params?.type === 'forward:unknown_chunk');
+    expect(unknown).toBeUndefined();
+  });
+});
 
-    expect(stderrSpy).toHaveBeenCalledWith(
-      expect.stringContaining('illegal phase value'),
-    );
-
-    stderrSpy.mockRestore();
+describe('streamChatResponse dispatcher — unknown chunk types (AC10.2)', () => {
+  beforeEach(() => {
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it('encodes phase with elapsed and tokens', () => {
-    const notification = encodeNotification('phase', {
-      phase: 'thinking',
-      elapsed: 5000,
-      tokens: 0,
-      toolName: '',
+  it('forwards unknown chunk as forward:unknown_chunk notification', async () => {
+    const engine = mockEngine([{ type: 'future_unknown', data: 'payload' } as unknown as ResponseChunk]);
+    const out = spyStream();
+    await streamChatResponse(engine, 's1', { id: 'm1', role: 'user', content: 'hi', createdAt: 0 } as Message, new AbortController().signal, out.stream as any);
+
+    const combined = out.collected.join('');
+    // The original chunk type appears in the forwarded frame's data payload
+    expect(combined).toContain('"type":"forward:unknown_chunk"');
+    expect(combined).toContain('future_unknown');
+  });
+
+  it('writes debug log to stderr for unknown chunk', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const engine = mockEngine([{ type: 'weird_chunk', data: 'x' } as unknown as ResponseChunk]);
+    const out = spyStream();
+    await streamChatResponse(engine, 's1', { id: 'm1', role: 'user', content: 'hi', createdAt: 0 } as Message, new AbortController().signal, out.stream as any);
+
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('unknown chunk type: weird_chunk'));
+  });
+
+  it('sanitizes ANSI escape sequences in unknown chunk before forwarding (AC7)', async () => {
+    const engine = mockEngine([{ type: 'evil\x1b[31m', data: 'red' } as unknown as ResponseChunk]);
+    const out = spyStream();
+    await streamChatResponse(engine, 's1', { id: 'm1', role: 'user', content: 'hi', createdAt: 0 } as Message, new AbortController().signal, out.stream as any);
+
+    // Combined stdout text must NOT contain raw ANSI escape
+    const combined = out.collected.join('');
+    expect(combined).not.toContain('\x1b[31m');
+  });
+
+  it('does not throw on stats/thinking chunk types', async () => {
+    const engine = mockEngine([
+      { type: 'stats', tokensIn: 1, tokensOut: 2 } as unknown as ResponseChunk,
+      { type: 'thinking', content: 'hmm' } as unknown as ResponseChunk,
+    ]);
+    const out = spyStream();
+    await expect(
+      streamChatResponse(engine, 's1', { id: 'm1', role: 'user', content: 'hi', createdAt: 0 } as Message, new AbortController().signal, out.stream as any),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe('streamChatResponse dispatcher — phase chunks (AC11)', () => {
+  beforeEach(() => {
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const VALID_PHASES = ['request', 'thinking', 'tool', 'response', 'done', 'error'] as const;
+  for (const phase of VALID_PHASES) {
+    it(`extracts phase '${phase}' into $/notification with phase data`, async () => {
+      const engine = mockEngine([
+        { type: 'phase', phase, elapsed: 1500, tokens: 30, toolName: 'read_file' } as unknown as ResponseChunk,
+      ]);
+      const out = spyStream();
+      await streamChatResponse(engine, 's1', { id: 'm1', role: 'user', content: 'hi', createdAt: 0 } as Message, new AbortController().signal, out.stream as any);
+
+      const frames = decodeFrames(out.collected);
+      const phaseNotif = frames.find((f) => f.method === '$/notification' && f.params?.type === 'phase');
+      expect(phaseNotif).toBeDefined();
+      expect(phaseNotif.params.data.phase).toBe(phase);
+      expect(phaseNotif.params.data.elapsed).toBe(1500);
+      expect(phaseNotif.params.data.tokens).toBe(30);
     });
-    expect(notification).toContain('thinking');
-    expect(notification).toContain('5000');
+  }
+
+  it('skips illegal phase value with stderr warning only (no stdout notification)', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const engine = mockEngine([{ type: 'phase', phase: 'not_a_real_phase' } as unknown as ResponseChunk]);
+    const out = spyStream();
+    await streamChatResponse(engine, 's1', { id: 'm1', role: 'user', content: 'hi', createdAt: 0 } as Message, new AbortController().signal, out.stream as any);
+
+    const frames = decodeFrames(out.collected);
+    const phaseNotif = frames.find((f) => f.params?.type === 'phase');
+    expect(phaseNotif).toBeUndefined();
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('illegal phase value'));
+  });
+});
+
+describe('streamChatResponse dispatcher — stream lifecycle', () => {
+  it('appends a done chunk at the end of a successful stream', async () => {
+    const engine = mockEngine([{ type: 'text', content: 'hello' } as unknown as ResponseChunk]);
+    const out = spyStream();
+    await streamChatResponse(engine, 's1', { id: 'm1', role: 'user', content: 'hi', createdAt: 0 } as Message, new AbortController().signal, out.stream as any);
+
+    const frames = decodeFrames(out.collected);
+    const lastChunk = frames.filter((f) => f.method === '$/chat/chunk').at(-1);
+    expect(lastChunk.params.type).toBe('done');
+  });
+
+  it('emits error chunk when engine.chat throws', async () => {
+    const engine = {
+      chat: async function* (): AsyncIterable<ResponseChunk> {
+        throw new Error('boom');
+      },
+    } as unknown as EngineAPI;
+    const out = spyStream();
+    await streamChatResponse(engine, 's1', { id: 'm1', role: 'user', content: 'hi', createdAt: 0 } as Message, new AbortController().signal, out.stream as any);
+
+    const frames = decodeFrames(out.collected);
+    const errChunk = frames.find((f) => f.params?.type === 'error');
+    expect(errChunk).toBeDefined();
+    expect(errChunk.params.message).toBe('boom');
   });
 });
