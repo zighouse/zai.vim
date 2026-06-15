@@ -36,8 +36,8 @@ interface VimAgent {
   readonly handle: AgentHandle;
 }
 
-/** In-memory token cache: sessionId → token */
-const sessionTokenCache = new Map<string, string>();
+/** In-memory token cache: sessionId → token. Module-scoped so tests can inspect. */
+export const sessionTokenCache = new Map<string, string>();
 
 /** Known chunk types dispatched as $/chat/chunk (AC10). */
 const KNOWN_CHUNK_TYPES = new Set(['text', 'tool_call', 'tool_result', 'error', 'done']);
@@ -48,6 +48,50 @@ const VALID_PHASES = new Set(['request', 'thinking', 'tool', 'response', 'done',
 /** Generate a 64-char hex session token. */
 function generateSessionToken(): string {
   return randomBytes(32).toString('hex');
+}
+
+/**
+ * Build the MethodACL used by vim-rpc-server. Exported so tests verify the
+ * real production ACL rather than a fictional createDefault() instance (C7).
+ */
+export function createVimRpcACL(): MethodACL {
+  const acl = new MethodACL();
+  acl.register('health', { access: 'public', description: 'Engine health check' });
+  acl.register('ping', { access: 'public', description: 'Engine ping' });
+  acl.register('session.create', { access: 'public', description: 'Create a new chat session' });
+  acl.register('session.get', { access: 'session-scoped', description: 'Get session by ID' });
+  acl.register('session.list', { access: 'session-scoped', description: 'List active sessions' });
+  acl.register('session.close', { access: 'session-scoped', description: 'Close a chat session' });
+  acl.register('chat.send', { access: 'session-scoped', description: 'Send a chat message to a session' });
+  acl.register('chat.cancel', { access: 'session-scoped', description: 'Cancel active chat stream' });
+  acl.register('agent.create', { access: 'session-scoped', description: 'Create a new agent' });
+  acl.register('agent.cancel', { access: 'session-scoped', description: 'Cancel an agent' });
+  acl.register('config.reload', { access: 'admin', description: 'Reload configuration' });
+  return acl;
+}
+
+/**
+ * Validate that a session-scoped request carries a token matching the
+ * session it claims to act on (H3). requireAuth() only checks the token is a
+ * non-empty string — it cannot see sessionTokenCache. Call this after
+ * requireAuth() for any method whose access level is session-scoped.
+ *
+ * Returns null when OK, or an AuthResult-shaped rejection when invalid.
+ */
+export function validateSessionToken(
+  params: Record<string, unknown>,
+  cache: Map<string, string> = sessionTokenCache,
+): { allowed: false; code: number; message: string } | null {
+  const sessionId = params.sessionId;
+  const token = params.token;
+  if (typeof sessionId !== 'string' || typeof token !== 'string') {
+    return { allowed: false, code: -32001, message: 'Unauthorized: sessionId and token required' };
+  }
+  const expected = cache.get(sessionId);
+  if (!expected || expected !== token) {
+    return { allowed: false, code: -32001, message: `Unauthorized: token does not match session ${sessionId}` };
+  }
+  return null;
 }
 
 const VERSION = '0.1.0';
@@ -130,18 +174,7 @@ export async function runVimRpcServer(
 
   // ---- Admin token for ACL ----
   const adminToken = generateAdminToken();
-  const acl = new MethodACL();
-  acl.register('health', { access: 'public', description: 'Engine health check' });
-  acl.register('ping', { access: 'public', description: 'Engine ping' });
-  acl.register('session.create', { access: 'public', description: 'Create a new chat session' });
-  acl.register('session.get', { access: 'session-scoped', description: 'Get session by ID' });
-  acl.register('session.list', { access: 'session-scoped', description: 'List active sessions' });
-  acl.register('session.close', { access: 'session-scoped', description: 'Close a chat session' });
-  acl.register('chat.send', { access: 'session-scoped', description: 'Send a chat message to a session' });
-  acl.register('chat.cancel', { access: 'session-scoped', description: 'Cancel active chat stream' });
-  acl.register('agent.create', { access: 'session-scoped', description: 'Create a new agent' });
-  acl.register('agent.cancel', { access: 'session-scoped', description: 'Cancel an agent' });
-  acl.register('config.reload', { access: 'admin', description: 'Reload configuration' });
+  const acl = createVimRpcACL();
 
   const input = streams?.stdin ?? process.stdin;
   const output = streams?.stdout ?? process.stdout;
@@ -298,6 +331,18 @@ export async function runVimRpcServer(
         const response = errorResponse(request.id, auth.code ?? -32603, auth.message ?? 'Unauthorized');
         writeLine(encodeLine(response));
         return;
+      }
+
+      // Session-scoped methods must additionally prove the token matches the
+      // session it claims to act on (H3 — requireAuth only checks the token
+      // is a non-empty string).
+      if (acl.getAccess(method) === 'session-scoped') {
+        const tokenCheck = validateSessionToken(params);
+        if (tokenCheck) {
+          const response = errorResponse(request.id, tokenCheck.code, tokenCheck.message);
+          writeLine(encodeLine(response));
+          return;
+        }
       }
 
       try {
