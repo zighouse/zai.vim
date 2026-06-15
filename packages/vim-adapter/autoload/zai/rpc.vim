@@ -1,4 +1,5 @@
 let s:job = v:null | let s:channel = v:null | let s:pending = {} | let s:next_id = 1
+let s:vim_buf = ''
 
 function! s:enc(msg) abort
   return &encoding !=# 'utf-8' && has('iconv') ? iconv(json_encode(a:msg), &encoding, 'utf-8') : json_encode(a:msg)
@@ -24,16 +25,20 @@ function! s:handle_msg(raw) abort
   endif
 endfun
 
-" Wrapper for Vim 8.x JSON mode: out_cb(channel, msg) where msg is
-" already a decoded dict. Normalize back to JSON string for handle_msg.
-function! s:vim_out_cb(ch, msg) abort
-  let raw = type(a:msg) == v:t_dict ? json_encode(a:msg) : a:msg
-  call s:handle_msg(raw)
+" Vim 8.x raw out_cb: data may be partial or multi-line. Buffer by newline.
+function! s:vim_stdout(ch, data) abort
+  if empty(a:data) | return | endif
+  let parts = split(s:vim_buf . a:data, "\n", 1)
+  let s:vim_buf = remove(parts, -1)
+  for line in parts
+    if !empty(line) | call s:handle_msg(line) | endif
+  endfor
 endfun
 
 function! zai#rpc#connect_vim() abort
   if !has('job') || !has('channel') | return | endif
-  let s:job = job_start([g:zaivim_engine_path, 'vim-rpc-server'], {'mode': 'json', 'out_cb': function('s:vim_out_cb'), 'err_cb': function('s:err_cb'), 'exit_cb': function('s:exit_cb')})
+  let s:vim_buf = ''
+  let s:job = job_start([g:zaivim_engine_path, 'vim-rpc-server'], {'out_cb': function('s:vim_stdout'), 'err_cb': function('s:err_cb'), 'exit_cb': function('s:exit_cb')})
   let s:channel = job_getchannel(s:job)
 endfun
 
@@ -81,13 +86,13 @@ function! zai#rpc#request(method, params, ...) abort
   if a:0 > 0 | let s:pending[id] = a:1 | endif
   let msg = {'jsonrpc': '2.0', 'id': id, 'method': a:method, 'params': a:params}
   if has('nvim') && s:job != v:null | call jobsend(s:job, s:enc(msg) . "\n")
-  elseif s:channel != v:null | call ch_sendexpr(s:channel, msg) | endif
+  elseif s:channel != v:null | call ch_sendraw(s:channel, s:enc(msg) . "\n") | endif
 endfun
 
 function! zai#rpc#notify(method, params) abort
   let msg = {'jsonrpc': '2.0', 'method': a:method, 'params': a:params}
   if has('nvim') && s:job != v:null | call jobsend(s:job, s:enc(msg) . "\n")
-  elseif s:channel != v:null | call ch_sendexpr(s:channel, msg) | endif
+  elseif s:channel != v:null | call ch_sendraw(s:channel, s:enc(msg) . "\n") | endif
 endfun
 
 function! zai#rpc#close() abort

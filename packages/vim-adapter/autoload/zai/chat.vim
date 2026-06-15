@@ -18,7 +18,7 @@ function! s:on_session(msg) abort
   let token = get(a:msg.result, '_token', '')
   rightbelow vertical new
   setlocal buftype=acwrite bufhidden=hide nobuflisted noswapfile filetype=markdown
-  let s:chats[id] = {'bufnr': bufnr('%'), 'sessionId': id, 'token': token, 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': v:null, 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': [], 'spinner_idx': 0, 'spinner_lnum': -1, 'info_lnum': -1}
+  let s:chats[id] = {'bufnr': bufnr('%'), 'sessionId': id, 'token': token, 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': v:null, 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': [], 'spinner_idx': 0, 'spinner_lnum': -1, 'info_lnum': -1, 'stream_lnum': 0}
   let s:current_id = id
   nnoremap <buffer> <CR> :call <SID>send()<CR>
   nnoremap <buffer> <C-c> :call <SID>cancel()<CR>
@@ -61,8 +61,22 @@ endfun
 function! s:render_output(c) abort
   if !bufexists(a:c.bufnr) | return | endif
   call deletebufline(a:c.bufnr, 1, '$')
-  for e in a:c.events
-    if e.type ==# 'text' | call appendbufline(a:c.bufnr, '$', e.content)
+  let i = 0
+  while i < len(a:c.events)
+    let e = a:c.events[i]
+    if e.type ==# 'text'
+      let content = e.content
+      let i += 1
+      while i < len(a:c.events) && a:c.events[i].type ==# 'text'
+        let content .= a:c.events[i].content
+        let i += 1
+      endwhile
+      let lines = split(content, "\n", 1)
+      if !empty(lines) && lines[-1] ==# '' | call remove(lines, -1) | endif
+      for line in lines
+        call appendbufline(a:c.bufnr, '$', line)
+      endfor
+      continue
     elseif e.type ==# 'tool_call'
       if a:c.mode ==# 'compact'
         call appendbufline(a:c.bufnr, '$', '🔧 ' . get(e,'name',''))
@@ -71,7 +85,7 @@ function! s:render_output(c) abort
       endif
     elseif e.type ==# 'tool_result'
       if a:c.mode ==# 'compact'
-        let last = line('$', a:c.bufnr)
+        let last = getbufinfo(a:c.bufnr)[0].linecount
         let prev = getbufline(a:c.bufnr, last)[0]
         if prev =~# '^🔧'
           call setbufline(a:c.bufnr, last, prev . ' ✓')
@@ -83,8 +97,9 @@ function! s:render_output(c) abort
       endif
     elseif e.type ==# 'error' | call appendbufline(a:c.bufnr, '$', '❌ ' . e.message)
     endif
-  endfor
-  let a:c.spinner_idx = 0 | let a:c.spinner_lnum = -1
+    let i += 1
+  endwhile
+  let a:c.spinner_idx = 0 | let a:c.spinner_lnum = -1 | let a:c.stream_lnum = 0
 endfun
 
 function! zai#chat#on_chunk(p) abort
@@ -94,26 +109,52 @@ function! zai#chat#on_chunk(p) abort
   let t = get(a:p,'type','')
   if t ==# 'text'
     call add(c.stream_buf, get(a:p,'content',''))
-    call appendbufline(c.bufnr, '$', get(a:p,'content',''))
-  elseif t ==# 'error'
-    call appendbufline(c.bufnr, '$', '❌ ' . get(a:p,'message',''))
-  elseif t ==# 'tool_call'
-    if c.mode ==# 'compact'
-      call appendbufline(c.bufnr, '$', '🔧 ' . get(a:p,'name',''))
-    else
-      call appendbufline(c.bufnr, '$', '📎 ' . json_encode(a:p))
-    endif
-  elseif t ==# 'tool_result'
-    if c.mode ==# 'compact'
-      let last = line('$', c.bufnr)
-      let prev = getbufline(c.bufnr, last)[0]
-      if prev =~# '^🔧'
-        call setbufline(c.bufnr, last, prev . ' ✓')
+    let content = get(a:p,'content','')
+    let parts = split(content, "\n", 1)
+    " 移除末尾由 \n 产生的空字符串——它不应显示为独立空行
+    let trailing_nl = 0
+    if content =~# "\n$"
+      let trailing_nl = 1
+      if !empty(parts) && parts[-1] ==# ''
+        call remove(parts, -1)
       endif
-    else
-      call appendbufline(c.bufnr, '$', '✅ ' . get(a:p,'content',''))
     endif
-  elseif t ==# 'done' | return
+    if c.stream_lnum > 0 && !empty(parts)
+      let first = remove(parts, 0)
+      let cur = getbufline(c.bufnr, c.stream_lnum)[0]
+      call setbufline(c.bufnr, c.stream_lnum, cur . first)
+    endif
+    for part in parts
+      call appendbufline(c.bufnr, '$', part)
+      let c.stream_lnum = getbufinfo(c.bufnr)[0].linecount
+    endfor
+    if trailing_nl
+      let c.stream_lnum = 0
+    endif
+  elseif t ==# 'done'
+    let c.stream_lnum = 0
+    return
+  else
+    let c.stream_lnum = 0
+    if t ==# 'error'
+      call appendbufline(c.bufnr, '$', '❌ ' . get(a:p,'message',''))
+    elseif t ==# 'tool_call'
+      if c.mode ==# 'compact'
+        call appendbufline(c.bufnr, '$', '🔧 ' . get(a:p,'name',''))
+      else
+        call appendbufline(c.bufnr, '$', '📎 ' . json_encode(a:p))
+      endif
+    elseif t ==# 'tool_result'
+      if c.mode ==# 'compact'
+        let last = getbufinfo(c.bufnr)[0].linecount
+        let prev = getbufline(c.bufnr, last)[0]
+        if prev =~# '^🔧'
+          call setbufline(c.bufnr, last, prev . ' ✓')
+        endif
+      else
+        call appendbufline(c.bufnr, '$', '✅ ' . get(a:p,'content',''))
+      endif
+    endif
   endif
 endfun
 
@@ -129,7 +170,7 @@ function! zai#chat#on_notification(p) abort
     endif
     if p ==# 'thinking' || p ==# 'tool'
       call appendbufline(c.bufnr, '$', s:phase_icons[p] . get(s:spinner_phase_labels, p, ' ') . s:spinner[0])
-      let c.spinner_lnum = line('$', c.bufnr)
+      let c.spinner_lnum = getbufinfo(c.bufnr)[0].linecount
     elseif p ==# 'done' || p ==# 'error'
       let c.spinner_lnum = -1
     endif
