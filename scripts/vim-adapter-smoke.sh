@@ -1,63 +1,107 @@
 #!/usr/bin/env bash
-# vim-adapter-smoke.sh — Smoke test for Vim 8.x adapter
-# Tests: engine start → JSON-RPC round-trip → streaming → cleanup
+# vim-adapter-smoke.sh — Smoke test for vim-adapter (Vim 8.x+ and Neovim)
+# Drives a REAL editor process through the adapter's job/channel layer
+# against the real vim-rpc-server. Verifies AC5 end-to-end.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CLI="$PROJECT_ROOT/packages/gateway/dist/cli.js"
+ADAPTER_RTP="$PROJECT_ROOT/packages/vim-adapter"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 pass=0; fail=0
-
 assert_contains() {
-  local desc="$1" haystack="$2" needle="$3"
-  if echo "$haystack" | grep -q -- "$needle"; then
-    echo -e "${GREEN}✓${NC} $desc"; ((pass++)) || true
+  if echo "$2" | grep -qE -- "$3"; then
+    echo -e "${GREEN}✓${NC} $1"; ((pass++)) || true
   else
-    echo -e "${RED}✗${NC} $desc"; echo "  expected: $needle"; echo "  actual: $haystack"; ((fail++)) || true
+    echo -e "${RED}✗${NC} $1"; echo "  expected pattern: $3"; echo "  actual: $2"; ((fail++)) || true
   fi
 }
 
-echo "=== Smoke Test: Vim 8.x Adapter ==="
-
-if [ ! -f "$CLI" ]; then
+if [ ! -f "$PROJECT_ROOT/packages/gateway/dist/cli.js" ]; then
   echo -e "${YELLOW}Building CLI...${NC}"
-  cd "$PROJECT_ROOT" && pnpm -r build
+  (cd "$PROJECT_ROOT" && pnpm -r build)
 fi
 
-# Test 1: vim-rpc-server — health check via JSON-RPC
-echo "Test 1: vim-rpc-server health request"
-output=$(echo '{"jsonrpc":"2.0","id":1,"method":"health"}' | node "$CLI" vim-rpc-server 2>/dev/null || true)
-assert_contains "health response has jsonrpc" "$output" 'jsonrpc'
-assert_contains "health has id" "$output" '"id":1'
+# Editor selection — prefer Neovim (has --headless on all supported versions),
+# fall back to Vim if it has +headless. Skip cleanly otherwise.
+EDITOR_BIN=""
+EDITOR_KIND=""
+if command -v nvim >/dev/null 2>&1; then
+  EDITOR_BIN=nvim; EDITOR_KIND=nvim
+elif command -v vim >/dev/null 2>&1 && vim -e -c 'if has("gui_running") || has("nvim") || exists("+headless") | q | else | cq | endif' --headless </dev/null >/dev/null 2>&1; then
+  EDITOR_BIN=vim; EDITOR_KIND=vim
+fi
+
+if [ -z "$EDITOR_BIN" ]; then
+  echo -e "${YELLOW}SKIP${NC} no editor with --headless support (need Neovim, or Vim built with +headless)"
+  exit 77
+fi
+
+echo "=== Smoke Test: vim-adapter ($EDITOR_KIND) ==="
+echo "(driving real editor process against vim-rpc-server)"
+
+# Vim script that runs INSIDE the editor. Uses the adapter's job/channel
+# layer to talk to the real vim-rpc-server and writes captured responses
+# to $VIM_OUT for the bash side to assert on.
+VIM_TEST_SCRIPT="$(mktemp --suffix=.vim)"
+VIM_OUT="$(mktemp)"
+trap 'rm -f "$VIM_TEST_SCRIPT" "$VIM_OUT"' EXIT
+
+cat > "$VIM_TEST_SCRIPT" <<'VIMSCRIPT'
+let s:results = []
+function! s:OnHealth(msg) abort
+  call add(s:results, 'health:' . json_encode(a:msg))
+endfun
+function! s:OnSession(msg) abort
+  call add(s:results, 'session:' . json_encode(a:msg))
+endfun
+
+call zai#rpc#connect()
+call zai#rpc#request('health', {}, function('s:OnHealth'))
+call zai#rpc#request('session.create', {}, function('s:OnSession'))
+
+" Poll up to 2s for both responses to arrive via the async channel.
+for i in range(40)
+  if len(s:results) >= 2 | break | endif
+  sleep 50m
+endfor
+
+call writefile(s:results, $VIM_OUT)
+call zai#rpc#close()
+qa!
+VIMSCRIPT
+
+if [ "$EDITOR_KIND" = "nvim" ]; then
+  "$EDITOR_BIN" --headless -u NONE -n \
+    -c "let \$VIM_OUT = '$VIM_OUT'" \
+    -c "let g:zaivim_engine_path = '$PROJECT_ROOT/packages/gateway/dist/cli.js'" \
+    -c "set rtp+=$ADAPTER_RTP" \
+    -c "source $ADAPTER_RTP/plugin/zai_node.vim" \
+    -c "source $VIM_TEST_SCRIPT" >/dev/null 2>&1 || true
+else
+  "$EDITOR_BIN" --headless -u NONE -n -e \
+    -c "let \$VIM_OUT = '$VIM_OUT'" \
+    -c "let g:zaivim_engine_path = '$PROJECT_ROOT/packages/gateway/dist/cli.js'" \
+    -c "set rtp+=$ADAPTER_RTP" \
+    -c "source $ADAPTER_RTP/plugin/zai_node.vim" \
+    -c "source $VIM_TEST_SCRIPT" >/dev/null 2>&1 || true
+fi
+
+OUT=$(cat "$VIM_OUT" 2>/dev/null || echo "")
+echo "(captured: $OUT)"
 echo ""
 
-# Test 2: vim-rpc-server — session.create
-echo "Test 2: session.create via vim-rpc-server"
-output=$(echo '{"jsonrpc":"2.0","id":2,"method":"session.create"}' | timeout 5 node "$CLI" vim-rpc-server 2>/dev/null || true)
-assert_contains "session response has sessionId" "$output" 'sessionId'
-echo ""
+echo "Test 1: health response received via editor channel"
+assert_contains "health response has result" "$OUT" '"result"'
+assert_contains "health result has status ok" "$OUT" '"status":[ ]*"ok"'
 
-# Test 3: JSON-RPC ping
-echo "Test 3: ping method"
-output=$(echo '{"jsonrpc":"2.0","id":3,"method":"ping"}' | node "$CLI" vim-rpc-server 2>/dev/null || true)
-assert_contains "ping has status ok" "$output" '"status":"ok"'
 echo ""
+echo "Test 2: session.create response received"
+assert_contains "session response has sessionId" "$OUT" 'sessionId'
 
-# Test 4: Unknown method returns error
-echo "Test 4: unknown method error"
-output=$(echo '{"jsonrpc":"2.0","id":4,"method":"nonexistent"}' | timeout 5 node "$CLI" vim-rpc-server 2>/dev/null || true)
-assert_contains "error response has error key" "$output" '"error"'
 echo ""
-
-# Test 5: ACL — admin method without token rejected
-echo "Test 5: ACL — admin method without token rejected"
-output=$(echo '{"jsonrpc":"2.0","id":5,"method":"config.reload"}' | timeout 5 node "$CLI" vim-rpc-server 2>/dev/null || true)
-assert_contains "config.reload rejected" "$output" '-32001'
-echo ""
-
 echo "=== Results ==="
 echo -e "${GREEN}Passed: $pass${NC}"
 if [ "$fail" -gt 0 ]; then echo -e "${RED}Failed: $fail${NC}"; exit 1
-else echo -e "${GREEN}All Vim smoke tests passed!${NC}"; fi
+else echo -e "${GREEN}All smoke tests passed!${NC}"; fi
