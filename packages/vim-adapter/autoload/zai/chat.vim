@@ -92,8 +92,8 @@ function! s:render_statusline(c) abort
   if a:c.phase == v:null | return '🟢 zaivim engine' | endif
   let icon = get(s:phase_icons, a:c.phase, '🟢')
   let label = get(s:phase_labels, a:c.phase, '')
-  if a:c.phase ==# 'thinking' | return icon . ' 思考 ' . (a:c.elapsed_ms/1000) . 's'
-  elseif a:c.phase ==# 'response' | return icon . ' 生成 ' . (a:c.tokens_out/1000) . 'k'
+  if a:c.phase ==# 'thinking' | return icon . ' 思考 ' . printf('%.1f', a:c.elapsed_ms/1000.0) . 's'
+  elseif a:c.phase ==# 'response' | return icon . ' 生成 ' . printf('%.1f', a:c.tokens_out/1000.0) . 'k'
   elseif a:c.phase ==# 'tool' | return icon . ' ' . a:c.tool_name
   endif | return icon . ' ' . label
 endfun
