@@ -69,6 +69,7 @@ endfun
 function! s:exit_cb(...) abort
   let s:job = v:null
   let s:channel = v:null
+  let s:pending = {}
 endfunction
 
 function! zai#rpc#connect() abort
