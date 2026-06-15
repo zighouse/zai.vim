@@ -39,12 +39,76 @@ interface VimAgent {
 /** In-memory token cache: sessionId → token */
 const sessionTokenCache = new Map<string, string>();
 
+/** Known chunk types dispatched as $/chat/chunk (AC10). */
+const KNOWN_CHUNK_TYPES = new Set(['text', 'tool_call', 'tool_result', 'error', 'done']);
+
+/** Valid phase enum values (AC11). */
+const VALID_PHASES = new Set(['request', 'thinking', 'tool', 'response', 'done', 'error']);
+
 /** Generate a 64-char hex session token. */
 function generateSessionToken(): string {
   return randomBytes(32).toString('hex');
 }
 
 const VERSION = '0.1.0';
+
+/**
+ * Stream engine chat response to stdout with forward-compat dispatcher (AC10/AC11).
+ *
+ * - Known chunk types → encoded as $/chat/chunk notification, sanitized, written to streamOut
+ * - `phase` chunk → extracted into a `phase` $/notification (AC11)
+ * - Unknown chunk types → `forward:unknown_chunk` notification + stderr debug log (AC10)
+ *
+ * Extracted to module scope so tests can invoke it with a mock engine + spy stream.
+ */
+export async function streamChatResponse(
+  engine: EngineAPI,
+  sessionId: string,
+  message: Message,
+  signal: AbortSignal,
+  streamOut: NodeJS.WriteStream,
+): Promise<void> {
+  try {
+    const stream = engine.chat(sessionId, message, signal);
+    for await (const chunk of stream) {
+      const raw = chunk as unknown as Record<string, unknown>;
+      const type = raw.type as string;
+
+      if (KNOWN_CHUNK_TYPES.has(type)) {
+        const encoded = encodeChatChunk(raw);
+        streamOut.write(sanitizeForVim(encoded) + '\n');
+      } else {
+        process.stderr.write(`[vim-rpc-server] unknown chunk type: ${type}\n`);
+        if (type === 'phase') {
+          const phase = raw.phase as string;
+          if (phase && VALID_PHASES.has(phase)) {
+            const notification = encodeNotification('phase', {
+              phase,
+              elapsed: raw.elapsed ?? 0,
+              tokens: raw.tokens ?? 0,
+              toolName: raw.toolName ?? '',
+            });
+            streamOut.write(sanitizeForVim(notification) + '\n');
+          } else {
+            process.stderr.write(`[vim-rpc-server] illegal phase value: ${phase}\n`);
+          }
+        } else {
+          const encoded = encodeNotification('forward:unknown_chunk', {
+            type,
+            data: JSON.stringify(raw),
+          });
+          streamOut.write(sanitizeForVim(encoded) + '\n');
+        }
+      }
+    }
+    const doneChunk = encodeChatChunk({ type: 'done', finishReason: 'stop' });
+    streamOut.write(sanitizeForVim(doneChunk) + '\n');
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') return;
+    const errorChunk = encodeChatChunk({ type: 'error', code: 'STREAM_ERROR', message: (err as Error).message });
+    streamOut.write(sanitizeForVim(errorChunk) + '\n');
+  }
+}
 
 /**
  * Create and run the vim-rpc-server.
@@ -176,66 +240,6 @@ export async function runVimRpcServer(
       return { status: 'cancelled' };
     }
     return { status: 'not_found' };
-  }
-
-  // ---- Streaming chat response with forward-compat dispatcher (AC10/AC11) ----
-
-  // Known chunk types for the dispatcher
-  const KNOWN_CHUNK_TYPES = new Set(['text', 'tool_call', 'tool_result', 'error', 'done']);
-
-  async function streamChatResponse(
-    engine: EngineAPI,
-    sessionId: string,
-    message: Message,
-    signal: AbortSignal,
-    streamOut: NodeJS.WriteStream,
-  ): Promise<void> {
-    try {
-      const stream = engine.chat(sessionId, message, signal);
-      for await (const chunk of stream) {
-        const raw = chunk as unknown as Record<string, unknown>;
-        const type = raw.type as string;
-
-        // A6.1: Open-ended switch — known types dispatch, unknown types passthrough
-        if (KNOWN_CHUNK_TYPES.has(type)) {
-          const encoded = encodeChatChunk(raw);
-          streamOut.write(sanitizeForVim(encoded) + '\n');
-        } else {
-          // A6.2: Unknown chunk — sanitize + stderr debug log
-          process.stderr.write(`[vim-rpc-server] unknown chunk type: ${type}\n`);
-          // A7.1/A7.2: Phase chunk — extract and forward as notification
-          if (type === 'phase') {
-            const phase = raw.phase as string;
-            if (phase && ['request', 'thinking', 'tool', 'response', 'done', 'error'].includes(phase)) {
-              const notification = encodeNotification('phase', {
-                phase,
-                elapsed: raw.elapsed ?? 0,
-                tokens: raw.tokens ?? 0,
-                toolName: raw.toolName ?? '',
-              });
-              streamOut.write(sanitizeForVim(notification) + '\n');
-            } else {
-              // A7.3: Illegal phase value — stderr warning only
-              process.stderr.write(`[vim-rpc-server] illegal phase value: ${phase}\n`);
-            }
-          } else {
-            // A6.3: Unknown type — sanitize and forward as notification for verbose buffer
-            const encoded = encodeNotification('forward:unknown_chunk', {
-              type,
-              data: sanitizeForVim(JSON.stringify(raw)),
-            });
-            streamOut.write(encoded + '\n');
-          }
-        }
-      }
-      // Stream complete — send done chunk
-      const doneChunk = encodeChatChunk({ type: 'done', finishReason: 'stop' });
-      streamOut.write(sanitizeForVim(doneChunk) + '\n');
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') return;
-      const errorChunk = encodeChatChunk({ type: 'error', code: 'STREAM_ERROR', message: (err as Error).message });
-      streamOut.write(sanitizeForVim(errorChunk) + '\n');
-    }
   }
 
   // ---- EventBus → notification forwarding ----
