@@ -58,7 +58,7 @@ export function createVimRpcACL(): MethodACL {
   acl.register('ping', { access: 'public', description: 'Engine ping' });
   acl.register('session.create', { access: 'public', description: 'Create a new chat session' });
   acl.register('session.get', { access: 'session-scoped', description: 'Get session by ID' });
-  acl.register('session.list', { access: 'session-scoped', description: 'List active sessions' });
+  acl.register('session.list', { access: 'session-scoped', description: 'List active sessions' });  // FIXME(M9): requires a token but doesn't target one session
   acl.register('session.close', { access: 'session-scoped', description: 'Close a chat session' });
   acl.register('chat.send', { access: 'session-scoped', description: 'Send a chat message to a session' });
   acl.register('chat.cancel', { access: 'session-scoped', description: 'Cancel active chat stream' });
