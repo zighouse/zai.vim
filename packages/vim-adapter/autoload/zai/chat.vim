@@ -2,6 +2,7 @@ scriptencoding utf-8
 let s:chats = {}
 let s:timer = -1
 let s:current_id = v:null
+let s:pending = v:null
 let s:phase_icons = {'request':'📤','thinking':'🤔','tool':'🔧','response':'💬','done':'✅','error':'❌'}
 let s:phase_labels = {'request':'发送中','thinking':'思考','tool':'','response':'生成','done':'完成','error':'错误'}
 let s:spinner = ['◐', '◓', '◑', '◒']
@@ -9,22 +10,32 @@ let s:spinner_phase_labels = {'thinking':' 思考 ','tool':' 工具 '}
 
 function! zai#chat#start(args) abort
   call zai#rpc#connect()
+  " Create buffer in main-loop context where :nnoremap is known to work.
+  rightbelow vertical new
+  setlocal buftype=nofile bufhidden=hide nobuflisted noswapfile
+  setlocal modifiable wrap
+  setlocal syntax=markdown
+  let bnr = bufnr('%')
+  nnoremap <buffer><silent><nowait> <CR> :call zai#chat#send_internal()<CR>
+  nnoremap <buffer><silent><nowait> <C-c> :call zai#chat#cancel_internal()<CR>
+  nnoremap <buffer><silent><nowait> <C-o> :call zai#chat#toggle_mode_internal()<CR>
+  inoremap <buffer><silent><nowait> <C-CR> <Esc>:call zai#chat#send_internal()<CR>
+  execute 'autocmd BufWriteCmd <buffer=' . bnr . '> call s:on_write()'
+  " Store pending buffer info — s:on_session fills session details on response.
+  let s:pending = {'bufnr': bnr}
   call zai#rpc#request('session.create', {}, function('s:on_session'))
+  if s:timer == -1 | let s:timer = timer_start(200, function('s:ui_tick'), {'repeat': -1}) | endif
 endfun
 
 function! s:on_session(msg) abort
   if has_key(a:msg, 'error') | return | endif
+  if s:pending is v:null | return | endif
   let id = a:msg.result.sessionId
   let token = get(a:msg.result, '_token', '')
-  rightbelow vertical new
-  setlocal buftype=acwrite bufhidden=hide nobuflisted noswapfile filetype=markdown
-  let s:chats[id] = {'bufnr': bufnr('%'), 'sessionId': id, 'token': token, 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': v:null, 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': [], 'spinner_idx': 0, 'spinner_lnum': -1, 'info_lnum': -1, 'stream_lnum': 0}
+  let bnr = s:pending.bufnr
+  unlet s:pending
+  let s:chats[id] = {'bufnr': bnr, 'sessionId': id, 'token': token, 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': v:null, 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': [], 'spinner_idx': 0, 'spinner_lnum': -1, 'info_lnum': -1, 'stream_lnum': 0}
   let s:current_id = id
-  nnoremap <buffer> <CR> :call <SID>send()<CR>
-  nnoremap <buffer> <C-c> :call <SID>cancel()<CR>
-  nnoremap <buffer> <silent> <C-o> :call <SID>toggle_mode()<CR>
-  execute 'autocmd BufWriteCmd <buffer=' . bufnr('%') . '> call s:on_write()'
-  if s:timer == -1 | let s:timer = timer_start(200, function('s:ui_tick'), {'repeat': -1}) | endif
 endfun
 
 function! s:send() abort
@@ -215,6 +226,18 @@ function! zai#chat#close() abort
     unlet s:chats[s:current_id]
   endif | let s:current_id = v:null
 endfun
+
+" Public wrappers for buffer-local mappings — avoid <SID>/<SNR> which break
+" when the mapping is defined from a channel-callback context.
+function! zai#chat#send_internal() abort
+  call s:send()
+endfunction
+function! zai#chat#cancel_internal() abort
+  call s:cancel()
+endfunction
+function! zai#chat#toggle_mode_internal() abort
+  call s:toggle_mode()
+endfunction
 
 function! zai#chat#switch(id) abort
   if !has_key(s:chats, a:id) | return | endif
