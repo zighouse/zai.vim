@@ -22,20 +22,39 @@ endfun
 " Open sessions list window. Idempotent — safe to call from zai#chat#start()
 " on every new chat. Layout: 5-row split ABOVE the current window (caller is
 " expected to focus display buffer first). Ported from old s:goto_lwin().
+"
+" IMPORTANT: must branch on buffer-existence BEFORE issuing :split/:new.
+" `:5split` without a file argument re-displays the CURRENT buffer in a new
+" window — so if called from the display window, both windows would share
+" the display buffer, and the subsequent `setlocal`/`let s:sessions_bufnr`
+" would corrupt the display buffer (marking it as sessions, eventually
+" setting it nomodifiable via render() → E21 on subsequent chat writes).
+" Use `:5new` for fresh creation; `:5split | buffer N` only for re-show.
 function! zai#sessions#open() abort
   call s:ensure_highlights()
 
+  " Sanity check: tracked bufnr must still carry our marker; if not (e.g.
+  " upgraded from buggy version where display buffer was misidentified),
+  " reset and create fresh.
+  if s:sessions_bufnr != -1 && (!bufexists(s:sessions_bufnr) || getbufvar(s:sessions_bufnr, 'zai_sessions') != 1)
+    let s:sessions_bufnr = -1
+  endif
+
   " Already visible — nothing to do
-  if s:sessions_bufnr != -1 && bufexists(s:sessions_bufnr) && bufwinnr(s:sessions_bufnr) != -1
+  if s:sessions_bufnr != -1 && bufwinnr(s:sessions_bufnr) != -1
     return
   endif
 
-  aboveleft 5split
-
-  if s:sessions_bufnr != -1 && bufexists(s:sessions_bufnr)
-    " Buffer exists but no window (user closed it) — re-show existing buffer
+  if s:sessions_bufnr != -1
+    " Buffer exists but no window (user closed it) — split then switch to it.
+    " The transient split shows the current buffer briefly before `buffer`
+    " switches the window to the sessions buffer; no persistent sharing.
+    aboveleft 5split
     execute 'buffer ' . s:sessions_bufnr
   else
+    " Fresh creation: 5new creates a brand-new buffer (NOT a re-show of
+    " current buffer like 5split would).
+    aboveleft 5new
     setlocal buftype=nofile bufhidden=hide nobuflisted noswapfile modifiable nowrap
     let s:sessions_bufnr = bufnr('%')
     let b:zai_sessions = 1  " cross-script marker (for tests + future integrations)
@@ -52,9 +71,12 @@ endfun
 " Render the list. Called from s:ui_tick every 200ms with current chats dict
 " and current selected session id. Ported from old s:update_chat_list().
 "
-" Poll-safe: does NOT move cursor (signs alone indicate selection). Old code
-" moved cursor because updates were event-driven; with 200ms polling, cursor
-" jumping would prevent the user from reading the list.
+" Poll-safe cursor preservation: writes lines IN-PLACE (only changed lines via
+" setbufline, plus append or truncate tail). The old version did delete-all +
+" set-all, which reset cursor to line 1 every 200ms — making j/k navigation
+" impossible because the cursor snapped back faster than a key repeat.
+" In-place writes leave the cursor line untouched as long as it still exists;
+" Vim auto-clamps to last line only when the cursor's line is genuinely gone.
 function! zai#sessions#render(chats, current_id) abort
   if s:sessions_bufnr == -1 || !bufexists(s:sessions_bufnr) | return | endif
 
@@ -67,10 +89,13 @@ function! zai#sessions#render(chats, current_id) abort
   endfor
   let s:chat_signs = {}
 
-  " Build content lines (stable order: sort by sessionId string)
+  " Build content lines (stable order: sort by sessionId string). No header —
+  " the window title in statusline + the icon column make the list's purpose
+  " obvious, and skipping a header lets line 1 be a real session row (so j/k
+  " from line 1 reaches all sessions, no dead first row).
   let ids = sort(keys(a:chats))
-  let lines = ['=== Sessions ===']
-  let line_num = 2  " line 1 is header
+  let lines = []
+  let line_num = 1
 
   for id in ids
     let c = a:chats[id]
@@ -91,21 +116,39 @@ function! zai#sessions#render(chats, current_id) abort
     let line_num += 1
   endfor
 
-  " Atomic buffer content update
+  " In-place update — setbufline preserves cursor; only tail truncation can
+  " move cursor, and only when cursor was on a now-deleted line (Vim clamps).
   call setbufvar(s:sessions_bufnr, '&modifiable', 1)
-  call deletebufline(s:sessions_bufnr, 1, '$')
-  call setbufline(s:sessions_bufnr, 1, lines)
+  let cur = getbufline(s:sessions_bufnr, 1, '$')
+  let cur_n = len(cur)
+  let new_n = len(lines)
+  let n = min([cur_n, new_n])
+  let i = 0
+  while i < n
+    if cur[i] !=# lines[i]
+      call setbufline(s:sessions_bufnr, i + 1, lines[i])
+    endif
+    let i += 1
+  endwhile
+  if new_n > cur_n
+    " cur_n could be 1 with cur=[''] when buffer was visually empty — that
+    " single placeholder line was rewritten in the loop above, so we append
+    " lines[cur_n:] which is correct in both cases.
+    call appendbufline(s:sessions_bufnr, '$', lines[cur_n :])
+  elseif cur_n > new_n
+    call deletebufline(s:sessions_bufnr, new_n + 1, '$')
+  endif
   call setbufvar(s:sessions_bufnr, '&modifiable', 0)
 endfun
 
 " Select session at cursor line. Bound to <CR> in sessions buffer.
-" Ported from old s:select_chat_atpos().
+" Ported from old s:select_chat_atpos(). No header row — line 1 is the first
+" session, so the cursor's lnum maps directly to ids[lnum-1].
 function! zai#sessions#select_atpos() abort
   let lnum = line('.')
-  if lnum <= 1 | return | endif  " skip header
   let chats = zai#chat#list_chats()
   let ids = sort(keys(chats))
-  let idx = lnum - 2
+  let idx = lnum - 1
   if idx < 0 || idx >= len(ids) | return | endif
   call zai#chat#switch(ids[idx])
 endfun

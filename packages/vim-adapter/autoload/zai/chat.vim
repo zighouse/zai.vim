@@ -12,33 +12,108 @@ let s:spinner_phase_labels = {'thinking':' 思考 ','tool':' 工具 '}
 let s:user_prompt = get(g:, 'zaivim_chat_user_prompt', '**用户：**')
 let s:assistant_prompt = get(g:, 'zaivim_chat_assistant_prompt', '**助手：**')
 
-function! zai#chat#start(args) abort
-  call zai#rpc#connect()
-  " Display buffer (上方) — 承载 AI 流式响应 + 历史对话
-  rightbelow vertical new
+" Window-role markers — `b:zai_role` value identifies output/input buffers
+" across the layout. Used by s:find_window_by_role() to robustly locate the
+" output/input window even when sessions have been switched (which changes
+" the bufnr shown in that window). Ported from old autoload/zai/chat.vim's
+" b:zai_buffer marker pattern, but split into role-specific markers.
+let s:OUTPUT_ROLE = 'output'
+let s:INPUT_ROLE = 'input'
+
+" Find window showing a buffer with the given zai_role. Returns winnr or -1.
+" Robust against session switching (bufnr changes per-session, but role marker
+" is set on every new buffer in setup_output_buffer/setup_input_buffer).
+function! s:find_window_by_role(role) abort
+  for w in range(1, winnr('$'))
+    if getbufvar(winbufnr(w), 'zai_role', '') ==# a:role
+      return w
+    endif
+  endfor
+  return -1
+endfun
+
+" Configure current buffer as an output (display) buffer. Idempotent — called
+" both on first-time layout creation (vertical botright new) and on subsequent
+" :ZaiChat calls (enew! in existing output window).
+function! s:setup_output_buffer() abort
   setlocal buftype=nofile bufhidden=hide nobuflisted noswapfile modifiable wrap syntax=markdown
-  let disp_bnr = bufnr('%')
-  " Input buffer (下方 split, height=8) — 用户多行编辑区，per-session
-  rightbelow 8new
+  let b:zai_role = s:OUTPUT_ROLE
+  nnoremap <buffer><silent><nowait> <C-o> :call zai#chat#toggle_mode_internal()<CR>
+  " BufWriteCmd allows :w <path> to save transcript even on nofile buffer
+  augroup zai_chat_write
+    autocmd! * <buffer>
+    autocmd BufWriteCmd <buffer> call s:on_write()
+  augroup END
+endfun
+
+" Configure current buffer as an input (compose) buffer. Mappings send the
+" full multi-line content (AC2.2 hotfix — getline('.') was the original bug).
+function! s:setup_input_buffer() abort
   setlocal buftype=nofile bufhidden=hide nobuflisted noswapfile modifiable wrap
-  let in_bnr = bufnr('%')
+  let b:zai_role = s:INPUT_ROLE
   nnoremap <buffer><silent><nowait> <CR> :call zai#chat#send_internal()<CR>
   nnoremap <buffer><silent><nowait> <C-c> :call zai#chat#cancel_internal()<CR>
   inoremap <buffer><silent><nowait> <C-CR> <Esc>:call zai#chat#send_internal()<CR>
-  execute 'nnoremap <buffer=' . disp_bnr . '><silent><nowait> <C-o> :call zai#chat#toggle_mode_internal()<CR>'
-  execute 'autocmd BufWriteCmd <buffer=' . disp_bnr . '> call s:on_write()'
+endfun
+
+" Open chat UI. Idempotent — first call builds 3-window layout (list + output
+" + input); subsequent calls reuse the layout, switching output/input windows
+" to fresh per-session buffers (so each session has its own output AND input
+" buffer, per AC2.2 hotfix). Pattern ported from old autoload/zai/chat.vim
+" s:ui_open() / s:goto_owin() / s:goto_iwin(), adapted for per-session ibuf.
+function! zai#chat#start(args) abort
+  call zai#rpc#connect()
+
+  " Detect existing layout via role markers
+  let ow = s:find_window_by_role(s:OUTPUT_ROLE)
+  let iw = s:find_window_by_role(s:INPUT_ROLE)
+
+  if ow == -1
+    " First-time: build right-side stack — output (80w) on top, input (8h) below
+    vertical botright new
+    call s:setup_output_buffer()
+    let disp_bnr = bufnr('%')
+    vertical resize 80
+    belowright 8new
+    call s:setup_input_buffer()
+    let in_bnr = bufnr('%')
+  else
+    " Layout exists — enew! swaps current window's buffer for a fresh one
+    " without disturbing the window layout (old buffer persists via bufhidden=hide)
+    execute ow . 'wincmd w'
+    enew!
+    call s:setup_output_buffer()
+    let disp_bnr = bufnr('%')
+    let iw = s:find_window_by_role(s:INPUT_ROLE)
+    if iw != -1
+      execute iw . 'wincmd w'
+      enew!
+      call s:setup_input_buffer()
+      let in_bnr = bufnr('%')
+    else
+      " Input window was closed by user — recreate below output
+      execute bufwinnr(disp_bnr) . 'wincmd w'
+      belowright 8new
+      call s:setup_input_buffer()
+      let in_bnr = bufnr('%')
+    endif
+  endif
+
   let s:pending = {'bufnr': disp_bnr, 'ibuf_nr': in_bnr}
   call zai#rpc#request('session.create', {}, function('s:on_session'))
-  " AC3.1 hotfix: auto-open sessions list above display buffer, matching old
-  " s:ui_open() → s:goto_lwin() pattern. Focus display first so aboveleft
-  " split lands above display, not above input.
+
+  " Sessions list (idempotent — sessions#open checks bufwinnr internally).
+  " Focus output window first so aboveleft 5new lands above output, not input.
   let disp_win = bufwinnr(disp_bnr)
   if disp_win != -1
     execute disp_win . 'wincmd w'
     call zai#sessions#open()
   endif
+
+  " Focus input window so user can start typing immediately
   let in_win = bufwinnr(in_bnr)
   if in_win != -1 | execute in_win . 'wincmd w' | endif
+
   if s:timer == -1 | let s:timer = timer_start(200, function('s:ui_tick'), {'repeat': -1}) | endif
 endfun
 
@@ -309,17 +384,24 @@ function! zai#chat#toggle_mode_internal() abort
   call s:toggle_mode()
 endfunction
 
+" Switch to session {id}: swap the output window's buffer to that session's
+" display buffer, and the input window's buffer to its input buffer. Layout
+" (window count/positions) is preserved; only the displayed buffers change.
+" This is the wholesale port of old s:goto_owin() + s:goto_iwin() for the
+" per-session-ibuf era (AC2.2 hotfix).
 function! zai#chat#switch(id) abort
   if !has_key(s:chats, a:id) | return | endif
-  let c = s:chats[a:id] | let s:current_id = a:id
-  if bufexists(c.bufnr) && bufwinnr(c.bufnr) != -1
-    execute bufwinnr(c.bufnr) . 'wincmd w' | call s:render_output(c)
+  let c = s:chats[a:id]
+  let s:current_id = a:id
+  let ow = s:find_window_by_role(s:OUTPUT_ROLE)
+  if ow != -1 && bufexists(c.bufnr)
+    execute ow . 'wincmd w'
+    execute 'buffer ' . c.bufnr
+    call s:render_output(c)
   endif
-  " input buffer 不在任何 window 时，借用其他 session 的 input window 位置
-  if bufexists(c.ibuf_nr) && bufwinnr(c.ibuf_nr) == -1
-    for [_, oc] in items(s:chats)
-      let ow = bufwinnr(oc.ibuf_nr)
-      if ow != -1 | execute ow . 'wincmd w' | execute 'buffer ' . c.ibuf_nr | break | endif
-    endfor
+  let iw = s:find_window_by_role(s:INPUT_ROLE)
+  if iw != -1 && bufexists(c.ibuf_nr)
+    execute iw . 'wincmd w'
+    execute 'buffer ' . c.ibuf_nr
   endif
 endfun

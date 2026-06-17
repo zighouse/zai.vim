@@ -107,10 +107,46 @@ endfor
 sleep 400m
 let s:sb = zai#sessions#get_bufnr()
 let s:sessions_results = ['sessions_bufnr:' . s:sb]
+" Defensive: verify sessions buffer is NOT the same as any chat's display/input
+" buffer. A previous bug had `:5split` reusing the display buffer, which caused
+" `s:sessions_bufnr == display_bufnr`, two windows showing the same buffer,
+" and render() setting the display buffer nomodifiable → E21 on chat writes.
+let s:chat_bufnrs = []
+for [sid, c] in items(zai#chat#list_chats())
+  call add(s:chat_bufnrs, c.bufnr)
+  call add(s:chat_bufnrs, c.ibuf_nr)
+endfor
+let s:overlap = index(s:chat_bufnrs, s:sb) == -1 ? 'distinct' : 'OVERLAP'
+let s:sessions_results += ['sessions_distinct:' . s:overlap]
 if s:sb >= 0 && bufexists(s:sb)
   let s:sessions_results += ['sessions_lines:' . json_encode(getbufline(s:sb, 1, '$'))]
   let s:sessions_results += ['sessions_win:' . bufwinnr(s:sb)]
+  " Verify the sessions buffer has the cross-script marker (proves it was
+  " created by zai#sessions#open, not a misidentified display buffer)
+  let s:sessions_results += ['sessions_marker:' . getbufvar(s:sb, 'zai_sessions', 0)]
 endif
+
+" AC3.1 hotfix+ — Repeated :ZaiChat must REUSE the layout, not nest new splits.
+" Pre-fix: every :ZaiChat did `rightbelow vertical new` + `rightbelow 8new`
+" unconditionally, producing 2 extra windows per call. Post-fix: zai#chat#start
+" checks b:zai_role markers and swaps existing windows' buffers via enew!.
+" Layout invariant: window count delta must be 0 across the second call,
+" while chats grow by 1 and the sessions list grows by 1 row.
+let s:wins_before = winnr('$')
+let s:chats_before = len(zai#chat#list_chats())
+let s:lines_before = s:sb >= 0 ? len(getbufline(s:sb, 1, '$')) : 0
+call zai#chat#start('')
+for i in range(40)
+  if len(zai#chat#list_chats()) > s:chats_before | break | endif
+  sleep 50m
+endfor
+sleep 400m
+let s:wins_delta = winnr('$') - s:wins_before
+let s:chats_delta = len(zai#chat#list_chats()) - s:chats_before
+let s:rows_delta = (s:sb >= 0 ? len(getbufline(s:sb, 1, '$')) : 0) - s:lines_before
+let s:sessions_results += ['multi_wins_delta:' . s:wins_delta]
+let s:sessions_results += ['multi_chats_delta:' . s:chats_delta]
+let s:sessions_results += ['multi_rows_delta:' . s:rows_delta]
 
 call writefile(s:results + s:results2 + ['sent_payload_json:' . json_encode(s:sent_payload)] + s:sessions_results, $VIM_OUT)
 call zai#rpc#close()
@@ -154,8 +190,15 @@ assert_contains "multi-line payload preserves 3rd line incl Chinese" "$OUT" 'lin
 echo ""
 echo "Test 4 (AC3.1 hotfix): sessions list auto-opens with chat"
 assert_contains "sessions buffer was created" "$OUT" 'sessions_bufnr:[1-9]'
-assert_contains "sessions buffer has header line" "$OUT" 'sessions_lines:.*=== Sessions ==='
 assert_contains "sessions buffer has at least one session row" "$OUT" 'sessions_lines:.*·.*↓'
+assert_contains "sessions buffer is distinct from chat display/input buffers" "$OUT" 'sessions_distinct:distinct'
+assert_contains "sessions buffer carries b:zai_sessions marker" "$OUT" 'sessions_marker:1'
+
+echo ""
+echo "Test 5 (AC3.1 hotfix+): repeated :ZaiChat reuses layout (no nested splits)"
+assert_contains "window count unchanged across 2nd :ZaiChat" "$OUT" 'multi_wins_delta:0'
+assert_contains "chat count grew by 1" "$OUT" 'multi_chats_delta:1'
+assert_contains "sessions list grew by 1 row" "$OUT" 'multi_rows_delta:1'
 
 echo ""
 echo "=== Results ==="
