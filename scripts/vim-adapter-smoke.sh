@@ -50,6 +50,7 @@ trap 'rm -f "$VIM_TEST_SCRIPT" "$VIM_OUT"' EXIT
 
 cat > "$VIM_TEST_SCRIPT" <<'VIMSCRIPT'
 let s:results = []
+let s:sent_payload = ''
 function! s:OnHealth(msg) abort
   call add(s:results, 'health:' . json_encode(a:msg))
 endfun
@@ -67,7 +68,31 @@ for i in range(40)
   sleep 50m
 endfor
 
-call writefile(s:results, $VIM_OUT)
+" AC2.2 — Multi-line input test
+" 模拟 chat.vim 的 s:send() 逻辑：构造多行 text，join 后发送
+let s:multi_lines = ['line 1 of paste', 'line 2 of paste', 'line 3 with 中文测试']
+let s:sent_payload = join(s:multi_lines, "\n")
+let s:results2 = []
+function! s:OnChatSend(msg) abort
+  call add(s:results2, 'chat.send:' . json_encode(a:msg))
+endfun
+
+" 从 session.create 响应里取 sessionId 和 _token
+let s:session_msg = filter(copy(s:results), 'v:val =~# "^session:"')[0]
+let s:session_json = substitute(s:session_msg, '^session:', '', '')
+let s:session_obj = json_decode(s:session_json)
+let s:session_id = s:session_obj.result.sessionId
+let s:token = get(s:session_obj.result, '_token', '')
+
+call zai#rpc#request('chat.send', {'sessionId': s:session_id, 'token': s:token, 'text': s:sent_payload}, function('s:OnChatSend'))
+
+" Poll up to 3s for chat.send response (provider call may be slow)
+for i in range(60)
+  if !empty(s:results2) | break | endif
+  sleep 50m
+endfor
+
+call writefile(s:results + s:results2 + ['sent_payload_json:' . json_encode(s:sent_payload)], $VIM_OUT)
 call zai#rpc#close()
 qa!
 VIMSCRIPT
@@ -99,6 +124,12 @@ assert_contains "health result has status ok" "$OUT" '"status":[ ]*"ok"'
 echo ""
 echo "Test 2: session.create response received"
 assert_contains "session response has sessionId" "$OUT" 'sessionId'
+
+echo ""
+echo "Test 3 (AC2.2): multi-line chat.send accepted by engine"
+assert_contains "chat.send response received" "$OUT" 'chat.send:'
+assert_contains "multi-line payload preserved as JSON with newlines" "$OUT" 'sent_payload_json:.*line 1.*\\nline 2'
+assert_contains "multi-line payload preserves 3rd line incl Chinese" "$OUT" 'line 3'
 
 echo ""
 echo "=== Results ==="

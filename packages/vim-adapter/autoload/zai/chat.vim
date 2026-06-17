@@ -10,19 +10,20 @@ let s:spinner_phase_labels = {'thinking':' 思考 ','tool':' 工具 '}
 
 function! zai#chat#start(args) abort
   call zai#rpc#connect()
-  " Create buffer in main-loop context where :nnoremap is known to work.
+  " Display buffer (上方) — 承载 AI 流式响应 + 历史对话
   rightbelow vertical new
-  setlocal buftype=nofile bufhidden=hide nobuflisted noswapfile
-  setlocal modifiable wrap
-  setlocal syntax=markdown
-  let bnr = bufnr('%')
+  setlocal buftype=nofile bufhidden=hide nobuflisted noswapfile modifiable wrap syntax=markdown
+  let disp_bnr = bufnr('%')
+  " Input buffer (下方 split, height=8) — 用户多行编辑区，per-session
+  rightbelow 8new
+  setlocal buftype=nofile bufhidden=hide nobuflisted noswapfile modifiable wrap
+  let in_bnr = bufnr('%')
   nnoremap <buffer><silent><nowait> <CR> :call zai#chat#send_internal()<CR>
   nnoremap <buffer><silent><nowait> <C-c> :call zai#chat#cancel_internal()<CR>
-  nnoremap <buffer><silent><nowait> <C-o> :call zai#chat#toggle_mode_internal()<CR>
   inoremap <buffer><silent><nowait> <C-CR> <Esc>:call zai#chat#send_internal()<CR>
-  execute 'autocmd BufWriteCmd <buffer=' . bnr . '> call s:on_write()'
-  " Store pending buffer info — s:on_session fills session details on response.
-  let s:pending = {'bufnr': bnr}
+  execute 'nnoremap <buffer=' . disp_bnr . '><silent><nowait> <C-o> :call zai#chat#toggle_mode_internal()<CR>'
+  execute 'autocmd BufWriteCmd <buffer=' . disp_bnr . '> call s:on_write()'
+  let s:pending = {'bufnr': disp_bnr, 'ibuf_nr': in_bnr}
   call zai#rpc#request('session.create', {}, function('s:on_session'))
   if s:timer == -1 | let s:timer = timer_start(200, function('s:ui_tick'), {'repeat': -1}) | endif
 endfun
@@ -33,18 +34,26 @@ function! s:on_session(msg) abort
   let id = a:msg.result.sessionId
   let token = get(a:msg.result, '_token', '')
   let bnr = s:pending.bufnr
+  let ibuf = s:pending.ibuf_nr
   unlet s:pending
-  let s:chats[id] = {'bufnr': bnr, 'sessionId': id, 'token': token, 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': v:null, 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': [], 'spinner_idx': 0, 'spinner_lnum': -1, 'info_lnum': -1, 'stream_lnum': 0}
+  let s:chats[id] = {'bufnr': bnr, 'ibuf_nr': ibuf, 'sessionId': id, 'token': token, 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': v:null, 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': [], 'spinner_idx': 0, 'spinner_lnum': -1, 'info_lnum': -1, 'stream_lnum': 0}
   let s:current_id = id
 endfun
 
+" 多行发送：读取整个 input buffer，join 为单个 text 字段，发送后清空。
+" AC2.2 — Multi-line input support (hotfix for Story 4.1)
 function! s:send() abort
   if s:current_id == v:null | return | endif
   let c = s:chats[s:current_id]
-  let line = getline('.')
-  if empty(line) | return | endif
-  call zai#rpc#request('chat.send', {'sessionId': c.sessionId, 'token': c.token, 'text': line})
-  call appendbufline(c.bufnr, '$', '> ' . line)
+  let lines = getbufline(c.ibuf_nr, 1, '$')
+  " 去掉末尾空行（Vim buffer 通常以空行结尾）
+  while !empty(lines) && lines[-1] ==# '' | call remove(lines, -1) | endwhile
+  if empty(lines) | return | endif
+  let text = join(lines, "\n")
+  call zai#rpc#request('chat.send', {'sessionId': c.sessionId, 'token': c.token, 'text': text})
+  " Display buffer 追加用户消息（首行加 '> ' 引用前缀）
+  call appendbufline(c.bufnr, '$', ['> ' . lines[0]] + lines[1:])
+  call deletebufline(c.ibuf_nr, 1, '$')
 endfun
 
 function! s:cancel() abort
@@ -223,6 +232,7 @@ function! zai#chat#close() abort
     let c = s:chats[s:current_id]
     call zai#rpc#request('session.close', {'sessionId': c.sessionId, 'token': c.token})
     if bufexists(c.bufnr) | execute 'bwipeout! ' . c.bufnr | endif
+    if bufexists(c.ibuf_nr) | execute 'bwipeout! ' . c.ibuf_nr | endif
     unlet s:chats[s:current_id]
   endif | let s:current_id = v:null
 endfun
@@ -241,10 +251,15 @@ endfunction
 
 function! zai#chat#switch(id) abort
   if !has_key(s:chats, a:id) | return | endif
-  let c = s:chats[a:id]
-  let s:current_id = a:id
-  if bufexists(c.bufnr)
-    execute 'buffer ' . c.bufnr
-    call s:render_output(c)
+  let c = s:chats[a:id] | let s:current_id = a:id
+  if bufexists(c.bufnr) && bufwinnr(c.bufnr) != -1
+    execute bufwinnr(c.bufnr) . 'wincmd w' | call s:render_output(c)
+  endif
+  " input buffer 不在任何 window 时，借用其他 session 的 input window 位置
+  if bufexists(c.ibuf_nr) && bufwinnr(c.ibuf_nr) == -1
+    for [_, oc] in items(s:chats)
+      let ow = bufwinnr(oc.ibuf_nr)
+      if ow != -1 | execute ow . 'wincmd w' | execute 'buffer ' . c.ibuf_nr | break | endif
+    endfor
   endif
 endfun
