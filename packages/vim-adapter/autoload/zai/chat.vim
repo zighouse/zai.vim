@@ -29,6 +29,16 @@ function! zai#chat#start(args) abort
   execute 'autocmd BufWriteCmd <buffer=' . disp_bnr . '> call s:on_write()'
   let s:pending = {'bufnr': disp_bnr, 'ibuf_nr': in_bnr}
   call zai#rpc#request('session.create', {}, function('s:on_session'))
+  " AC3.1 hotfix: auto-open sessions list above display buffer, matching old
+  " s:ui_open() → s:goto_lwin() pattern. Focus display first so aboveleft
+  " split lands above display, not above input.
+  let disp_win = bufwinnr(disp_bnr)
+  if disp_win != -1
+    execute disp_win . 'wincmd w'
+    call zai#sessions#open()
+  endif
+  let in_win = bufwinnr(in_bnr)
+  if in_win != -1 | execute in_win . 'wincmd w' | endif
   if s:timer == -1 | let s:timer = timer_start(200, function('s:ui_tick'), {'repeat': -1}) | endif
 endfun
 
@@ -141,8 +151,16 @@ function! s:render_output(c) abort
 endfun
 
 function! zai#chat#on_chunk(p) abort
-  if s:current_id == v:null | return | endif
-  let c = s:chats[s:current_id]
+  " AC3.1 hotfix: route by sessionId in chunk payload (Bug 3 fix). Concurrent
+  " streams now append to their own session's display buffer. Falls back to
+  " s:current_id for backward compat with older server.ts payloads.
+  let sid = get(a:p, 'sessionId', '')
+  if empty(sid) || !has_key(s:chats, sid)
+    if s:current_id == v:null | return | endif
+    let sid = s:current_id
+    if !has_key(s:chats, sid) | return | endif
+  endif
+  let c = s:chats[sid]
   call add(c.events, a:p)
   let t = get(a:p,'type','')
   if t ==# 'text'
@@ -197,25 +215,41 @@ function! zai#chat#on_chunk(p) abort
 endfun
 
 function! zai#chat#on_notification(p) abort
-  if s:current_id == v:null | return | endif
-  let c = s:chats[s:current_id]
   let t = get(a:p,'type','')
+  let d = get(a:p,'data',{})
   if t ==# 'phase'
-    let d = get(a:p,'data',{})
+    " AC3.1 hotfix: route phase by sessionId so non-current sessions still
+    " update their phase/elapsed/tokens fields (visible in sessions list).
+    " Spinner only renders for current session to avoid cross-session
+    " display buffer pollution.
+    let sid = get(d, 'sessionId', '')
+    if empty(sid) || !has_key(s:chats, sid)
+      if s:current_id == v:null | return | endif
+      let sid = s:current_id
+      if !has_key(s:chats, sid) | return | endif
+    endif
+    let c = s:chats[sid]
     let p = get(d,'phase','')
     if !empty(p) && has_key(s:phase_icons, p)
       let c.phase = p | let c.elapsed_ms = get(d,'elapsed',c.elapsed_ms) | let c.tokens_out = get(d,'tokens',c.tokens_out) | let c.tool_name = get(d,'toolName',c.tool_name)
     endif
-    if p ==# 'thinking' || p ==# 'tool'
-      call appendbufline(c.bufnr, '$', s:phase_icons[p] . get(s:spinner_phase_labels, p, ' ') . s:spinner[0])
-      let c.spinner_lnum = getbufinfo(c.bufnr)[0].linecount
-    elseif p ==# 'done' || p ==# 'error'
-      let c.spinner_lnum = -1
+    if sid ==# s:current_id
+      if p ==# 'thinking' || p ==# 'tool'
+        call appendbufline(c.bufnr, '$', s:phase_icons[p] . get(s:spinner_phase_labels, p, ' ') . s:spinner[0])
+        let c.spinner_lnum = getbufinfo(c.bufnr)[0].linecount
+      elseif p ==# 'done' || p ==# 'error'
+        let c.spinner_lnum = -1
+      endif
     endif
     return
   endif
   if t ==# 'agent.progress'
-    call appendbufline(c.bufnr, '$', '🔄 ' . get(get(a:p,'data',{}),'status','running'))
+    let sid = get(d, 'sessionId', s:current_id)
+    if !has_key(s:chats, sid) | return | endif
+    let c = s:chats[sid]
+    if sid ==# s:current_id
+      call appendbufline(c.bufnr, '$', '🔄 ' . get(d,'status','running'))
+    endif
   endif
 endfun
 
@@ -242,8 +276,14 @@ function! s:ui_tick(timer) abort
       endif
     endif
   endfor
-  call zai#sessions#render(s:chats)
+  call zai#sessions#render(s:chats, s:current_id)
 endfun
+
+" Public accessor for sessions.vim to read chat state (avoid <SID> cross-file
+" scope issues). Used by zai#sessions#select_atpos() to map line → sessionId.
+function! zai#chat#list_chats() abort
+  return s:chats
+endfunction
 
 function! zai#chat#close() abort
   if s:current_id != v:null && has_key(s:chats, s:current_id)
@@ -253,6 +293,8 @@ function! zai#chat#close() abort
     if bufexists(c.ibuf_nr) | execute 'bwipeout! ' . c.ibuf_nr | endif
     unlet s:chats[s:current_id]
   endif | let s:current_id = v:null
+  " AC3.1 hotfix: tear down sessions list when no chats remain
+  if empty(s:chats) | call zai#sessions#close() | endif
 endfun
 
 " Public wrappers for buffer-local mappings — avoid <SID>/<SNR> which break

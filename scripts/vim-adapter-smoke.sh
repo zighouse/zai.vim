@@ -92,7 +92,27 @@ for i in range(60)
   sleep 50m
 endfor
 
-call writefile(s:results + s:results2 + ['sent_payload_json:' . json_encode(s:sent_payload)], $VIM_OUT)
+" AC3.1 — Sessions list auto-open test (Bug 1 + Bug 2 fix)
+" Trigger zai#chat#start() which must auto-open the sessions list window.
+" Use a fresh session by calling start(''), wait for session.create response
+" and ui_tick timer (200ms) to render the list.
+let s:sessions_results = []
+call zai#chat#start('')
+" Poll for s:chats to be populated by async session.create callback
+for i in range(40)
+  if !empty(zai#chat#list_chats()) | break | endif
+  sleep 50m
+endfor
+" Allow ui_tick timer (200ms) to fire and populate the sessions buffer
+sleep 400m
+let s:sb = zai#sessions#get_bufnr()
+let s:sessions_results = ['sessions_bufnr:' . s:sb]
+if s:sb >= 0 && bufexists(s:sb)
+  let s:sessions_results += ['sessions_lines:' . json_encode(getbufline(s:sb, 1, '$'))]
+  let s:sessions_results += ['sessions_win:' . bufwinnr(s:sb)]
+endif
+
+call writefile(s:results + s:results2 + ['sent_payload_json:' . json_encode(s:sent_payload)] + s:sessions_results, $VIM_OUT)
 call zai#rpc#close()
 qa!
 VIMSCRIPT
@@ -130,6 +150,12 @@ echo "Test 3 (AC2.2): multi-line chat.send accepted by engine"
 assert_contains "chat.send response received" "$OUT" 'chat.send:'
 assert_contains "multi-line payload preserved as JSON with newlines" "$OUT" 'sent_payload_json:.*line 1.*\\nline 2'
 assert_contains "multi-line payload preserves 3rd line incl Chinese" "$OUT" 'line 3'
+
+echo ""
+echo "Test 4 (AC3.1 hotfix): sessions list auto-opens with chat"
+assert_contains "sessions buffer was created" "$OUT" 'sessions_bufnr:[1-9]'
+assert_contains "sessions buffer has header line" "$OUT" 'sessions_lines:.*=== Sessions ==='
+assert_contains "sessions buffer has at least one session row" "$OUT" 'sessions_lines:.*·.*↓'
 
 echo ""
 echo "=== Results ==="

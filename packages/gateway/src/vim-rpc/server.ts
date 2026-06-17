@@ -117,7 +117,11 @@ export async function streamChatResponse(
       const type = raw.type as string;
 
       if (KNOWN_CHUNK_TYPES.has(type)) {
-        const encoded = encodeChatChunk(raw);
+        // AC3.1 (Story 4.1 hotfix): inject sessionId into chunk payload so
+        // VimScript can route concurrent streams to per-session state instead
+        // of always updating s:current_id.
+        const enriched = { ...raw, sessionId };
+        const encoded = encodeChatChunk(enriched);
         streamOut.write(sanitizeForVim(encoded) + '\n');
       } else {
         process.stderr.write(`[vim-rpc-server] unknown chunk type: ${type}\n`);
@@ -125,6 +129,7 @@ export async function streamChatResponse(
           const phase = raw.phase as string;
           if (phase && VALID_PHASES.has(phase)) {
             const notification = encodeNotification('phase', {
+              sessionId,
               phase,
               elapsed: raw.elapsed ?? 0,
               tokens: raw.tokens ?? 0,
