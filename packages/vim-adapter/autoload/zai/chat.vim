@@ -7,6 +7,10 @@ let s:phase_icons = {'request':'📤','thinking':'🤔','tool':'🔧','response'
 let s:phase_labels = {'request':'发送中','thinking':'思考','tool':'','response':'生成','done':'完成','error':'错误'}
 let s:spinner = ['◐', '◓', '◑', '◒']
 let s:spinner_phase_labels = {'thinking':' 思考 ','tool':' 工具 '}
+" Role prompt markers — 与旧 Python 版 autoload/zai/chat.vim:705 行为对齐：
+" 用户消息和 AI 响应之间用空行 + 角色标记分隔，便于阅读区分
+let s:user_prompt = get(g:, 'zaivim_chat_user_prompt', '**用户：**')
+let s:assistant_prompt = get(g:, 'zaivim_chat_assistant_prompt', '**助手：**')
 
 function! zai#chat#start(args) abort
   call zai#rpc#connect()
@@ -42,17 +46,22 @@ endfun
 
 " 多行发送：读取整个 input buffer，join 为单个 text 字段，发送后清空。
 " AC2.2 — Multi-line input support (hotfix for Story 4.1)
+" 用户消息和 AI 响应之间用空行 + 角色标记分隔（与旧版 autoload/zai/chat.vim 一致）
 function! s:send() abort
   if s:current_id == v:null | return | endif
   let c = s:chats[s:current_id]
   let lines = getbufline(c.ibuf_nr, 1, '$')
-  " 去掉末尾空行（Vim buffer 通常以空行结尾）
   while !empty(lines) && lines[-1] ==# '' | call remove(lines, -1) | endwhile
   if empty(lines) | return | endif
   let text = join(lines, "\n")
   call zai#rpc#request('chat.send', {'sessionId': c.sessionId, 'token': c.token, 'text': text})
-  " Display buffer 追加用户消息（首行加 '> ' 引用前缀）
-  call appendbufline(c.bufnr, '$', ['> ' . lines[0]] + lines[1:])
+  " 存入 events 以便 render_output 重放（保留用户/AI 边界）
+  call add(c.events, {'type': 'user', 'content': text})
+  " 增量渲染：display buffer 已有内容则前置空行作为分隔
+  let existing = getbufline(c.bufnr, 1, '$')
+  let has_content = !empty(filter(copy(existing), '!empty(v:val)'))
+  let block = (has_content ? [''] : []) + [s:user_prompt] + lines + ['', s:assistant_prompt]
+  call appendbufline(c.bufnr, '$', block)
   call deletebufline(c.ibuf_nr, 1, '$')
 endfun
 
@@ -81,10 +90,18 @@ endfun
 function! s:render_output(c) abort
   if !bufexists(a:c.bufnr) | return | endif
   call deletebufline(a:c.bufnr, 1, '$')
+  let first_block = 1
   let i = 0
   while i < len(a:c.events)
     let e = a:c.events[i]
-    if e.type ==# 'text'
+    if e.type ==# 'user'
+      let user_lines = split(get(e, 'content', ''), "\n", 1)
+      while !empty(user_lines) && user_lines[-1] ==# '' | call remove(user_lines, -1) | endwhile
+      let sep = first_block ? [] : ['']
+      call appendbufline(a:c.bufnr, '$', sep + [s:user_prompt] + user_lines + ['', s:assistant_prompt])
+      let first_block = 0
+      let i += 1
+    elseif e.type ==# 'text'
       let content = e.content
       let i += 1
       while i < len(a:c.events) && a:c.events[i].type ==# 'text'
@@ -96,6 +113,7 @@ function! s:render_output(c) abort
       for line in lines
         call appendbufline(a:c.bufnr, '$', line)
       endfor
+      let first_block = 0
       continue
     elseif e.type ==# 'tool_call'
       if a:c.mode ==# 'compact'
