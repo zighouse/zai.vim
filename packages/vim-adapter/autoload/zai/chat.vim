@@ -360,6 +360,13 @@ function! zai#chat#list_chats() abort
   return s:chats
 endfunction
 
+" Public read-only access to the current session id. Returns v:null when no
+" session is active. Used by attach.vim (and future P1 modules) to address
+" the active session's input buffer without reaching into script-local state.
+function! zai#chat#current_id() abort
+  return s:current_id
+endfunction
+
 function! zai#chat#close() abort
   if s:current_id != v:null && has_key(s:chats, s:current_id)
     let c = s:chats[s:current_id]

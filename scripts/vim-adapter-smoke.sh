@@ -148,7 +148,42 @@ let s:sessions_results += ['multi_wins_delta:' . s:wins_delta]
 let s:sessions_results += ['multi_chats_delta:' . s:chats_delta]
 let s:sessions_results += ['multi_rows_delta:' . s:rows_delta]
 
-call writefile(s:results + s:results2 + ['sent_payload_json:' . json_encode(s:sent_payload)] + s:sessions_results, $VIM_OUT)
+" Story 4.1.2 P0 — Selection attach (`:ZaiAdd` / `<Plug>ZaiAdd`).
+" Simulate: open a fake source buffer with 3 lines of code + filetype=vim,
+" call zai#attach#range(2, 4) to attach the middle 3 lines, then verify the
+" CURRENT session's input buffer contains the fenced code block with the
+" vim filetype label.
+let s:attach_results = []
+" Create a non-chat source buffer (so &filetype is meaningful) with code.
+" IMPORTANT: bufadd() creates an UNLOADED buffer; setbufline silently fails
+" on unloaded buffers. Must :buffer into it (load) BEFORE setbufline.
+let s:src_bnr = bufadd('zai-smoke-src.vim')
+call setbufvar(s:src_bnr, '&buflisted', 1)
+execute 'buffer ' . s:src_bnr
+call setbufvar(s:src_bnr, '&filetype', 'vim')
+call deletebufline(s:src_bnr, 1, '$')
+call setbufline(s:src_bnr, 1, ['" header', 'function! Foo() abort', '  echo "hello"', 'endfunction', '" trailer'])
+" Verify the src buffer is now current and has the expected content
+let s:attach_results += ['src_bufnr:' . bufnr('%')]
+let s:attach_results += ['src_ft:' . &filetype]
+let s:attach_results += ['src_linecount:' . getbufinfo(s:src_bnr)[0].linecount]
+let s:attach_results += ['src_lines:' . json_encode(getbufline(s:src_bnr, 1, '$'))]
+" Capture current session's input buffer BEFORE attach
+let s:cur_chat = zai#chat#current_id()
+let s:ibuf_before = empty(s:cur_chat) ? -1 : zai#chat#list_chats()[s:cur_chat].ibuf_nr
+let s:ibuf_lines_before = s:ibuf_before == -1 ? [] : getbufline(s:ibuf_before, 1, '$')
+" Attach lines 2-4 (the function definition)
+call zai#attach#range(2, 4)
+" Re-resolve ibuf AFTER attach
+let s:cur_chat = zai#chat#current_id()
+let s:ibuf_after = empty(s:cur_chat) ? -1 : zai#chat#list_chats()[s:cur_chat].ibuf_nr
+let s:ibuf_lines_after = s:ibuf_after == -1 ? [] : getbufline(s:ibuf_after, 1, '$')
+let s:attach_results += ['attach_ibuf_before:' . s:ibuf_before]
+let s:attach_results += ['attach_ibuf_after:' . s:ibuf_after]
+let s:attach_results += ['attach_lines_before:' . json_encode(s:ibuf_lines_before)]
+let s:attach_results += ['attach_lines_after:' . json_encode(s:ibuf_lines_after)]
+
+call writefile(s:results + s:results2 + ['sent_payload_json:' . json_encode(s:sent_payload)] + s:sessions_results + s:attach_results, $VIM_OUT)
 call zai#rpc#close()
 qa!
 VIMSCRIPT
@@ -199,6 +234,14 @@ echo "Test 5 (AC3.1 hotfix+): repeated :ZaiChat reuses layout (no nested splits)
 assert_contains "window count unchanged across 2nd :ZaiChat" "$OUT" 'multi_wins_delta:0'
 assert_contains "chat count grew by 1" "$OUT" 'multi_chats_delta:1'
 assert_contains "sessions list grew by 1 row" "$OUT" 'multi_rows_delta:1'
+
+echo ""
+echo "Test 6 (Story 4.1.2 P0): selection attach via zai#attach#range"
+assert_contains "input buffer resolved (session exists)" "$OUT" 'attach_ibuf_after:[1-9]'
+assert_contains "fence open with vim filetype label" "$OUT" 'attach_lines_after:.*```vim'
+assert_contains "attached function line preserved" "$OUT" 'attach_lines_after:.*function! Foo'
+assert_contains "attached body line preserved" "$OUT" 'attach_lines_after:.*echo \\"hello\\"'
+assert_contains "fence close present" "$OUT" 'attach_lines_after:.*```'
 
 echo ""
 echo "=== Results ==="
