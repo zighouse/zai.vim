@@ -8,6 +8,10 @@ if !exists('g:zaivim_chat_default_mode') | let g:zaivim_chat_default_mode = 'com
 " via the <Plug>Zai* targets below.
 if !exists('g:zaivim_no_default_mappings') | let g:zaivim_no_default_mappings = 0 | endif
 
+" `:Zai` is the legacy alias for `:ZaiChat` — keeps muscle memory from the
+" old Python plugin (`plugin/zai.vim` defined `:Zai call zai#Open()`).
+" Story 4.1.2 P1 Q1 decision.
+command! -nargs=* Zai call zai#chat#start(<q-args>)
 command! -nargs=* ZaiChat call zai#chat#start(<q-args>)
 command! -nargs=* ZaiAgent call zai#agent#start(<q-args>)
 command! -nargs=0 ZaiSessions call zai#sessions#open()
