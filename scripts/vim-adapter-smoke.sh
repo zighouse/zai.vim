@@ -183,7 +183,59 @@ let s:attach_results += ['attach_ibuf_after:' . s:ibuf_after]
 let s:attach_results += ['attach_lines_before:' . json_encode(s:ibuf_lines_before)]
 let s:attach_results += ['attach_lines_after:' . json_encode(s:ibuf_lines_after)]
 
-call writefile(s:results + s:results2 + ['sent_payload_json:' . json_encode(s:sent_payload)] + s:sessions_results + s:attach_results, $VIM_OUT)
+" Story 4.1.2 P1 — quickfix-style :cp/:cn/:cc → session nav command filter.
+" Verify zai#chat#filt_cmd rewrites the four legacy quickfix aliases to their
+" Zai* equivalents. Pure-function check (no interactivity required).
+let s:nav_results = []
+let s:nav_results += ['filt_cp:' . zai#chat#filt_cmd('cp')]
+let s:nav_results += ['filt_cn:' . zai#chat#filt_cmd('cn')]
+let s:nav_results += ['filt_cc:' . zai#chat#filt_cmd('cc')]
+let s:nav_results += ['filt_new:' . zai#chat#filt_cmd('new')]
+let s:nav_results += ['filt_cc3:' . zai#chat#filt_cmd('cc 3')]
+let s:nav_results += ['filt_3cp:' . zai#chat#filt_cmd('3cp')]
+let s:nav_results += ['filt_passthru:' . zai#chat#filt_cmd('echo hello')]
+" Verify cnoremap <CR> IS installed in zai buffers. Switch to the current
+" chat's input buffer first (attach leaves us in the source buffer). The
+" maparg dict's 'buffer' field confirms it's buffer-local; 'expr' field
+" confirms it's an <expr> mapping; rhs should call filt_cmd.
+let s:cur_chat_obj = zai#chat#list_chats()[zai#chat#current_id()]
+execute 'buffer ' . s:cur_chat_obj.ibuf_nr
+let s:cr_map = maparg('<CR>', 'c', 0, 1)
+let s:nav_results += ['cr_map_buffer:' . get(s:cr_map, 'buffer', 0)]
+let s:nav_results += ['cr_map_expr:' . get(s:cr_map, 'expr', 0)]
+let s:nav_results += ['cr_map_rhs_has_filt:' . (get(s:cr_map, 'rhs', '') =~# 'filt_cmd' ? 1 : 0)]
+let s:nav_results += ['next_id:' . s:cur_chat]
+call zai#chat#next()
+let s:nav_results += ['after_next:' . zai#chat#current_id()]
+call zai#chat#prev()
+let s:nav_results += ['after_prev:' . zai#chat#current_id()]
+call zai#chat#goto(1)
+let s:nav_results += ['after_goto:' . zai#chat#current_id()]
+
+" Story 4.1.2 P1 regression — `:ZaiNext` (no count) invokes next(0) because
+" -count defaults to 0. Without the `a:1 > 0` guard in next(), count=0 falls
+" through to (cur_idx + 0) % len = cur_idx, switching to self (no visible
+" change). This test simulates the command-form call signature directly to
+" catch future regressions of the count=0 trap.
+let s:before_next0 = zai#chat#current_id()
+call zai#chat#next(0)
+let s:after_next0 = zai#chat#current_id()
+call zai#chat#prev(0)
+let s:after_prev0 = zai#chat#current_id()
+let s:nav_results += ['next0_changed:' . (s:after_next0 !=# s:before_next0 ? 1 : 0)]
+let s:nav_results += ['prev0_changed:' . (s:after_prev0 !=# s:after_next0 ? 1 : 0)]
+
+" Story 4.1.2 P1 — sessions list must be in CREATION order (c.seq), not
+" UUID-alphabetical. Verify by inspecting the seq field of the rendered list.
+" Pre-fix: sort(keys(s:chats)) gave UUID-lex order which made `:cc N` refer to
+" unpredictable sessions and broke the mental model. Post-fix: sort by seq so
+" `:cc 2` reliably means "the second session I created".
+let s:sorted = zai#chat#sorted_ids()
+let s:seqs = map(copy(s:sorted), {_, id -> get(zai#chat#list_chats()[id], 'seq', -1)})
+let s:nav_results += ['sorted_ids_count:' . len(s:sorted)]
+let s:nav_results += ['sorted_seqs_monotonic:' . (s:seqs ==# sort(copy(s:seqs), 'n') ? 1 : 0)]
+
+call writefile(s:results + s:results2 + ['sent_payload_json:' . json_encode(s:sent_payload)] + s:sessions_results + s:attach_results + s:nav_results, $VIM_OUT)
 call zai#rpc#close()
 qa!
 VIMSCRIPT
@@ -242,6 +294,29 @@ assert_contains "fence open with vim filetype label" "$OUT" 'attach_lines_after:
 assert_contains "attached function line preserved" "$OUT" 'attach_lines_after:.*function! Foo'
 assert_contains "attached body line preserved" "$OUT" 'attach_lines_after:.*echo \\"hello\\"'
 assert_contains "fence close present" "$OUT" 'attach_lines_after:.*```'
+
+echo ""
+echo "Test 7 (Story 4.1.2 P1): quickfix-style session navigation"
+assert_contains ":cp → :ZaiPrev" "$OUT" 'filt_cp:ZaiPrev'
+assert_contains ":cn → :ZaiNext" "$OUT" 'filt_cn:ZaiNext'
+assert_contains ":cc → :ZaiGoto" "$OUT" 'filt_cc:ZaiGoto'
+assert_contains ":new → :ZaiNew" "$OUT" 'filt_new:ZaiNew'
+assert_contains ":cc 3 → :ZaiGoto 3" "$OUT" 'filt_cc3:ZaiGoto 3'
+assert_contains ":3cp → :3ZaiPrev" "$OUT" 'filt_3cp:3ZaiPrev'
+assert_contains "non-zai command passes through unchanged" "$OUT" 'filt_passthru:echo hello'
+assert_contains "cnoremap <CR> installed as buffer-local in zai buffers" "$OUT" 'cr_map_buffer:1'
+assert_contains "cnoremap <CR> is <expr> mapping" "$OUT" 'cr_map_expr:1'
+assert_contains "cnoremap rhs calls filt_cmd" "$OUT" 'cr_map_rhs_has_filt:1'
+assert_contains "zai#chat#next advances current session id" "$OUT" 'after_next:'
+assert_contains "zai#chat#prev returns to original session id" "$OUT" 'after_prev:'
+assert_contains "zai#chat#goto(1) selects first session" "$OUT" 'after_goto:'
+
+echo ""
+echo "Test 8 (Story 4.1.2 P1 regression): count=0 doesn't fall through to self"
+assert_contains "next(0) advances (not stuck on self)" "$OUT" 'next0_changed:1'
+assert_contains "prev(0) advances (not stuck on self)" "$OUT" 'prev0_changed:1'
+assert_contains "sorted_ids returns all sessions" "$OUT" 'sorted_ids_count:[2-9]'
+assert_contains "sorted by seq (creation order, not UUID-lex)" "$OUT" 'sorted_seqs_monotonic:1'
 
 echo ""
 echo "=== Results ==="

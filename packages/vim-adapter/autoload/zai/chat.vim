@@ -2,7 +2,7 @@ scriptencoding utf-8
 let s:chats = {}
 let s:timer = -1
 let s:current_id = v:null
-let s:pending = v:null
+let s:client_seq = 0
 let s:phase_icons = {'request':'📤','thinking':'🤔','tool':'🔧','response':'💬','done':'✅','error':'❌'}
 let s:phase_labels = {'request':'发送中','thinking':'思考','tool':'','response':'生成','done':'完成','error':'错误'}
 let s:spinner = ['◐', '◓', '◑', '◒']
@@ -39,6 +39,7 @@ function! s:setup_output_buffer() abort
   setlocal buftype=nofile bufhidden=hide nobuflisted noswapfile modifiable wrap syntax=markdown
   let b:zai_role = s:OUTPUT_ROLE
   nnoremap <buffer><silent><nowait> <C-o> :call zai#chat#toggle_mode_internal()<CR>
+  call zai#chat#setup_bufcmds()
   " BufWriteCmd allows :w <path> to save transcript even on nofile buffer
   augroup zai_chat_write
     autocmd! * <buffer>
@@ -54,6 +55,7 @@ function! s:setup_input_buffer() abort
   nnoremap <buffer><silent><nowait> <CR> :call zai#chat#send_internal()<CR>
   nnoremap <buffer><silent><nowait> <C-c> :call zai#chat#cancel_internal()<CR>
   inoremap <buffer><silent><nowait> <C-CR> <Esc>:call zai#chat#send_internal()<CR>
+  call zai#chat#setup_bufcmds()
 endfun
 
 " Open chat UI. Idempotent — first call builds 3-window layout (list + output
@@ -99,8 +101,20 @@ function! zai#chat#start(args) abort
     endif
   endif
 
-  let s:pending = {'bufnr': disp_bnr, 'ibuf_nr': in_bnr}
-  call zai#rpc#request('session.create', {}, function('s:on_session'))
+  " Synchronously add a placeholder chat so the sessions list reflects the
+  " new session IMMEDIATELY (parity with old autoload/zai/chat.vim s:ui_open
+  " line 400: `let s:zai_chats[l:id] = l:chat` ran before job_start). The
+  " real sessionId arrives async via s:on_session; we then re-key the entry
+  " from the client-side placeholder id to the engine-provided UUID.
+  let l:client_id = s:gen_client_id()
+  " seq = creation order (monotonic, preserved across the p-N → UUID re-key in
+  " s:on_session). Used to sort the sessions list and `:cc N` positional lookup
+  " in CREATION order rather than UUID-alphabetical (which inserts new sessions
+  " at random positions, masking the relationship between `:cc 2` and "the
+  " second session I created").
+  let s:chats[l:client_id] = {'bufnr': disp_bnr, 'ibuf_nr': in_bnr, 'sessionId': '', 'token': '', 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': 'pending', 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': [], 'spinner_idx': 0, 'spinner_lnum': -1, 'info_lnum': -1, 'stream_lnum': 0, 'seq': s:client_seq}
+  let s:current_id = l:client_id
+  call zai#rpc#request('session.create', {}, function('s:on_session', [l:client_id]))
 
   " Sessions list (idempotent — sessions#open checks bufwinnr internally).
   " Focus output window first so aboveleft 5new lands above output, not input.
@@ -117,16 +131,32 @@ function! zai#chat#start(args) abort
   if s:timer == -1 | let s:timer = timer_start(200, function('s:ui_tick'), {'repeat': -1}) | endif
 endfun
 
-function! s:on_session(msg) abort
-  if has_key(a:msg, 'error') | return | endif
-  if s:pending is v:null | return | endif
-  let id = a:msg.result.sessionId
-  let token = get(a:msg.result, '_token', '')
-  let bnr = s:pending.bufnr
-  let ibuf = s:pending.ibuf_nr
-  unlet s:pending
-  let s:chats[id] = {'bufnr': bnr, 'ibuf_nr': ibuf, 'sessionId': id, 'token': token, 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': v:null, 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': [], 'spinner_idx': 0, 'spinner_lnum': -1, 'info_lnum': -1, 'stream_lnum': 0}
-  let s:current_id = id
+function! s:on_session(client_id, msg) abort
+  if has_key(a:msg, 'error')
+    " Engine rejected session.create — drop the placeholder so the user
+    " isn't stuck looking at "启动中…" forever. Surface the error via :messages.
+    if has_key(s:chats, a:client_id) | unlet s:chats[a:client_id] | endif
+    if s:current_id ==# a:client_id | let s:current_id = v:null | endif
+    echom '[zaivim] session.create error: ' . string(a:msg.error)
+    return
+  endif
+  " User may have closed the chat while we were waiting — drop the response.
+  if !has_key(s:chats, a:client_id) | return | endif
+  let l:real_id = a:msg.result.sessionId
+  let l:token = get(a:msg.result, '_token', '')
+  let l:chat = remove(s:chats, a:client_id)
+  let l:chat.sessionId = l:real_id
+  let l:chat.token = l:token
+  let l:chat.phase = v:null
+  let s:chats[l:real_id] = l:chat
+  let s:current_id = l:real_id
+endfun
+
+" Client-side placeholder ID generator. Uses 'p-' prefix to distinguish from
+" engine-provided UUIDs (which are hex). Sequential within this Vim session.
+function! s:gen_client_id() abort
+  let s:client_seq += 1
+  return 'p-' . s:client_seq
 endfun
 
 " 多行发送：读取整个 input buffer，join 为单个 text 字段，发送后清空。
@@ -135,6 +165,7 @@ endfun
 function! s:send() abort
   if s:current_id == v:null | return | endif
   let c = s:chats[s:current_id]
+  if empty(c.sessionId) | return | endif  " still pending; engine hasn't responded
   let lines = getbufline(c.ibuf_nr, 1, '$')
   while !empty(lines) && lines[-1] ==# '' | call remove(lines, -1) | endwhile
   if empty(lines) | return | endif
@@ -147,12 +178,16 @@ function! s:send() abort
   let has_content = !empty(filter(copy(existing), '!empty(v:val)'))
   let block = (has_content ? [''] : []) + [s:user_prompt] + lines + ['', s:assistant_prompt]
   call appendbufline(c.bufnr, '$', block)
-  call deletebufline(c.ibuf_nr, 1, '$')
+  " silent! — see s:render_output comment for the ml_delete keep_msg rationale.
+  " Clearing the input buffer after send empties it, which would otherwise
+  " leave "--No lines in buffer--" on the cmdline after every <CR>-to-send.
+  silent! call deletebufline(c.ibuf_nr, 1, '$')
 endfun
 
 function! s:cancel() abort
   if s:current_id == v:null | return | endif
   let c = s:chats[s:current_id]
+  if empty(c.sessionId) | return | endif  " nothing to cancel while pending
   call zai#rpc#request('chat.cancel', {'id': c.sessionId, 'token': c.token})
 endfun
 
@@ -174,7 +209,15 @@ endfun
 
 function! s:render_output(c) abort
   if !bufexists(a:c.bufnr) | return | endif
-  call deletebufline(a:c.bufnr, 1, '$')
+  " silent! suppresses Vim's ml_delete keep_msg. When deletebufline empties a
+  " buffer, evalbuffer.c:611 calls ml_delete_flags(ML_DEL_MESSAGE), which in
+  " memline.c:3908-3913 sets keep_msg to "--No lines in buffer--" via
+  " set_keep_msg (message.c:1521-1530). set_keep_msg is a no-op when
+  " msg_silent != 0, so :silent! call deletebufline(...) suppresses it. Without
+  " this, switching sessions via :cp/:cn/:cc leaves a misleading residual
+  " message on the cmdline (the actual ml_delete is intentional — we're about
+  " to re-fill the buffer via appendbufline below).
+  silent! call deletebufline(a:c.bufnr, 1, '$')
   let first_block = 1
   let i = 0
   while i < len(a:c.events)
@@ -360,6 +403,14 @@ function! zai#chat#list_chats() abort
   return s:chats
 endfunction
 
+" Sort chat ids by creation order (c.seq), NOT by UUID string. The UUIDs are
+" randomly distributed hex, so lexicographic sort inserts new sessions at
+" random positions — masking which session `:cc 2` refers to. seq is monotonic
+" and preserved across the p-N → UUID re-key in s:on_session.
+function! zai#chat#sorted_ids() abort
+  return sort(keys(s:chats), {a, b -> get(s:chats[a], 'seq', 0) - get(s:chats[b], 'seq', 0)})
+endfunction
+
 " Public read-only access to the current session id. Returns v:null when no
 " session is active. Used by attach.vim (and future P1 modules) to address
 " the active session's input buffer without reaching into script-local state.
@@ -411,4 +462,91 @@ function! zai#chat#switch(id) abort
     execute iw . 'wincmd w'
     execute 'buffer ' . c.ibuf_nr
   endif
+endfun
+
+" Create a new chat session (alias for zai#chat#start('')).
+function! zai#chat#new() abort
+  call zai#chat#start('')
+endfun
+
+" Advance to next session in sorted-id order. {count} optional, default 1.
+" Wraps around at the end. No-op if s:current_id isn't in s:chats.
+"
+" Count handling must check `a:1 > 0`, not just `a:0 > 0`: Vim's -count command
+" flag defaults <count> to 0 when no count is given, so `:ZaiNext` invokes
+" next(0). Without the `> 0` guard, count=0 advances by zero (switches to
+" self, no visible change). Parity with old autoload/zai/chat.vim:1007
+" `let l:count = a:count > 0 ? a:count : 1`.
+function! zai#chat#next(...) abort
+  let l:count = (a:0 > 0 && a:1 > 0) ? a:1 : 1
+  let l:ids = zai#chat#sorted_ids()
+  if empty(l:ids) | return | endif
+  let l:cur_idx = empty(s:current_id) ? -1 : index(l:ids, s:current_id)
+  let l:next_idx = (l:cur_idx + l:count) % len(l:ids)
+  call zai#chat#switch(l:ids[l:next_idx])
+endfun
+
+" Advance to previous session in sorted-id order. {count} optional, default 1.
+" Wraps around at the beginning. Same count=0 guard as next() — see comment
+" there for the rationale.
+function! zai#chat#prev(...) abort
+  let l:count = (a:0 > 0 && a:1 > 0) ? a:1 : 1
+  let l:ids = zai#chat#sorted_ids()
+  if empty(l:ids) | return | endif
+  let l:cur_idx = empty(s:current_id) ? -1 : index(l:ids, s:current_id)
+  " +len to keep modulo positive when cur_idx is -1 and count > 0
+  let l:prev_idx = (l:cur_idx - l:count + len(l:ids)) % len(l:ids)
+  call zai#chat#switch(l:ids[l:prev_idx])
+endfun
+
+" Jump to session by 1-indexed position in creation-order list. {nr} is a
+" string (from command-line <args>); silently ignores out-of-range indices.
+function! zai#chat#goto(nr) abort
+  let l:idx = str2nr(a:nr) - 1
+  let l:ids = zai#chat#sorted_ids()
+  if l:idx < 0 || l:idx >= len(l:ids) | return | endif
+  call zai#chat#switch(l:ids[l:idx])
+endfun
+
+" Command-line filter: rewrites quickfix-style commands to session navigation
+" when invoked from a zai buffer. Returns the substituted cmdline, or the
+" original if no match. Ported from old autoload/zai/chat.vim zai#chat#FiltCmd
+" (line 1143). Handles count prefix (3cn → 3ZaiNext) and cc-with-arg
+" (cc 3 / cc3 → ZaiGoto 3). Skipped 'help' (no zai.txt for new adapter yet).
+function! zai#chat#filt_cmd(cmdline) abort
+  let l:command_map = {'new': 'ZaiNew', 'cn': 'ZaiNext', 'cp': 'ZaiPrev', 'cc': 'ZaiGoto'}
+  for [l:abbr, l:full] in items(l:command_map)
+    if a:cmdline =~# '^\d*' . l:abbr . '$'
+      return substitute(a:cmdline, l:abbr, l:full, '')
+    endif
+    if l:abbr ==# 'cc' && a:cmdline =~# '^cc\s*\d\+$'
+      let l:param = substitute(a:cmdline, '^cc\s*\(\d\+\)$', '\1', '')
+      return l:full . ' ' . l:param
+    endif
+  endfor
+  return a:cmdline
+endfun
+
+" Install buffer-local Zai* commands + cnoremap <expr> <CR> in the current
+" buffer (any zai-related buffer: output/input/sessions). Idempotent via
+" b:zai_bufcmds flag. Must be called DIRECTLY from setup_output_buffer /
+" setup_input_buffer / sessions#open — a BufEnter autocmd would fire BEFORE
+" those setup functions set b:zai_role / b:zai_sessions (because :new and
+" enew! fire BufEnter synchronously during their own execution), so the
+" condition would never match on first creation.
+"
+" Verbatim port of old autoload/zai/chat.vim:1232 s:setup_buffer_commands +
+" the cnoremap <expr> pattern from line 1243. The <expr> returns a string of
+" keys that's fed to typeahead; because this is a cnoremap (noremap), the
+" returned keys are NOT re-processed through mappings — so the trailing \<CR>
+" executes the rewritten cmdline instead of recursing. Single-line to dodge
+" \ line-continuation fragility in -e Ex mode.
+function! zai#chat#setup_bufcmds() abort
+  if exists('b:zai_bufcmds') && b:zai_bufcmds | return | endif
+  command! -buffer ZaiNew call zai#chat#new()
+  command! -buffer -count ZaiNext call zai#chat#next(<count>)
+  command! -buffer -count ZaiPrev call zai#chat#prev(<count>)
+  command! -buffer -nargs=1 ZaiGoto call zai#chat#goto(<args>)
+  cnoremap <silent> <expr> <buffer> <CR> getcmdtype() ==# ':' ? "\<C-u>" . zai#chat#filt_cmd(getcmdline()) . "\<CR>" : "\<CR>"
+  let b:zai_bufcmds = 1
 endfun

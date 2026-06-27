@@ -60,6 +60,7 @@ function! zai#sessions#open() abort
     let b:zai_sessions = 1  " cross-script marker (for tests + future integrations)
     let &l:statusline = '[Sessions]%=%-14.(%l,%c%V%) %P'
     nnoremap <buffer> <silent> <CR> :call zai#sessions#select_atpos()<CR>
+    call zai#chat#setup_bufcmds()
   endif
 endfun
 
@@ -89,23 +90,32 @@ function! zai#sessions#render(chats, current_id) abort
   endfor
   let s:chat_signs = {}
 
-  " Build content lines (stable order: sort by sessionId string). No header —
-  " the window title in statusline + the icon column make the list's purpose
-  " obvious, and skipping a header lets line 1 be a real session row (so j/k
-  " from line 1 reaches all sessions, no dead first row).
-  let ids = sort(keys(a:chats))
+  " Build content lines ordered by creation sequence (c.seq), NOT by id string.
+  " Engine-issued sessionIds are random hex; sorting by them places new sessions
+  " at unpredictable positions and breaks the mental model where `:cc 2` refers
+  " to "the second session I created". seq is monotonic and preserved across
+  " the p-N → UUID re-key in zai#chat#on_session. The 1-indexed position N in
+  " this sorted list matches what `:cc N` selects, so we display it as `#N`.
+  let ids = sort(keys(a:chats), {a, b -> get(a:chats[a], 'seq', 0) - get(a:chats[b], 'seq', 0)})
   let lines = []
   let line_num = 1
 
   for id in ids
     let c = a:chats[id]
     let phase = get(c, 'phase', '')
-    let icon = empty(phase) ? '⏸' : get(s:icons, phase, '⏸')
-    let elapsed = printf('%.1f', get(c, 'elapsed_ms', 0) / 1000.0)
-    let tokens = get(c, 'tokens_out', 0)
-    let tool = get(c, 'tool_name', '')
-    let suffix = !empty(tool) ? ' · ' . tool : ''
-    call add(lines, icon . ' ' . strpart(id, 0, 8) . ' · ' . elapsed . 's · ' . tokens . '↓' . suffix)
+    let position_tag = '#' . line_num . ' '
+    " Pending chats (engine not yet responded): show "启动中" instead of
+    " empty stats. The placeholder id (p-N) is short and not user-meaningful.
+    if phase ==# 'pending' || empty(get(c, 'sessionId', ''))
+      call add(lines, position_tag . '⏳ 启动中…')
+    else
+      let icon = empty(phase) ? '⏸' : get(s:icons, phase, '⏸')
+      let elapsed = printf('%.1f', get(c, 'elapsed_ms', 0) / 1000.0)
+      let tokens = get(c, 'tokens_out', 0)
+      let tool = get(c, 'tool_name', '')
+      let suffix = !empty(tool) ? ' · ' . tool : ''
+      call add(lines, position_tag . icon . ' ' . strpart(id, 0, 8) . ' · ' . elapsed . 's · ' . tokens . '↓' . suffix)
+    endif
 
     " Place selection sign on current session's line
     if id ==# a:current_id
@@ -136,18 +146,24 @@ function! zai#sessions#render(chats, current_id) abort
     " lines[cur_n:] which is correct in both cases.
     call appendbufline(s:sessions_bufnr, '$', lines[cur_n :])
   elseif cur_n > new_n
-    call deletebufline(s:sessions_bufnr, new_n + 1, '$')
+    " silent! — see chat.vim s:render_output comment. Truncating the sessions
+    " list when a session closes can drop ml_line_count to 1, triggering the
+    " same ml_delete keep_msg. Without this the list update leaves
+    " "--No lines in buffer--" stuck on the cmdline for one tick.
+    silent! call deletebufline(s:sessions_bufnr, new_n + 1, '$')
   endif
   call setbufvar(s:sessions_bufnr, '&modifiable', 0)
 endfun
 
 " Select session at cursor line. Bound to <CR> in sessions buffer.
 " Ported from old s:select_chat_atpos(). No header row — line 1 is the first
-" session, so the cursor's lnum maps directly to ids[lnum-1].
+" session, so the cursor's lnum maps directly to ids[lnum-1]. Sort by c.seq
+" so the on-screen order matches what `:cc N` selects and what sessions#render
+" displays — see render() comment for the rationale.
 function! zai#sessions#select_atpos() abort
   let lnum = line('.')
   let chats = zai#chat#list_chats()
-  let ids = sort(keys(chats))
+  let ids = sort(keys(chats), {a, b -> get(chats[a], 'seq', 0) - get(chats[b], 'seq', 0)})
   let idx = lnum - 1
   if idx < 0 || idx >= len(ids) | return | endif
   call zai#chat#switch(ids[idx])
