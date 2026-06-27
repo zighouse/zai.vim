@@ -49,19 +49,38 @@ function! s:vim_stdout(ch, data) abort
 endfun
 
 function! zai#rpc#connect_vim() abort
-  if !has('job') || !has('channel') | return | endif
-  if empty(g:zaivim_engine_path) | return | endif
+  if !has('job') || !has('channel')
+    echom '[zaivim] this Vim lacks +job or +channel; cannot start engine'
+    return
+  endif
+  if empty(g:zaivim_engine_path)
+    echom '[zaivim] g:zaivim_engine_path is empty; set it to the zaivim CLI path'
+    return
+  endif
+  if !executable(g:zaivim_engine_path)
+    echom '[zaivim] engine binary not executable: ' . g:zaivim_engine_path . ' (check PATH or set g:zaivim_engine_path)'
+    return
+  endif
   let s:ready = 0
   let s:vim_buf = ''
   let opts = {'out_cb': function('s:vim_stdout'), 'err_cb': function('s:err_cb'), 'exit_cb': function('s:exit_cb'), 'in_io': 'pipe', 'out_io': 'pipe', 'err_io': 'pipe'}
   let s:job = job_start([g:zaivim_engine_path, 'vim-rpc-server'], opts)
   if job_status(s:job) !=# 'run'
+    echom '[zaivim] job_start failed for: ' . g:zaivim_engine_path . ' vim-rpc-server'
     let s:job = v:null | return
   endif
   let s:channel = job_getchannel(s:job)
 endfun
 
 function! zai#rpc#connect_nvim() abort
+  if empty(g:zaivim_engine_path)
+    echom '[zaivim] g:zaivim_engine_path is empty; set it to the zaivim CLI path'
+    return
+  endif
+  if !executable(g:zaivim_engine_path)
+    echom '[zaivim] engine binary not executable: ' . g:zaivim_engine_path . ' (check PATH or set g:zaivim_engine_path)'
+    return
+  endif
   let s:ready = 0
   let s:nvim_buf = ''
   let s:job = jobstart([g:zaivim_engine_path, 'vim-rpc-server'], {'on_stdout': function('s:nvim_stdout'), 'on_stderr': function('s:err_cb'), 'on_exit': function('s:exit_cb')})
@@ -108,6 +127,7 @@ endfun
 
 function! s:on_ready() abort
   let s:ready = 1
+  echom '[zaivim] engine ready'
   for item in s:queue
     call s:send_raw(item)
   endfor | let s:queue = []
