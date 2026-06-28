@@ -125,7 +125,8 @@ const phaseIcons: Record<string, string> = {
 /** Story 4.2.1: Format stats info bar string. Returns '' when no data. */
 function formatStats(session: SessionState): string {
   const { tokensIn, tokensOut, elapsedMs, speed } = session;
-  if (!tokensIn && !tokensOut) return '';
+  const hasStats = tokensIn || tokensOut || elapsedMs || speed;
+  if (!hasStats) return '';
   const inK = tokensIn ? (tokensIn / 1000).toFixed(1) : '?';
   const outK = tokensOut ? (tokensOut / 1000).toFixed(1) : '?';
   const el = elapsedMs ? (elapsedMs / 1000).toFixed(1) : '?';
@@ -364,8 +365,8 @@ export function ChatArea({
 
       {/* Messages area — explicit height so content cannot push the layout */}
       <Box flexDirection="column" height={messagesHeight} overflowY="hidden" paddingX={1} paddingY={1}>
-        {/* Story 4.2.1: thinking area — show latest thinking snippet during stream */}
-        {activeSession?.thinkingRing && activeSession.status !== 'idle' && activeSession.status !== 'done' && (
+        {/* Story 4.2.1: thinking area — show latest thinking snippet */}
+        {activeSession?.thinkingRing && (
           <Box>
             <Text dimColor>&gt; 🤔 {activeSession.thinkingRing.slice(-120)}</Text>
           </Box>
