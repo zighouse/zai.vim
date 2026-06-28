@@ -221,4 +221,57 @@ describe('runVimRpcServer — dispatch loop (C6)', () => {
     // because the session was created in a different runVimRpcServer instance)
     expect(chatResp.error?.code === -32001 || chatResp.result?.streamId).toBeTruthy();
   });
+
+  it('enriches every chunk (text, done) with sessionId for concurrent multi-session routing', async () => {
+    // Regression: server.ts:151 / :155 emitted done/error chunks WITHOUT
+    // sessionId, causing them to be misrouted via the Vim-side fallback to
+    // s:current_id — losing chunks for non-current sessions.
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const collected: string[] = [];
+    stdout.on('data', (chunk) => collected.push(chunk.toString()));
+
+    runVimRpcServer(mockEngine(), { stdin, stdout: stdout as any });
+    await new Promise((r) => setTimeout(r, 30));
+
+    // Create session — capture sessionId and token from the SAME server instance
+    stdin.write(j('session.create', 50) + '\n');
+    await new Promise((r) => setTimeout(r, 30));
+    const frames1 = collected.splice(0).join('').split('\n').filter((l) => l.trim()).map((l) => decodeLine(l));
+    // Skip the $/ready notification at the start of the very first batch
+    const readyIdx = frames1.findIndex((f) => f.id === 50);
+    const createResp = frames1[readyIdx];
+    const sessionId = createResp.result.sessionId;
+    const token = createResp.result._token;
+    expect(sessionId).toBeDefined();
+    expect(token).toBeDefined();
+
+    // Send chat — engine mock emits 1 text + 1 done chunk; server.ts adds
+    // another done chunk after the stream completes. So we expect:
+    //   text chunk with sessionId
+    //   done chunk from engine with sessionId
+    //   done chunk from server.ts with sessionId
+    stdin.write(j('chat.send', 51, { sessionId, text: 'hi', token }) + '\n');
+    await new Promise((r) => setTimeout(r, 60));
+
+    const frames2 = collected.splice(0).join('').split('\n').filter((l) => l.trim()).map((l) => decodeLine(l));
+    const chunks = frames2.filter((f) => f.method === '$/chat/chunk').map((f) => f.params);
+
+    // Must have at least 1 text and 2 done chunks (engine + server.ts)
+    const textChunks = chunks.filter((c) => c.type === 'text');
+    const doneChunks = chunks.filter((c) => c.type === 'done');
+    expect(textChunks.length).toBeGreaterThanOrEqual(1);
+    expect(doneChunks.length).toBeGreaterThanOrEqual(2);
+
+    // EVERY chunk must carry sessionId matching the session we sent to.
+    // This is the regression assertion — before the fix, the server.ts-added
+    // done chunk had no sessionId and would fall through to the Vim-side
+    // fallback (s:current_id), corrupting concurrent streams.
+    for (const c of chunks) {
+      expect(c.sessionId).toBe(sessionId);
+    }
+
+    stdin.end();
+    await new Promise((r) => setTimeout(r, 30));
+  });
 });

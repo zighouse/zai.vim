@@ -235,6 +235,21 @@ let s:seqs = map(copy(s:sorted), {_, id -> get(zai#chat#list_chats()[id], 'seq',
 let s:nav_results += ['sorted_ids_count:' . len(s:sorted)]
 let s:nav_results += ['sorted_seqs_monotonic:' . (s:seqs ==# sort(copy(s:seqs), 'n') ? 1 : 0)]
 
+" Multi-session conversation regression — zai#rpc#connect() must be idempotent.
+" Pre-fix: every zai#chat#start() called connect() unconditionally, spawning a
+" new vim-rpc-server process each time. Only the latest engine had the right
+" session tokens; chat.send for older sessions silently failed token check and
+" the user saw "no LLM response" forever. Verify by counting engine processes
+" before/after several connect() calls — count must NOT grow.
+let s:proc_before = str2nr(trim(system('pgrep -cf "cli.js vim-rpc-server" 2>/dev/null')))
+call zai#rpc#connect()
+call zai#rpc#connect()
+call zai#rpc#connect()
+let s:proc_after = str2nr(trim(system('pgrep -cf "cli.js vim-rpc-server" 2>/dev/null')))
+let s:nav_results += ['engine_proc_before:' . s:proc_before]
+let s:nav_results += ['engine_proc_after:' . s:proc_after]
+let s:nav_results += ['engine_proc_growth:' . (s:proc_after - s:proc_before)]
+
 call writefile(s:results + s:results2 + ['sent_payload_json:' . json_encode(s:sent_payload)] + s:sessions_results + s:attach_results + s:nav_results, $VIM_OUT)
 call zai#rpc#close()
 qa!
@@ -317,6 +332,10 @@ assert_contains "next(0) advances (not stuck on self)" "$OUT" 'next0_changed:1'
 assert_contains "prev(0) advances (not stuck on self)" "$OUT" 'prev0_changed:1'
 assert_contains "sorted_ids returns all sessions" "$OUT" 'sorted_ids_count:[2-9]'
 assert_contains "sorted by seq (creation order, not UUID-lex)" "$OUT" 'sorted_seqs_monotonic:1'
+
+echo ""
+echo "Test 9 (multi-session regression): connect() must NOT spawn multiple engines"
+assert_contains "no extra engine processes spawned across reconnects" "$OUT" 'engine_proc_growth:0'
 
 echo ""
 echo "=== Results ==="

@@ -148,11 +148,11 @@ export async function streamChatResponse(
         }
       }
     }
-    const doneChunk = encodeChatChunk({ type: 'done', finishReason: 'stop' });
+    const doneChunk = encodeChatChunk({ type: 'done', finishReason: 'stop', sessionId });
     streamOut.write(sanitizeForVim(doneChunk) + '\n');
   } catch (err) {
     if ((err as Error).name === 'AbortError') return;
-    const errorChunk = encodeChatChunk({ type: 'error', code: 'STREAM_ERROR', message: (err as Error).message });
+    const errorChunk = encodeChatChunk({ type: 'error', code: 'STREAM_ERROR', message: (err as Error).message, sessionId });
     streamOut.write(sanitizeForVim(errorChunk) + '\n');
   }
 }

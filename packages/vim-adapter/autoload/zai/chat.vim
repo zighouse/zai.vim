@@ -3,6 +3,7 @@ let s:chats = {}
 let s:timer = -1
 let s:current_id = v:null
 let s:client_seq = 0
+let s:buf_seq = 0
 let s:phase_icons = {'request':'📤','thinking':'🤔','tool':'🔧','response':'💬','done':'✅','error':'❌'}
 let s:phase_labels = {'request':'发送中','thinking':'思考','tool':'','response':'生成','done':'完成','error':'错误'}
 let s:spinner = ['◐', '◓', '◑', '◒']
@@ -12,6 +13,18 @@ let s:spinner_phase_labels = {'thinking':' 思考 ','tool':' 工具 '}
 let s:user_prompt = get(g:, 'zaivim_chat_user_prompt', '**用户：**')
 let s:assistant_prompt = get(g:, 'zaivim_chat_assistant_prompt', '**助手：**')
 
+" DIAGNOSTIC: append msg to bufnr=1 (the empty unnamed buffer vim opens with
+" when no file is given). Opt-in — set g:zaivim_debug_log = 1 to enable. Keeps
+" bufnr=1 safe when the user opens vim with a real file (bufnr=1 = that file).
+function! s:debug_log(msg) abort
+  if !get(g:, 'zaivim_debug_log', 0) | return | endif
+  if !bufexists(1) | return | endif
+  let ts = strftime('%H:%M:%S')
+  silent! call setbufvar(1, '&modifiable', 1)
+  silent! call appendbufline(1, '$', ts . ' ' . a:msg)
+  silent! call setbufvar(1, '&modifiable', 0)
+endfun
+
 " Window-role markers — `b:zai_role` value identifies output/input buffers
 " across the layout. Used by s:find_window_by_role() to robustly locate the
 " output/input window even when sessions have been switched (which changes
@@ -19,6 +32,21 @@ let s:assistant_prompt = get(g:, 'zaivim_chat_assistant_prompt', '**助手：**'
 " b:zai_buffer marker pattern, but split into role-specific markers.
 let s:OUTPUT_ROLE = 'output'
 let s:INPUT_ROLE = 'input'
+
+" Allocate a fresh buffer with a unique name in the CURRENT window. Vim 9.1
+" silently reuses an empty unnamed buffer when you call :enew! or :edit name
+" on it (an optimization for scratch buffers), so all zaivim sessions ended up
+" sharing bufnr=2 — chunk routing collapsed onto a single buffer. :badd creates
+" a separate new buffer; :buffer then swaps the current window to it. Each
+" session thus gets its own output AND input buffer.
+function! s:alloc_role_buffer(role) abort
+  let s:buf_seq += 1
+  let l:name = 'zai://' . a:role . '/' . s:buf_seq
+  execute 'badd ' . l:name
+  let l:b = bufnr(l:name)
+  execute 'buffer ' . l:b
+  return l:b
+endfun
 
 " Find window showing a buffer with the given zai_role. Returns winnr or -1.
 " Robust against session switching (bufnr changes per-session, but role marker
@@ -34,7 +62,7 @@ endfun
 
 " Configure current buffer as an output (display) buffer. Idempotent — called
 " both on first-time layout creation (vertical botright new) and on subsequent
-" :ZaiChat calls (enew! in existing output window).
+" :ZaiChat calls (s:alloc_role_buffer in existing output window).
 function! s:setup_output_buffer() abort
   setlocal buftype=nofile bufhidden=hide nobuflisted noswapfile modifiable wrap syntax=markdown
   let b:zai_role = s:OUTPUT_ROLE
@@ -80,18 +108,18 @@ function! zai#chat#start(args) abort
     call s:setup_input_buffer()
     let in_bnr = bufnr('%')
   else
-    " Layout exists — enew! swaps current window's buffer for a fresh one
-    " without disturbing the window layout (old buffer persists via bufhidden=hide)
+    " Layout exists — allocate a fresh uniquely-named buffer in the existing
+    " output window. We can't use :enew! here because Vim 9.1 silently reuses
+    " empty unnamed buffers (see s:alloc_role_buffer). Old buffer persists via
+    " bufhidden=hide so prior sessions remain swappable.
     execute ow . 'wincmd w'
-    enew!
+    let disp_bnr = s:alloc_role_buffer(s:OUTPUT_ROLE)
     call s:setup_output_buffer()
-    let disp_bnr = bufnr('%')
     let iw = s:find_window_by_role(s:INPUT_ROLE)
     if iw != -1
       execute iw . 'wincmd w'
-      enew!
+      let in_bnr = s:alloc_role_buffer(s:INPUT_ROLE)
       call s:setup_input_buffer()
-      let in_bnr = bufnr('%')
     else
       " Input window was closed by user — recreate below output
       execute bufwinnr(disp_bnr) . 'wincmd w'
@@ -113,6 +141,14 @@ function! zai#chat#start(args) abort
   " at random positions, masking the relationship between `:cc 2` and "the
   " second session I created").
   let s:chats[l:client_id] = {'bufnr': disp_bnr, 'ibuf_nr': in_bnr, 'sessionId': '', 'token': '', 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': 'pending', 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': [], 'spinner_idx': 0, 'spinner_lnum': -1, 'info_lnum': -1, 'stream_lnum': 0, 'seq': s:client_seq}
+  " DIAGNOSTIC: log buffer allocation. If two sessions ever share the same
+  " bufnr/ibuf_nr, that's the smoking gun for cross-session contamination.
+  " Also list all existing chats' bufnrs so collisions are immediately visible.
+  let l:others = []
+  for [k, v] in items(s:chats)
+    if k !=# l:client_id | call add(l:others, strpart(k, 0, 8) . ':' . v.bufnr . '/' . v.ibuf_nr) | endif
+  endfor
+  call s:debug_log('START placeholder=' . l:client_id . ' disp_bnr=' . disp_bnr . ' in_bnr=' . in_bnr . ' others=[' . join(l:others, ' ') . ']')
   let s:current_id = l:client_id
   call zai#rpc#request('session.create', {}, function('s:on_session', [l:client_id]))
 
@@ -150,6 +186,9 @@ function! s:on_session(client_id, msg) abort
   let l:chat.phase = v:null
   let s:chats[l:real_id] = l:chat
   let s:current_id = l:real_id
+  call s:debug_log('SESSION_CREATE ' . a:client_id . ' -> ' . strpart(l:real_id, 0, 8) .
+    \ ' bufnr=' . l:chat.bufnr . ' ibuf_nr=' . l:chat.ibuf_nr .
+    \ ' chats_n=' . len(s:chats))
 endfun
 
 " Client-side placeholder ID generator. Uses 'p-' prefix to distinguish from
@@ -170,6 +209,13 @@ function! s:send() abort
   while !empty(lines) && lines[-1] ==# '' | call remove(lines, -1) | endwhile
   if empty(lines) | return | endif
   let text = join(lines, "\n")
+  let l:pre_lines = bufexists(c.bufnr) ? getbufinfo(c.bufnr)[0].linecount : -1
+  let l:pre_stream_lnum = c.stream_lnum
+  call s:debug_log('SEND sid=' . strpart(c.sessionId, 0, 8) .
+    \ ' bufnr=' . c.bufnr .
+    \ ' pre_stream_lnum=' . l:pre_stream_lnum .
+    \ ' pre_buf_lines=' . l:pre_lines .
+    \ ' text="' . strpart(substitute(text, "\n", '\\n', 'g'), 0, 40) . '"')
   call zai#rpc#request('chat.send', {'sessionId': c.sessionId, 'token': c.token, 'text': text})
   " 存入 events 以便 render_output 重放（保留用户/AI 边界）
   call add(c.events, {'type': 'user', 'content': text})
@@ -266,21 +312,53 @@ function! s:render_output(c) abort
     let i += 1
   endwhile
   let a:c.spinner_idx = 0 | let a:c.spinner_lnum = -1 | let a:c.stream_lnum = 0
+  if exists('g:zaivim_debug_log') && g:zaivim_debug_log
+    let l:post_lines = bufexists(a:c.bufnr) ? getbufinfo(a:c.bufnr)[0].linecount : -1
+    call s:debug_log('RENDER sid=' . strpart(get(a:c,'sessionId',''), 0, 8) .
+      \ ' bufnr=' . a:c.bufnr .
+      \ ' post_stream_lnum=0' .
+      \ ' post_buf_lines=' . l:post_lines .
+      \ ' ev_n=' . len(a:c.events))
+  endif
 endfun
 
 function! zai#chat#on_chunk(p) abort
   " AC3.1 hotfix: route by sessionId in chunk payload (Bug 3 fix). Concurrent
   " streams now append to their own session's display buffer. Falls back to
   " s:current_id for backward compat with older server.ts payloads.
-  let sid = get(a:p, 'sessionId', '')
+  let l:chunk_sid = get(a:p, 'sessionId', '')
+  let l:fallback = 0
+  let sid = l:chunk_sid
   if empty(sid) || !has_key(s:chats, sid)
-    if s:current_id == v:null | return | endif
+    let l:fallback = 1
+    if s:current_id == v:null
+      call s:debug_log('CHUNK type=' . get(a:p,'type','') . ' sid=EMPTY current=NULL DROP')
+      return
+    endif
     let sid = s:current_id
-    if !has_key(s:chats, sid) | return | endif
+    if !has_key(s:chats, sid)
+      call s:debug_log('CHUNK type=' . get(a:p,'type','') . ' sid=EMPTY current=' . strpart(s:current_id, 0, 8) . ' NOT_IN_CHATS DROP')
+      return
+    endif
   endif
   let c = s:chats[sid]
+  let l:pre_lnum = c.stream_lnum
+  let l:pre_lines = bufexists(c.bufnr) ? getbufinfo(c.bufnr)[0].linecount : -1
   call add(c.events, a:p)
   let t = get(a:p,'type','')
+  if exists('g:zaivim_debug_log') && g:zaivim_debug_log
+    let l:preview = substitute(get(a:p,'content',get(a:p,'message','')), '\n', '\\n', 'g')
+    let l:preview = strpart(l:preview, 0, 40)
+    call s:debug_log('CHUNK type=' . t . (l:fallback ? ' FALLBACK' : '') .
+      \ ' chunk_sid=' . strpart(l:chunk_sid, 0, 8) .
+      \ ' cur=' . (s:current_id == v:null ? 'NULL' : strpart(s:current_id, 0, 8)) .
+      \ ' resolved=' . strpart(sid, 0, 8) .
+      \ ' bufnr=' . c.bufnr .
+      \ ' pre_stream_lnum=' . l:pre_lnum .
+      \ ' pre_buf_lines=' . l:pre_lines .
+      \ ' ev_n=' . len(c.events) .
+      \ (empty(l:preview) ? '' : ' content="' . l:preview . '"'))
+  endif
   if t ==# 'text'
     call add(c.stream_buf, get(a:p,'content',''))
     let content = get(a:p,'content','')
@@ -295,8 +373,18 @@ function! zai#chat#on_chunk(p) abort
     endif
     if c.stream_lnum > 0 && !empty(parts)
       let first = remove(parts, 0)
-      let cur = getbufline(c.bufnr, c.stream_lnum)[0]
-      call setbufline(c.bufnr, c.stream_lnum, cur . first)
+      " STREAM_LNUM 越界检测：stream_lnum 可能因为前一次 render_output
+      " 清空 buffer 但 stream_lnum 没同步重置而指向不存在的行。此时
+      " getbufline 返回空 list，[0] 越界。防御性 fallback：跳过拼接，
+      " 直接走 append 新行分支。
+      let gl = getbufline(c.bufnr, c.stream_lnum)
+      if empty(gl)
+        call s:debug_log('CHUNK stream_lnum=' . c.stream_lnum . ' OUT_OF_RANGE buf_lines=' . l:pre_lines . ' — append-only')
+        call appendbufline(c.bufnr, '$', first)
+      else
+        let cur = gl[0]
+        call setbufline(c.bufnr, c.stream_lnum, cur . first)
+      endif
     endif
     for part in parts
       call appendbufline(c.bufnr, '$', part)
@@ -448,10 +536,21 @@ endfunction
 " This is the wholesale port of old s:goto_owin() + s:goto_iwin() for the
 " per-session-ibuf era (AC2.2 hotfix).
 function! zai#chat#switch(id) abort
-  if !has_key(s:chats, a:id) | return | endif
+  if !has_key(s:chats, a:id)
+    call s:debug_log('SWITCH target=' . strpart(a:id, 0, 8) . ' NOT_IN_CHATS — skip')
+    return | endif
   let c = s:chats[a:id]
+  let l:prev_current = s:current_id
+  let l:pre_lines = bufexists(c.bufnr) ? getbufinfo(c.bufnr)[0].linecount : -1
   let s:current_id = a:id
   let ow = s:find_window_by_role(s:OUTPUT_ROLE)
+  call s:debug_log('SWITCH from=' . (l:prev_current == v:null ? 'NULL' : strpart(l:prev_current, 0, 8)) .
+    \ ' to=' . strpart(a:id, 0, 8) .
+    \ ' bufnr=' . c.bufnr .
+    \ ' pre_stream_lnum=' . c.stream_lnum .
+    \ ' pre_buf_lines=' . l:pre_lines .
+    \ ' ev_n=' . len(c.events) .
+    \ ' ow=' . ow)
   if ow != -1 && bufexists(c.bufnr)
     execute ow . 'wincmd w'
     execute 'buffer ' . c.bufnr

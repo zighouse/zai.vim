@@ -18,7 +18,15 @@ function! s:handle_msg(raw) abort
     let Cb = get(s:pending, msg.id, v:null)
     if Cb != v:null | call Cb(msg) | unlet s:pending[msg.id] | endif
   elseif has_key(msg, 'method')
-    if msg.method ==# '$/chat/chunk' | call zai#chat#on_chunk(msg.params)
+    if msg.method ==# '$/chat/chunk'
+      if exists('g:zaivim_debug_log') && g:zaivim_debug_log && bufexists(1)
+        let _p = msg.params
+        let _sid = get(_p, 'sessionId', '')
+        silent! call setbufvar(1, '&modifiable', 1)
+        silent! call appendbufline(1, '$', strftime('%H:%M:%S') . ' WIRE method=$/chat/chunk type=' . get(_p,'type','') . ' sid=' . strpart(_sid, 0, 8) . (empty(_sid) ? ' (MISSING)' : ''))
+        silent! call setbufvar(1, '&modifiable', 0)
+      endif
+      call zai#chat#on_chunk(msg.params)
     elseif msg.method ==# '$/notification' | call zai#chat#on_notification(msg.params)
     elseif msg.method ==# 'agent.progress' | call zai#agent#on_progress(msg.params)
     elseif msg.method ==# 'agent.error' | call zai#agent#on_progress({'status': 'error'})
@@ -116,7 +124,22 @@ function! s:exit_cb(...) abort
   let s:pending = {}
 endfunction
 
+" Idempotent: skip if a job is already running. Without this guard, every
+" zai#chat#start() (which calls connect()) spawns a fresh engine process and
+" overwrites s:job/s:channel. The orphaned engines keep running but Vim only
+" sends to the latest — so chat.send for older sessions hits the new engine's
+" empty sessionTokenCache, fails validateSessionToken, and returns an error
+" response. chat.send has no response callback on the Vim side, so the failure
+" is silent: the user sees their own message rendered (s:send appends it) but
+" no LLM response ever arrives. Symptom: "sessions only work right after they
+" are created; switching back breaks them." exit_cb / zai#rpc#close reset
+" s:job to v:null, so reconnect after engine death or explicit close still works.
 function! zai#rpc#connect() abort
+  if has('nvim')
+    if s:job != v:null | return | endif
+  else
+    if s:job != v:null && job_status(s:job) ==# 'run' | return | endif
+  endif
   if has('nvim') | call zai#rpc#connect_nvim() | else | call zai#rpc#connect_vim() | endif
 endfun
 
