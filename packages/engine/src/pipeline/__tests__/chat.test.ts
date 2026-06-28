@@ -158,6 +158,49 @@ describe('chat() pipeline', () => {
     expect(callCount).toBe(2);
   });
 
+  it('should echo reasoningContent on the assistant message after a thinking tool round', async () => {
+    // DeepSeek-R1 / GLM-4.5 thinking mode: the assistant message re-sent after
+    // a tool round must carry reasoning_content, or the API returns 400.
+    const capturedMessages: Message[][] = [];
+    let callCount = 0;
+    const provider: IProvider = {
+      name: 'mock-thinking',
+      models: ['model-1'],
+      capabilities: {
+        streaming: true, toolUse: true, caching: false, thinking: true, vision: false, maxContextTokens: 128_000,
+      },
+      async *chat(request) {
+        capturedMessages.push([...request.messages]);
+        callCount++;
+        if (callCount === 1) {
+          yield { type: 'thinking', phase: 'start', content: '' };
+          yield { type: 'thinking', phase: 'delta', content: 'I need to check ' };
+          yield { type: 'thinking', phase: 'delta', content: 'the date first' };
+          yield { type: 'thinking', phase: 'end', content: '' };
+          yield { type: 'tool_call', id: 'tc-1', name: 'echo', arguments: { text: 'today' } };
+          yield { type: 'done', finishReason: 'tool_calls' };
+        } else {
+          yield { type: 'text', content: 'It is Friday' };
+          yield { type: 'done', finishReason: 'stop' };
+        }
+      },
+    };
+
+    const { deps, createSession } = setup({ provider });
+    const session = createSession();
+    await collectChunks(chat(session, makeUserMessage('What day is it?'), deps));
+
+    expect(callCount).toBe(2);
+    // Round-2 request must include the assistant tool-call message carrying
+    // the accumulated reasoning content (thinking-mode round-trip).
+    const round2 = capturedMessages[1]!;
+    const assistantToolMsg = round2.find(
+      m => m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0,
+    );
+    expect(assistantToolMsg).toBeDefined();
+    expect(assistantToolMsg!.reasoningContent).toBe('I need to check the date first');
+  });
+
   it('should handle max tool rounds exceeded', async () => {
     let callCount = 0;
     const provider: IProvider = {

@@ -107,6 +107,13 @@ export interface Message {
   readonly toolCalls?: ToolCall[];
   /** Matching tool_call id for role==='tool' messages (required by OpenAI-compatible APIs). */
   readonly toolCallId?: string;
+  /**
+   * Reasoning/thinking content from a thinking-mode model (DeepSeek-R1, GLM-4.5).
+   * Must be echoed back on the assistant message when the conversation is re-sent
+   * (e.g. after a tool round); otherwise providers such as DeepSeek return 400
+   * "The reasoning_content in the thinking mode must be passed back to the API."
+   */
+  readonly reasoningContent?: string;
   readonly createdAt?: number;
   readonly seq?: number;
   readonly attachments?: FileAttachment[];

@@ -404,6 +404,13 @@ function toOpenAIMessage(msg: Message): Record<string, unknown> {
       function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
     }));
   }
+  // Echo reasoning_content back on assistant messages from thinking-mode models.
+  // DeepSeek rejects the request with 400 if this is omitted when re-sending a
+  // thinking turn (e.g. after a tool round): "The reasoning_content in the
+  // thinking mode must be passed back to the API."
+  if (msg.reasoningContent && msg.role === 'assistant') {
+    m.reasoning_content = msg.reasoningContent;
+  }
   return m;
 }
 

@@ -151,6 +151,11 @@ export async function* chat(
       const toolCalls: ToolCallRequest[] = [];
       let chunksDelivered = 0;
       let prevChunkTime = 0;
+      // Per-round reasoning: thinking-mode providers (DeepSeek-R1, GLM-4.5)
+      // require reasoning_content to be echoed back on the assistant message
+      // when the conversation is re-sent after a tool round, else they return
+      // 400 "reasoning_content ... must be passed back to the API".
+      let roundReasoning = '';
 
       // 5. Call provider with retry + fallback
       try {
@@ -193,6 +198,11 @@ export async function* chat(
           // Accumulate text content for persistence
           if (chunk.type === 'text') {
             fullContent += chunk.content;
+          }
+
+          // Accumulate reasoning content for the assistant message round-trip
+          if (chunk.type === 'thinking' && chunk.phase === 'delta') {
+            roundReasoning += chunk.content;
           }
 
           // Track done reason + suppress intermediate done (Story 5.5 AC7)
@@ -396,6 +406,7 @@ export async function* chat(
           role: 'assistant',
           content: '',
           toolCalls: [{ id: tc.id, name: tc.name, arguments: tc.arguments }],
+          ...(roundReasoning ? { reasoningContent: roundReasoning } : {}),
         };
         workingMessages.push(assistantMsg);
         workingMessages.push(resultMsg);

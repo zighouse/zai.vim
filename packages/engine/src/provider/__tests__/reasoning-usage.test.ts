@@ -139,3 +139,63 @@ describe('usage parsing (AC6)', () => {
     expect(statsChunks).toHaveLength(0);
   });
 });
+
+describe('reasoning_content round-trip (outgoing)', () => {
+  it('serializes reasoning_content on assistant messages into the request body', async () => {
+    const sseLines = [
+      'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":null}]}',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+    ];
+    let capturedBody: { messages: Array<Record<string, unknown>> } | undefined;
+    const capturingFetch = (async (_url: unknown, init: RequestInit) => {
+      capturedBody = JSON.parse(init.body as string) as { messages: Array<Record<string, unknown>> };
+      return new Response(mockSSE(sseLines), {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }) as typeof globalThis.fetch;
+
+    const provider = new OpenAICompatibleProvider(BASE_CONFIG, undefined, capturingFetch);
+    await collect(provider.chat({
+      messages: [
+        { id: 'u1', role: 'user', content: 'hi' },
+        { id: 'a1', role: 'assistant', content: '', toolCalls: [{ id: 'tc-1', name: 'echo', arguments: {} }], reasoningContent: 'I should think first' },
+        { id: 't1', role: 'tool', content: 'result', toolCallId: 'tc-1' },
+      ],
+      sessionId: 'test',
+    }));
+
+    expect(capturedBody).toBeDefined();
+    const assistant = capturedBody!.messages.find(m => m.role === 'assistant');
+    expect(assistant).toBeDefined();
+    expect(assistant!.reasoning_content).toBe('I should think first');
+  });
+
+  it('omits reasoning_content when the assistant message has none', async () => {
+    const sseLines = [
+      'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":null}]}',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+    ];
+    let capturedBody: { messages: Array<Record<string, unknown>> } | undefined;
+    const capturingFetch = (async (_url: unknown, init: RequestInit) => {
+      capturedBody = JSON.parse(init.body as string) as { messages: Array<Record<string, unknown>> };
+      return new Response(mockSSE(sseLines), {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }) as typeof globalThis.fetch;
+
+    const provider = new OpenAICompatibleProvider(BASE_CONFIG, undefined, capturingFetch);
+    await collect(provider.chat({
+      messages: [
+        { id: 'u1', role: 'user', content: 'hi' },
+        { id: 'a1', role: 'assistant', content: 'plain answer' },
+      ],
+      sessionId: 'test',
+    }));
+
+    const assistant = capturedBody!.messages.find(m => m.role === 'assistant');
+    expect(assistant).toBeDefined();
+    expect(assistant).not.toHaveProperty('reasoning_content');
+  });
+});
