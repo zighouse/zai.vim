@@ -1,7 +1,7 @@
 // @zaivim/e2e — Shared test utilities
 // Temporary directories, mock sandbox, epic filtering.
 
-import { describe, it, expect } from 'vitest';
+import { describe } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
