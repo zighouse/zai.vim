@@ -10,6 +10,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "test:ts": "pnpm --filter './packages/core' --filter './packages/engine' --filter './packages/tools' --filter './packages/skills' --filter './packages/gateway' --filter './packages/tui' test",
+    "test:e2e": "pnpm --filter @zaivim/e2e test:e2e",
     "test:vim": "vint packages/vim-adapter/autoload packages/vim-adapter/plugin || true",
     "test:browser": "web-ext lint packages/browser-ext || true",
     "typecheck:downstream": "pnpm --filter @zaivim/core --filter @zaivim/engine --filter @zaivim/tools --filter @zaivim/skills --filter @zaivim/gateway typecheck",
