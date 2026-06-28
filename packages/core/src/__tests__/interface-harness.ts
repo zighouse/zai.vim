@@ -25,10 +25,14 @@ import type {
   EngineHealth,
   ApprovalHandler,
   FileChangeProposal,
+  PendingApproval,
+  ApprovalEvent,
   ProviderChatRequest,
   ProviderCapabilities,
   PersonaConfig,
   ForkOptions,
+  IAuditor,
+  AuditEvent,
   ISessionStore,
   SessionMeta,
   SessionApproachingLimitEvent,
@@ -126,7 +130,10 @@ function harness(): void {
   const cResult: ResponseChunk = { type: 'tool_result', toolCallId: '', content: '' };
   const cErr: ResponseChunk = { type: 'error', code: '', message: '' };
   const cDone: ResponseChunk = { type: 'done', finishReason: 'stop' };
-  void cText; void cTool; void cResult; void cErr; void cDone;
+  const cThink: ResponseChunk = { type: 'thinking', content: 'reasoning...', phase: 'delta' };
+  const cStats: ResponseChunk = { type: 'stats', tokensIn: 100, tokensOut: 50, elapsedMs: 2000, speed: 25 };
+  const cPhase: ResponseChunk = { type: 'phase', phase: 'thinking' };
+  void cText; void cTool; void cResult; void cErr; void cDone; void cThink; void cStats; void cPhase;
 
   // ---- Skill types ----
   void async function (adapter: SkillAdapter) {
@@ -215,6 +222,27 @@ function harness(): void {
       reason: 'test',
     });
     void approved;
+  };
+
+  // ---- PendingApproval + ApprovalEvent — async approval types ----
+  const pending: PendingApproval = {
+    changeId: '',
+    proposal: { path: '/tmp/f', operation: 'create', reason: 'test' },
+    status: 'pending',
+    queueOrder: 0,
+    createdAt: 0,
+    timeoutMs: 30000,
+  };
+  void pending;
+  const appEvent: ApprovalEvent = { type: 'approval.request', changeId: '', proposal: pending.proposal, timeoutMs: 30000, agentId: '', sessionId: '' };
+  void appEvent;
+
+  // ---- IAuditor + AuditEvent — audit types ----
+  void async function (auditor: IAuditor) {
+    const event: AuditEvent = { timestamp: new Date().toISOString(), operation: 'read', level: 'C', sessionId: '', result: 'allowed' };
+    await auditor.write(event);
+    const results = await auditor.query({});
+    void results;
   };
 
   // ---- ISecurityProvider ----
