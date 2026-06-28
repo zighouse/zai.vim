@@ -105,6 +105,8 @@ export interface Message {
   readonly role: MessageRole;
   readonly content: string;
   readonly toolCalls?: ToolCall[];
+  /** Matching tool_call id for role==='tool' messages (required by OpenAI-compatible APIs). */
+  readonly toolCallId?: string;
   readonly createdAt?: number;
   readonly seq?: number;
   readonly attachments?: FileAttachment[];

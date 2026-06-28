@@ -248,6 +248,7 @@ export async function executeToolCalls(
       id: randomUUID(),
       role: 'tool',
       content: result,
+      toolCallId: tc.id,
     };
     messages.push(toolMsg);
 

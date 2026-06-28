@@ -394,6 +394,9 @@ function toOpenAIMessage(msg: Message): Record<string, unknown> {
     role: msg.role === 'tool' ? 'tool' : msg.role,
     content: msg.content,
   };
+  if (msg.role === 'tool' && msg.toolCallId) {
+    m.tool_call_id = msg.toolCallId;
+  }
   if (msg.toolCalls && msg.role === 'assistant') {
     m.tool_calls = msg.toolCalls.map(tc => ({
       id: tc.id,
