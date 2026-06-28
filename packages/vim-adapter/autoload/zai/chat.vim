@@ -454,10 +454,10 @@ function! zai#chat#on_chunk(p) abort
     return
   elseif t ==# 'thinking'
     " Story 4.1.1: thinking chunk — update ring buffer + events
+    " Note: raw chunk already added to c.events at line 393.
     let c.stream_lnum = 0
     let l:content = get(a:p, 'content', '')
     let l:phase = get(a:p, 'phase', 'delta')
-    call add(c.events, {'type': 'thinking', 'content': l:content, 'phase': l:phase})
     if l:phase ==# 'start'
       call s:thinking_ring_clear(c)
     elseif l:phase ==# 'delta'
@@ -476,12 +476,12 @@ function! zai#chat#on_chunk(p) abort
     return
   elseif t ==# 'stats'
     " Story 4.1.1: stats chunk — store fields for info bar
+    " Note: raw chunk already added to c.events at line 393.
     let c.stream_lnum = 0
     let c.stats_tokens_in = get(a:p, 'tokensIn', c.stats_tokens_in)
     let c.tokens_out = get(a:p, 'tokensOut', c.tokens_out)
     let c.elapsed_ms = get(a:p, 'elapsedMs', c.elapsed_ms)
     let c.stats_speed = get(a:p, 'speed', c.stats_speed)
-    call add(c.events, {'type': 'stats'})
     return
   else
     let c.stream_lnum = 0
