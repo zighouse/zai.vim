@@ -603,12 +603,23 @@ function! s:thinking_ring_clear(chat) abort
   let a:chat.thinking_phase = 'start'
 endfun
 
-" Story 4.1.1: Push content lines into 5-line FIFO ring buffer.
+" Story 4.1.1: Push content into a 5-line FIFO ring buffer.
 " Content arrives pre-sanitized from Node-side sanitizeForVim (AC4).
+" Streaming deltas are 1-2 tokens with no newline — accumulate them onto the
+" current line (the last ring entry) and only start a new entry on a real \n.
+" Without this each delta became its own ring entry, so the compact-mode header
+" (> 🤔 ...) showed only the latest fragment instead of a growing readable line.
 function! s:thinking_ring_push(chat, content) abort
   let a:chat.thinking_phase = 'delta'
-  for l:line in split(a:content, "\n", 1)
-    call add(a:chat.thinking_ring, l:line)
+  let l:segments = split(a:content, "\n", 1)
+  let l:first = remove(l:segments, 0)
+  if empty(a:chat.thinking_ring)
+    call add(a:chat.thinking_ring, l:first)
+  else
+    let a:chat.thinking_ring[-1] .= l:first
+  endif
+  for l:seg in l:segments
+    call add(a:chat.thinking_ring, l:seg)
     if len(a:chat.thinking_ring) > 5
       call remove(a:chat.thinking_ring, 0)
     endif
