@@ -99,6 +99,7 @@ export async function* chat(
 
   // 3. Check provider streaming capability
   if (!provider.capabilities.streaming) {
+    yield { type: 'phase', phase: 'error' };
     yield {
       type: 'error',
       code: 'PIPELINE_PROVIDER_NOT_STREAMING',
@@ -124,6 +125,9 @@ export async function* chat(
   let finalRoundToolCalls: ToolCallRequest[] = [];
 
   try {
+    // Story 5.5 (AC7): emit phase:request at the start of each chat turn
+    yield { type: 'phase', phase: 'request' };
+
     while (round < maxToolCallRounds) {
       signal?.throwIfAborted();
 
@@ -181,9 +185,10 @@ export async function* chat(
             fullContent += chunk.content;
           }
 
-          // Track done reason
+          // Track done reason + suppress intermediate done (Story 5.5 AC7)
           if (chunk.type === 'done') {
             finishReason = chunk.finishReason;
+            continue; // Suppress — re-emitted at the end or next round start
           }
 
           // Security enrichment: pre-check harm level for tool_call chunks (Story 2.2, Task 3.3)
@@ -300,15 +305,18 @@ export async function* chat(
               }
               providerRegistry?.markAvailable(provider.name);
             } else {
+              yield { type: 'phase', phase: 'error' };
               yield { type: 'error', code: 'PIPELINE_CONTEXT_LENGTH_EXCEEDED', message: classified.message };
               return;
             }
           } else {
+            yield { type: 'phase', phase: 'error' };
             yield { type: 'error', code: classified.code, message: classified.message };
             return;
           }
         } else {
           // Unknown error: yield generic error chunk
+          yield { type: 'phase', phase: 'error' };
           yield {
             type: 'error',
             code: 'ENGINE_PROVIDER_ERROR',
@@ -337,6 +345,9 @@ export async function* chat(
         // All tool calls invalid, let AI decide next step
         break;
       }
+
+      // Story 5.5 (AC7): emit phase:tool before tool execution
+      yield { type: 'phase', phase: 'tool' };
 
       // 8. Execute valid tool calls
       const { messages: toolResults, pendingChangeIds } = await executeToolCalls(valid, registry, {
@@ -393,17 +404,25 @@ export async function* chat(
         break;
       }
 
+      // Story 5.5 (AC7): emit phase:response before next provider round
+      yield { type: 'phase', phase: 'response' };
+
       round++;
     }
 
     // 10. Max rounds exceeded
     if (round >= maxToolCallRounds) {
+      yield { type: 'phase', phase: 'error' };
       yield {
         type: 'error',
         code: 'PIPELINE_MAX_TOOL_ROUNDS_EXCEEDED',
         message: `Exceeded max tool call rounds: ${maxToolCallRounds}`,
       };
     }
+
+    // Story 5.5 (AC7): emit phase:done before final done
+    yield { type: 'phase', phase: 'done' };
+    yield { type: 'done', finishReason };
 
     completed = true;
   } finally {

@@ -43,6 +43,9 @@ describe('streamChatResponse dispatcher — known chunk types (AC10.1)', () => {
     ['tool_call', { type: 'tool_call', id: 't1', name: 'read_file', arguments: { path: '/tmp' } }],
     ['tool_result', { type: 'tool_result', toolCallId: 't1', content: 'data' }],
     ['error', { type: 'error', code: 'ERR', message: 'boom' }],
+    ['stats', { type: 'stats', tokensIn: 1, tokensOut: 2, elapsedMs: 500, speed: 4 }],
+    ['thinking', { type: 'thinking', content: 'hmm', phase: 'delta' }],
+    ['phase', { type: 'phase', phase: 'thinking' }],
   ];
 
   for (const [label, chunk] of knownCases) {
@@ -111,55 +114,6 @@ describe('streamChatResponse dispatcher — unknown chunk types (AC10.2)', () =>
     expect(combined).not.toContain('\x1b[31m');
   });
 
-  it('does not throw on stats/thinking chunk types', async () => {
-    const engine = mockEngine([
-      { type: 'stats', tokensIn: 1, tokensOut: 2 } as unknown as ResponseChunk,
-      { type: 'thinking', content: 'hmm' } as unknown as ResponseChunk,
-    ]);
-    const out = spyStream();
-    await expect(
-      streamChatResponse(engine, 's1', { id: 'm1', role: 'user', content: 'hi', createdAt: 0 } as Message, new AbortController().signal, out.stream as any),
-    ).resolves.toBeUndefined();
-  });
-});
-
-describe('streamChatResponse dispatcher — phase chunks (AC11)', () => {
-  beforeEach(() => {
-    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-  });
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  const VALID_PHASES = ['request', 'thinking', 'tool', 'response', 'done', 'error'] as const;
-  for (const phase of VALID_PHASES) {
-    it(`extracts phase '${phase}' into $/notification with phase data`, async () => {
-      const engine = mockEngine([
-        { type: 'phase', phase, elapsed: 1500, tokens: 30, toolName: 'read_file' } as unknown as ResponseChunk,
-      ]);
-      const out = spyStream();
-      await streamChatResponse(engine, 's1', { id: 'm1', role: 'user', content: 'hi', createdAt: 0 } as Message, new AbortController().signal, out.stream as any);
-
-      const frames = decodeFrames(out.collected);
-      const phaseNotif = frames.find((f) => f.method === '$/notification' && f.params?.type === 'phase');
-      expect(phaseNotif).toBeDefined();
-      expect(phaseNotif.params.data.phase).toBe(phase);
-      expect(phaseNotif.params.data.elapsed).toBe(1500);
-      expect(phaseNotif.params.data.tokens).toBe(30);
-    });
-  }
-
-  it('skips illegal phase value with stderr warning only (no stdout notification)', async () => {
-    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const engine = mockEngine([{ type: 'phase', phase: 'not_a_real_phase' } as unknown as ResponseChunk]);
-    const out = spyStream();
-    await streamChatResponse(engine, 's1', { id: 'm1', role: 'user', content: 'hi', createdAt: 0 } as Message, new AbortController().signal, out.stream as any);
-
-    const frames = decodeFrames(out.collected);
-    const phaseNotif = frames.find((f) => f.params?.type === 'phase');
-    expect(phaseNotif).toBeUndefined();
-    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('illegal phase value'));
-  });
 });
 
 describe('streamChatResponse dispatcher — stream lifecycle', () => {

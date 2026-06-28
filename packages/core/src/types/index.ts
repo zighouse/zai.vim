@@ -86,12 +86,24 @@ export interface Message {
 
 // ---- Response stream -------------------------------------------------------
 
+/** Thinking phase literal — start/delta/end for streaming reasoning content. */
+export type ThinkingPhase = 'start' | 'delta' | 'end';
+
+/** Phase state machine literal — 6-state lifecycle for client statusbar. */
+export type SessionPhase = 'request' | 'thinking' | 'tool' | 'response' | 'done' | 'error';
+
 export type ResponseChunk =
   | { type: 'text'; content: string }
   | { type: 'tool_call'; id: string; name: string; arguments: Record<string, unknown> }
   | { type: 'tool_result'; toolCallId: string; content: string }
   | { type: 'error'; code: string; message: string }
-  | { type: 'done'; finishReason: string };
+  | { type: 'done'; finishReason: string }
+  /** @property type - Literal discriminator: 'thinking'. @property content - Reasoning text fragment. @property phase - Stream lifecycle phase (start/delta/end). */
+  | { type: 'thinking'; content: string; phase: ThinkingPhase }
+  /** @property type - Literal discriminator: 'stats'. @property tokensIn - Input tokens consumed. @property tokensOut - Output tokens generated. @property elapsedMs - Wall-clock duration in milliseconds. @property speed - Generation speed in tokens-per-second. */
+  | { type: 'stats'; tokensIn: number; tokensOut: number; elapsedMs: number; speed: number }
+  /** @property type - Literal discriminator: 'phase'. @property phase - Client-visible state machine phase. */
+  | { type: 'phase'; phase: SessionPhase };
 
 // ---- Session ---------------------------------------------------------------
 

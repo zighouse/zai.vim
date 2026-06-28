@@ -2,6 +2,7 @@
 // Drives UI re-renders through a subscribe/notify pattern compatible with ink/React.
 
 import type { ChatChunk, ConnectionStatus } from './client.js';
+import type { SessionPhase } from '@zaivim/core';
 
 // ---- Types -------------------------------------------------------------------
 
@@ -27,7 +28,8 @@ export interface SessionState {
   tokensIn?: number;
   elapsedMs?: number;
   speed?: number;
-  phase?: string;
+  /** Story 5.5: tightened from string? to SessionPhase literal union. */
+  phase?: SessionPhase;
 }
 
 export interface TuiState {
@@ -138,10 +140,25 @@ function reducer(state: TuiState, action: StoreAction): TuiState {
         return { ...state, sessions };
       }
 
+      // Story 5.5 (AC9): fill reserved fields for thinking/stats/phase chunks
+      let extraTokensOut = 0;
+      const extras: Partial<Pick<SessionState, 'thinkingRing' | 'tokensIn' | 'elapsedMs' | 'speed' | 'phase'>> = {};
+      if (chunk.type === 'thinking') {
+        extras.thinkingRing = (session.thinkingRing ?? '') + ((chunk.content as string) ?? '');
+      } else if (chunk.type === 'stats') {
+        extras.tokensIn = (chunk.tokensIn as number);
+        extraTokensOut = (chunk.tokensOut as number) || 0;
+        extras.elapsedMs = (chunk.elapsedMs as number);
+        extras.speed = (chunk.speed as number);
+      } else if (chunk.type === 'phase') {
+        extras.phase = chunk.phase as SessionPhase;
+      }
+
       sessions.set(sessionId, {
         ...session,
         messages: result.messages,
-        tokensOut: session.tokensOut + result.tokenDelta,
+        tokensOut: session.tokensOut + result.tokenDelta + extraTokensOut,
+        ...extras,
       });
       return { ...state, sessions };
     }
@@ -154,9 +171,27 @@ function reducer(state: TuiState, action: StoreAction): TuiState {
       let messages = session.messages;
       let tokensOut = session.tokensOut;
       let lastWasDone = false;
+      const extras: Partial<Pick<SessionState, 'thinkingRing' | 'tokensIn' | 'elapsedMs' | 'speed' | 'phase'>> = {};
       for (const chunk of chunks) {
         if (chunk.type === 'done') {
           lastWasDone = true;
+          continue;
+        }
+        // Story 5.5 (AC9): accumulate thinking/stats/phase session state
+        if (chunk.type === 'thinking') {
+          extras.thinkingRing = (extras.thinkingRing ?? session.thinkingRing ?? '') + ((chunk.content as string) ?? '');
+          continue;
+        }
+        if (chunk.type === 'stats') {
+          extras.tokensIn = (chunk.tokensIn as number);
+          const addedOut = (chunk.tokensOut as number) || 0;
+          tokensOut += addedOut;
+          extras.elapsedMs = (chunk.elapsedMs as number);
+          extras.speed = (chunk.speed as number);
+          continue;
+        }
+        if (chunk.type === 'phase') {
+          extras.phase = chunk.phase as SessionPhase;
           continue;
         }
         const r = applyChunkToMessages(messages, chunk);
@@ -166,7 +201,7 @@ function reducer(state: TuiState, action: StoreAction): TuiState {
       if (lastWasDone) {
         messages = finalizeMessage(messages);
       }
-      sessions.set(sessionId, { ...session, messages, tokensOut });
+      sessions.set(sessionId, { ...session, messages, tokensOut, ...extras });
       return { ...state, sessions };
     }
 

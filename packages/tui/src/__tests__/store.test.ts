@@ -221,17 +221,55 @@ describe('TuiStore', () => {
     expect(after.tokensOut).toBe(before.tokensOut);
   });
 
-  it('open-ended passthrough for unknown chunk types (C4.1)', () => {
+  // ---- Story 5.5: thinking/stats/phase chunks (AC9) ----
+
+  it('thinking chunk updates thinkingRing on session', () => {
     const store = createTuiStore();
     store.dispatch({ type: 'SESSION_CREATED', payload: { id: 's1', name: 'S1' } });
-    // Unknown chunk should not throw
+    store.dispatch({
+      type: 'CHUNK_APPENDED',
+      payload: { sessionId: 's1', chunk: { type: 'thinking', content: 'step 1', phase: 'delta' } },
+    });
+    store.dispatch({
+      type: 'CHUNK_APPENDED',
+      payload: { sessionId: 's1', chunk: { type: 'thinking', content: ' step 2', phase: 'delta' } },
+    });
+    expect(store.getState().sessions.get('s1')!.thinkingRing).toBe('step 1 step 2');
+  });
+
+  it('stats chunk populates tokensIn/elapsedMs/speed', () => {
+    const store = createTuiStore();
+    store.dispatch({ type: 'SESSION_CREATED', payload: { id: 's1', name: 'S1' } });
+    store.dispatch({
+      type: 'CHUNK_APPENDED',
+      payload: { sessionId: 's1', chunk: { type: 'stats', tokensIn: 100, tokensOut: 50, elapsedMs: 2000, speed: 25 } },
+    });
+    const s = store.getState().sessions.get('s1')!;
+    expect(s.tokensIn).toBe(100);
+    expect(s.elapsedMs).toBe(2000);
+    expect(s.speed).toBe(25);
+  });
+
+  it('phase chunk updates session phase field', () => {
+    const store = createTuiStore();
+    store.dispatch({ type: 'SESSION_CREATED', payload: { id: 's1', name: 'S1' } });
+    store.dispatch({
+      type: 'CHUNK_APPENDED',
+      payload: { sessionId: 's1', chunk: { type: 'phase', phase: 'thinking' } },
+    });
+    expect(store.getState().sessions.get('s1')!.phase).toBe('thinking');
+  });
+
+  it('open-ended passthrough for truly unknown chunk types (C4.1)', () => {
+    const store = createTuiStore();
+    store.dispatch({ type: 'SESSION_CREATED', payload: { id: 's1', name: 'S1' } });
+    // Truly unknown chunk should not throw and not break store
     expect(() => {
       store.dispatch({
         type: 'CHUNK_APPENDED',
-        payload: { sessionId: 's1', chunk: { type: 'thinking', content: 'thinking...' } },
+        payload: { sessionId: 's1', chunk: { type: 'future_unknown', data: 'x' } },
       });
     }).not.toThrow();
-    // Session should still be in initial state
     expect(store.getState().sessions.get('s1')!.status).toBe('active');
   });
 

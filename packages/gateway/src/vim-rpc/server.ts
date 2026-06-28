@@ -37,11 +37,8 @@ interface VimAgent {
 /** In-memory token cache: sessionId → token. Module-scoped so tests can inspect. */
 export const sessionTokenCache = new Map<string, string>();
 
-/** Known chunk types dispatched as $/chat/chunk (AC10). */
-const KNOWN_CHUNK_TYPES = new Set(['text', 'tool_call', 'tool_result', 'error', 'done']);
-
-/** Valid phase enum values (AC11). */
-const VALID_PHASES = new Set(['request', 'thinking', 'tool', 'response', 'done', 'error']);
+/** Known chunk types dispatched as $/chat/chunk (AC10, Story 5.5 AC8). */
+const KNOWN_CHUNK_TYPES = new Set(['text', 'tool_call', 'tool_result', 'error', 'done', 'thinking', 'stats', 'phase']);
 
 /** Generate a 64-char hex session token. */
 function generateSessionToken(): string {
@@ -95,10 +92,9 @@ export function validateSessionToken(
 const VERSION = '0.1.0';
 
 /**
- * Stream engine chat response to stdout with forward-compat dispatcher (AC10/AC11).
+ * Stream engine chat response to stdout with forward-compat dispatcher (AC10/AC11, Story 5.5 AC8).
  *
  * - Known chunk types → encoded as $/chat/chunk notification, sanitized, written to streamOut
- * - `phase` chunk → extracted into a `phase` $/notification (AC11)
  * - Unknown chunk types → `forward:unknown_chunk` notification + stderr debug log (AC10)
  *
  * Extracted to module scope so tests can invoke it with a mock engine + spy stream.
@@ -124,28 +120,13 @@ export async function streamChatResponse(
         const encoded = encodeChatChunk(enriched);
         streamOut.write(sanitizeForVim(encoded) + '\n');
       } else {
+        // DEAD CODE after Story 5.5 AC8 — kept for forward-compat with future chunk types
         process.stderr.write(`[vim-rpc-server] unknown chunk type: ${type}\n`);
-        if (type === 'phase') {
-          const phase = raw.phase as string;
-          if (phase && VALID_PHASES.has(phase)) {
-            const notification = encodeNotification('phase', {
-              sessionId,
-              phase,
-              elapsed: raw.elapsed ?? 0,
-              tokens: raw.tokens ?? 0,
-              toolName: raw.toolName ?? '',
-            });
-            streamOut.write(sanitizeForVim(notification) + '\n');
-          } else {
-            process.stderr.write(`[vim-rpc-server] illegal phase value: ${phase}\n`);
-          }
-        } else {
-          const encoded = encodeNotification('forward:unknown_chunk', {
-            type,
-            data: JSON.stringify(raw),
-          });
-          streamOut.write(sanitizeForVim(encoded) + '\n');
-        }
+        const encoded = encodeNotification('forward:unknown_chunk', {
+          type,
+          data: JSON.stringify(raw),
+        });
+        streamOut.write(sanitizeForVim(encoded) + '\n');
       }
     }
     const doneChunk = encodeChatChunk({ type: 'done', finishReason: 'stop', sessionId });

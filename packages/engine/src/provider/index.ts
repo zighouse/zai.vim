@@ -20,7 +20,7 @@ const PROVIDER_CAPABILITIES: Record<string, ProviderCapabilities> = {
     streaming: true,
     toolUse: true,
     caching: false,
-    thinking: false,
+    thinking: true, // Story 5.5: reasoning_content via SSE
     vision: false,
     maxContextTokens: 128_000,
   },
@@ -73,6 +73,8 @@ export class OpenAICompatibleProvider implements IProvider {
   #validated = false;
   #validationCallbacks?: ValidationCallbacks;
   #fetch: typeof globalThis.fetch;
+  /** Story 5.5: tracks whether we're inside a reasoning block for thinking chunk emission. */
+  #inThinking = false;
 
   constructor(config: ProviderConfig, validationCallbacks?: ValidationCallbacks, fetchFn?: typeof globalThis.fetch) {
     this.name = config.name;
@@ -118,6 +120,8 @@ export class OpenAICompatibleProvider implements IProvider {
       temperature,
       max_tokens: maxTokens,
       stream: true,
+      // Story 5.5: request usage in final chunk for stats emission
+      stream_options: { include_usage: true },
     };
 
     let response: Response;
@@ -137,6 +141,28 @@ export class OpenAICompatibleProvider implements IProvider {
         'ENGINE_PROVIDER_ERROR',
         502,
       );
+    }
+
+    // Story 5.5 (AC6): Some providers (e.g., DeepSeek-R1) reject stream_options; retry without it once.
+    if (response.status === 400 && body.stream_options) {
+      delete body.stream_options;
+      try {
+        response = await this.#fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.#config.apiKey}`,
+          },
+          body: JSON.stringify(body),
+          signal,
+        });
+      } catch (retryErr) {
+        throw new ZaiNetworkError(
+          `Failed to connect to ${this.name}: ${String(retryErr)}`,
+          'ENGINE_PROVIDER_ERROR',
+          502,
+        );
+      }
     }
 
     if (!response.ok) {
@@ -176,6 +202,11 @@ export class OpenAICompatibleProvider implements IProvider {
     const decoder = new TextDecoder();
     let buffer = '';
     let finishReason = 'stop';
+    // Story 5.5: wallclock tracking for stats chunk
+    const chunkStartTime = performance.now();
+    const chunkWallclock = { firstChunk: 0 as number, lastChunk: 0 as number };
+    // Story 5.5: accumulated usage from final chunk
+    let usageData: { promptTokens?: number; completionTokens?: number } = {};
 
     try {
       while (true) {
@@ -215,6 +246,23 @@ export class OpenAICompatibleProvider implements IProvider {
             this.#validationCallbacks?.onValid();
           }
 
+          // Story 5.5: track first chunk time for stats wallclock
+          if (chunkWallclock.firstChunk === 0) {
+            chunkWallclock.firstChunk = performance.now();
+          }
+          chunkWallclock.lastChunk = performance.now();
+
+          // Story 5.5: try to extract usage from chunk (OpenAI-compatible final chunk)
+          if (chunk.usage) {
+            const u = chunk.usage as Record<string, unknown>;
+            if (typeof u.prompt_tokens === 'number' || typeof u.promptTokens === 'number') {
+              usageData.promptTokens = (u.prompt_tokens ?? u.promptTokens) as number;
+            }
+            if (typeof u.completion_tokens === 'number' || typeof u.completionTokens === 'number') {
+              usageData.completionTokens = (u.completion_tokens ?? u.completionTokens) as number;
+            }
+          }
+
           const choices = chunk.choices as Record<string, unknown>[] | undefined;
           const choice = choices?.[0] as Record<string, unknown> | undefined;
           if (!choice) continue;
@@ -227,8 +275,37 @@ export class OpenAICompatibleProvider implements IProvider {
           const delta = choice.delta as Record<string, unknown> | undefined;
           if (!delta) continue;
 
-          // Text content
+          // Story 5.5: reasoning_content (DeepSeek-R1, GLM-4.5 thinking)
+          if (delta.reasoning_content) {
+            const text = String(delta.reasoning_content);
+            if (!this.#inThinking) {
+              this.#inThinking = true;
+              yield { type: 'phase', phase: 'thinking' };
+              yield { type: 'thinking', phase: 'start', content: '' };
+            }
+            yield { type: 'thinking', phase: 'delta', content: text };
+            continue; // skip text content — reasoning is not visible text
+          }
+
+          // Story 5.5: Anthropic-native delta.thinking field
+          if (delta.thinking && this.#config.protocol === 'anthropic-native') {
+            const text = String(delta.thinking);
+            if (!this.#inThinking) {
+              this.#inThinking = true;
+              yield { type: 'phase', phase: 'thinking' };
+              yield { type: 'thinking', phase: 'start', content: '' };
+            }
+            yield { type: 'thinking', phase: 'delta', content: text };
+            continue;
+          }
+
+          // Text content — first text chunk means reasoning is over (if we were thinking)
           if (delta.content) {
+            if (this.#inThinking) {
+              this.#inThinking = false;
+              yield { type: 'thinking', phase: 'end', content: '' };
+              yield { type: 'phase', phase: 'response' };
+            }
             yield { type: 'text', content: String(delta.content) };
           }
 
@@ -254,6 +331,27 @@ export class OpenAICompatibleProvider implements IProvider {
       }
     } finally {
       reader.releaseLock();
+    }
+
+    // Story 5.5 (AC6): emit stats chunk when usage data available
+    if (usageData.promptTokens !== undefined && usageData.completionTokens !== undefined) {
+      const elapsedMs = chunkWallclock.lastChunk - chunkWallclock.firstChunk;
+      const speed = elapsedMs > 0
+        ? Math.round(usageData.completionTokens / (elapsedMs / 1000))
+        : usageData.completionTokens; // fallback: avoid division by zero
+      yield {
+        type: 'stats',
+        tokensIn: usageData.promptTokens,
+        tokensOut: usageData.completionTokens,
+        elapsedMs: Math.round(elapsedMs),
+        speed,
+      };
+    }
+
+    // If thinking was still in progress when stream ended, emit end marker
+    if (this.#inThinking) {
+      this.#inThinking = false;
+      yield { type: 'thinking', phase: 'end', content: '' };
     }
 
     yield { type: 'done', finishReason };
