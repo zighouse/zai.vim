@@ -7,6 +7,7 @@ import type { ZaiError } from '../errors/index.js';
 
 // ---- JSON-RPC 2.0 message types --------------------------------------------
 
+/** JSON-RPC 2.0 protocol version constant: '2.0'. */
 export const JSONRPC_VERSION = '2.0' as const;
 
 /** A JSON-RPC 2.0 request — method call with id. */
