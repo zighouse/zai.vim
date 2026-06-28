@@ -336,7 +336,7 @@ async function cmdSession(
   _opts: Record<string, unknown>,
 ): Promise<void> {
   const subcommand = args[0];
-  const engine = getEngineInstance() as EngineAPI | undefined;
+  const engine = getEngineInstance();
   if (!engine) {
     console.error('Error: no engine running');
     process.exit(1);
@@ -408,7 +408,7 @@ async function cmdSession(
 
 function cmdPing(): void {
   // Try to get engine instance first (for foreground mode)
-  const engine = getEngineInstance() as EngineAPI | undefined;
+  const engine = getEngineInstance();
   const uptime = engine?.uptime;
 
   // If no engine instance, check PID file (for daemon mode)
@@ -486,7 +486,7 @@ async function cmdStop(): Promise<void> {
 
 async function cmdProjectContext(dir?: string): Promise<void> {
   // Try engine instance first (foreground mode)
-  const engine = getEngineInstance() as EngineAPI | undefined;
+  const engine = getEngineInstance();
 
   if (engine) {
     const ctx = await engine.detectProjectContext(dir);
@@ -533,18 +533,16 @@ interface ChatOpts {
 /**
  * Get or create an in-process engine instance for CLI chat.
  * - If an engine is already running in this process, returns it.
- * - Otherwise creates a new engine instance for the chat session.
+ * - Otherwise creates a new pipeline engine instance for the chat session.
  */
 function getChatEngine(): EngineAPI {
-  const existing = getEngineInstance() as EngineAPI | undefined;
+  const existing = getEngineInstance();
   if (existing) return existing;
 
-  // No in-process engine — create one for chat
+  // No in-process engine — create one for chat.
   // This is independent of any daemon/foreground engine in another process.
   try {
-    const config = getEngineConfig();
-    const engine = createEngine(config);
-    return engine as EngineAPI;
+    return createEngine({ version: VERSION });
   } catch (err) {
     if (err instanceof ZaiConfigError) {
       console.error(`\x1b[31mConfiguration error: ${err.message}\x1b[0m`);

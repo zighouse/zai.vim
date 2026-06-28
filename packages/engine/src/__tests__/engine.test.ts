@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { EngineStateMachine } from '../lifecycle/state-machine.js';
+import { EngineStateMachine } from '../pipeline/state-machine.js';
 import type { EngineState } from '@zaivim/core';
 import { writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -125,7 +125,7 @@ describe('PID file', () => {
   });
 
   it('writePidFile creates file with correct structure', async () => {
-    const { writePidFile, readPidFile } = await import('../lifecycle/pid-file.js');
+    const { writePidFile, readPidFile } = await import('../daemon/pid-file.js');
     writePidFile(pidPath, '0.1.0');
 
     const data = readPidFile(pidPath);
@@ -136,24 +136,24 @@ describe('PID file', () => {
   });
 
   it('readPidFile returns null for non-existent file', async () => {
-    const { readPidFile } = await import('../lifecycle/pid-file.js');
+    const { readPidFile } = await import('../daemon/pid-file.js');
     const data = readPidFile('/nonexistent/path/engine.pid');
     expect(data).toBeNull();
   });
 
   it('isProcessAlive returns true for current process', async () => {
-    const { isProcessAlive } = await import('../lifecycle/pid-file.js');
+    const { isProcessAlive } = await import('../daemon/pid-file.js');
     expect(isProcessAlive(process.pid)).toBe(true);
   });
 
   it('isProcessAlive returns false for non-existent PID', async () => {
-    const { isProcessAlive } = await import('../lifecycle/pid-file.js');
+    const { isProcessAlive } = await import('../daemon/pid-file.js');
     // Use a very high PID that shouldn't exist
     expect(isProcessAlive(999999999)).toBe(false);
   });
 
   it('checkExistingPid detects stale PID', async () => {
-    const { checkExistingPid } = await import('../lifecycle/pid-file.js');
+    const { checkExistingPid } = await import('../daemon/pid-file.js');
     // Write a PID file with a fake PID
     writeFileSync(pidPath, JSON.stringify({ pid: 999999999, startedAt: Date.now(), version: '0.1.0' }));
 
@@ -162,7 +162,7 @@ describe('PID file', () => {
   });
 
   it('removePidFile deletes the file', async () => {
-    const { writePidFile, removePidFile, readPidFile } = await import('../lifecycle/pid-file.js');
+    const { writePidFile, removePidFile, readPidFile } = await import('../daemon/pid-file.js');
     writePidFile(pidPath, '0.1.0');
     expect(existsSync(pidPath)).toBe(true);
 

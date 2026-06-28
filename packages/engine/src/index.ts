@@ -5,7 +5,7 @@ export * from './agent/index.js';
 export * from './session/index.js';
 export * from './config/index.js';
 export * from './security/index.js';
-export * from './lifecycle/index.js';
+export * from './daemon/index.js';
 export * from './events/index.js';
 export { sanitizeForVim, sanitizeForTerminal } from './utils/sanitize-terminal.js';
 export type { SanitizeTerminalOptions } from './utils/sanitize-terminal.js';

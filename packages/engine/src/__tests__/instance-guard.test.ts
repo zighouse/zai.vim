@@ -3,7 +3,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ZaiInstanceConflictError } from '@zaivim/core';
-import { InstanceGuard } from '../lifecycle/instance-guard.js';
+import { InstanceGuard } from '../daemon/instance-guard.js';
 
 // Mock fs functions
 vi.mock('node:fs', () => ({

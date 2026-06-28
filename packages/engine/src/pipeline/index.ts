@@ -38,6 +38,7 @@ import { HarmClassifier } from '../security/harm-classifier.js';
 import { AuditMiddleware } from '../middleware/audit-middleware.js';
 import { join } from 'node:path';
 import { stat } from 'node:fs/promises';
+import { EngineStateMachine } from './state-machine.js';
 
 export { chat } from './chat.js';
 export { assembleContext, estimateTokens, trimContext, PIPELINE_DEFAULTS } from './context-assembler.js';
@@ -52,8 +53,19 @@ export { resolveAttachments, formatAttachments } from './file-attachment.js';
 export { findProjectRoot, scanProjectMeta, formatProjectContext, truncateProjectContext, MAX_PROJECT_CONTEXT_CHARS } from './project-detector.js';
 export type { ProjectRootResult } from './project-detector.js';
 
+export interface EngineOptions {
+  /** Tool definitions to register */
+  tools?: ToolDefinition[];
+  /** Config overrides passed through to loadConfig() */
+  configOverrides?: Partial<ZaiConfig>;
+  /** Session store (defaults to InMemorySessionStoreFull) */
+  sessionStore?: ISessionStore;
+  /** Version string (defaults to '0.0.1') */
+  version?: string;
+}
+
 export class Engine implements EngineAPI {
-  readonly version = '0.0.1';
+  readonly version: string;
   readonly #startedAt = Date.now();
   /** Event emitter for ADR-13 notifications (perf.*, chat.*, session.*, tool.*). */
   readonly events = new EventEmitter();
@@ -77,12 +89,17 @@ export class Engine implements EngineAPI {
   #subSandboxManager: SubSandboxManager;
   /** Story 3.5: async approval manager for file change review. */
   #approvalManager: ApprovalManager;
+  /** Lifecycle state machine for engine health tracking. */
+  readonly #stateMachine: EngineStateMachine;
   /** Project context cache — keyed by session ID (Story 1b.4) */
   readonly #projectContextCache = new Map<string, ProjectContext>();
   /** Timestamp of last mtime check per session */
   readonly #projectMtimeCache = new Map<string, number>();
 
-  constructor(tools?: ToolDefinition[], configOverrides?: Partial<ZaiConfig>, sessionStore?: ISessionStore) {
+  constructor(opts: EngineOptions = {}) {
+    const { tools, configOverrides, sessionStore, version: _version } = opts;
+    this.version = _version ?? '0.0.1';
+    this.#stateMachine = new EngineStateMachine();
     this.#config = loadConfig(configOverrides);
 
     this.#sessionStore = sessionStore ?? new InMemorySessionStoreFull();
@@ -241,6 +258,9 @@ export class Engine implements EngineAPI {
       auditor: this.#auditor,
       registry: this.#registry,
     };
+
+    // Signal that initialization is complete
+    this.#stateMachine.transition('ready');
   }
 
   // ---- Session management ----
@@ -369,10 +389,11 @@ export class Engine implements EngineAPI {
 
   getHealth(): EngineHealth {
     const sandboxAvailable = this.#sandbox.isAvailable();
-    const status = this.#destroyed
+    const state = this.#stateMachine.state;
+    const status = this.#destroyed || state === 'terminated'
       ? 'down'
-      : sandboxAvailable
-        ? 'ok'
+      : state === 'running' || state === 'degraded'
+        ? sandboxAvailable ? 'ok' : 'degraded'
         : 'degraded';
 
     return {
@@ -428,6 +449,20 @@ export class Engine implements EngineAPI {
     return this.#overrideManager.getPendingOperation(operationId);
   }
 
+  // ---- Lifecycle (merged from lifecycle engine) ----------------------------
+
+  /**
+   * Handle stdin-end event for non-daemon mode.
+   * When stdin closes (e.g., Vim disconnects), trigger shutdown.
+   */
+  handleStdinEnd(): void {
+    console.warn('[engine] stdin closed — initiating auto-shutdown');
+    this.destroy({ force: false, reason: 'stdin_end' }).catch((err) => {
+      console.error('[engine] Shutdown error:', err);
+      process.exit(1);
+    });
+  }
+
   // ---- Project context detection (Story 1b.4) -------------------------------
 
   async detectProjectContext(dir?: string): Promise<ProjectContext> {
@@ -444,6 +479,7 @@ export class Engine implements EngineAPI {
 
   async destroy(options?: Partial<import('@zaivim/core').ShutdownOptions>): Promise<void> {
     this.#destroyed = true;
+    try { this.#stateMachine.transition('drain'); } catch { /* already draining */ }
     // Story 3.4 (AC3): tear down all active sub-sandboxes on engine shutdown so
     // no bwrap process or tmpfs residue outlives the engine.
     await this.#subSandboxManager.destroyAll().catch(() => {});
@@ -456,6 +492,7 @@ export class Engine implements EngineAPI {
         this.#sessionStore.close(session.id);
       }
     }
+    try { this.#stateMachine.transition('kill'); } catch { /* already terminated */ }
   }
 
   /** Check if project context needs updating via mtime comparison (AC5). */
@@ -518,17 +555,35 @@ let instance: Engine | undefined;
 
 /**
  * Create or return the existing engine instance.
- * MVP: Global singleton — second call returns existing instance (no PID conflict).
- * Growth: Per-session instances with optional pool management.
+ * Accepts EngineOptions for configuration including tools, config overrides, version.
+ * MVP: Global singleton — second call returns existing instance.
  */
-export function createPipelineEngine(
-  tools?: ToolDefinition[],
-  configOverrides?: Partial<ZaiConfig>,
-  sessionStore?: ISessionStore,
-): EngineAPI {
+export function createPipelineEngine(opts?: EngineOptions): EngineAPI {
   if (instance) {
     return instance as EngineAPI;
   }
-  instance = new Engine(tools, configOverrides, sessionStore);
+  instance = new Engine(opts);
   return instance as EngineAPI;
+}
+
+/**
+ * Unified engine factory — alias for createPipelineEngine.
+ * This is the single entry point for creating an Engine instance.
+ * Replaces the old lifecycle createEngine() which created EngineImpl.
+ */
+export const createEngine = createPipelineEngine;
+
+/**
+ * Get the current engine singleton instance, if one exists.
+ * Returns undefined when no engine has been created in this process.
+ */
+export function getEngineInstance(): Engine | undefined {
+  return instance;
+}
+
+/**
+ * Reset the engine singleton (for testing).
+ */
+export function resetEngine(): void {
+  instance = undefined;
 }
