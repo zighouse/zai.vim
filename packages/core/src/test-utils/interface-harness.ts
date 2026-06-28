@@ -171,7 +171,7 @@ function harness(): void {
 
   // ---- ResponseChunk — discriminated union ----
   const cText: ResponseChunk = { type: 'text', content: '' };
-  const cTool: ResponseChunk = { type: 'tool_call', name: '', arguments: {} };
+  const cTool: ResponseChunk = { type: 'tool_call', id: '', name: '', arguments: {} };
   const cResult: ResponseChunk = { type: 'tool_result', toolCallId: '', content: '' };
   const cErr: ResponseChunk = { type: 'error', code: '', message: '' };
   const cDone: ResponseChunk = { type: 'done', finishReason: 'stop' };
@@ -254,8 +254,8 @@ function harness(): void {
 
   // ---- IAuditor + AuditEvent — audit types ----
   void async function (auditor: IAuditor) {
-    const event: AuditEvent = { id: '', type: 'TOOL_EXECUTION', timestamp: Date.now(), sessionId: '', action: 'read', detail: {}, severity: 'info' };
-    await auditor.log(event);
+    const event: AuditEvent = { timestamp: new Date().toISOString(), operation: 'read', level: 'C', sessionId: '', result: 'allowed' };
+    await auditor.write(event);
     const results = await auditor.query({});
     void results;
   };
