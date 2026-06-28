@@ -352,6 +352,7 @@ export class OpenAICompatibleProvider implements IProvider {
     if (this.#inThinking) {
       this.#inThinking = false;
       yield { type: 'thinking', phase: 'end', content: '' };
+      yield { type: 'phase', phase: 'response' };
     }
 
     yield { type: 'done', finishReason };
