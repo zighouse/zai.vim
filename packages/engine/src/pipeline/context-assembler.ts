@@ -182,8 +182,11 @@ export function assembleContext(
     : sorted;
 
   // Build message array with optional system prompt
+  const today = new Date();
+  const dateStr = today.toISOString().split('T')[0]!;
+  const dateLine = `\nCurrent date: ${dateStr}.`;
   const systemMsg: Message | null = persona?.systemPrompt
-    ? { id: 'system', role: 'system', content: persona.systemPrompt }
+    ? { id: 'system', role: 'system', content: persona.systemPrompt + dateLine }
     : null;
 
   // Inject project context block after system prompt (AC4)
