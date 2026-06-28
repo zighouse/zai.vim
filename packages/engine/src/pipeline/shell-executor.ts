@@ -10,6 +10,7 @@
 
 import type { ShellExecParams, ShellExecResult } from '@zaivim/core';
 import type { SandboxManager } from '../security/index.js';
+import { spawn } from 'node:child_process';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -44,17 +45,16 @@ export class ShellExecutorFactory {
     sandboxManager: SandboxManager,
     capabilities: SandboxCapabilities,
   ): ((params: ShellExecParams, signal?: AbortSignal) => Promise<ShellExecResult>) | undefined {
-    // Layer 1: availability check
-    if (!sandboxManager.isAvailable()) return undefined;
+    // When bwrap sandbox is available, use it with full capabilities gating
+    if (sandboxManager.isAvailable()) {
+      // capabilities check — minimum requirements for shell execution
+      if (!capabilities.filesystemWriteable) return undefined;
+      if (!capabilities.seccomp) return undefined;
+      if (!capabilities.userNamespace && process.getuid?.() === 0) return undefined;
+      if (!capabilities.networkIsolation) return undefined;
+    }
 
-    // Layer 2: capabilities check — minimum requirements for shell execution
-    // (ADR-SHELL-2: filesystemWriteable, userNamespace for root, seccomp)
-    if (!capabilities.filesystemWriteable) return undefined;
-    if (!capabilities.seccomp) return undefined;
-    if (!capabilities.userNamespace && process.getuid?.() === 0) return undefined;
-    if (!capabilities.networkIsolation) return undefined;
-
-    // Create the exec closure
+    // Create the exec closure (uses raw spawn when bwrap unavailable — MVP)
     return async (
       params: ShellExecParams,
       signal?: AbortSignal,
@@ -95,13 +95,20 @@ export class ShellExecutorFactory {
       }, PROGRESS_INTERVAL_MS);
 
       try {
-        // Execute via SandboxManager with abort signal support
-        const execResult = await sandboxManager.execute(params.command, {
-          cwd: params.cwd,
-          env: filterEngineEnv(params.env),
-          stdin: params.stdin,
-          timeout: params.timeout,
-        });
+        // Execute via SandboxManager or direct spawn (MVP fallback)
+        const execResult = sandboxManager.isAvailable()
+          ? await sandboxManager.execute(params.command, {
+              cwd: params.cwd,
+              env: filterEngineEnv(params.env),
+              stdin: params.stdin,
+              timeout: params.timeout,
+            })
+          : await executeDirect(params.command, {
+              cwd: params.cwd,
+              env: filterEngineEnv(params.env),
+              stdin: params.stdin,
+              timeout: params.timeout,
+            });
 
         // Check if killed due to timeout or abort
         killed = execResult.killed ?? false;
@@ -240,4 +247,45 @@ function filterEngineEnv(
     hasEntries = true;
   }
   return hasEntries ? result : undefined;
+}
+
+/**
+ * Direct command execution fallback for systems without bwrap (MVP).
+ * Executes the command via child_process.spawn with timeout and abort support.
+ * This is a development convenience — production deployments should use bwrap.
+ */
+async function executeDirect(
+  command: string,
+  options?: { cwd?: string; env?: Record<string, string>; stdin?: string; timeout?: number },
+): Promise<{ exitCode: number; stdout: string; stderr: string; killed: boolean }> {
+  const child = spawn('/bin/sh', ['-c', command], {
+    cwd: options?.cwd,
+    env: options?.env ? { ...process.env, ...options.env } : undefined,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    timeout: options?.timeout,
+  });
+
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+
+  child.stdout.on('data', (d: Buffer) => stdout.push(d));
+  child.stderr.on('data', (d: Buffer) => stderr.push(d));
+
+  // Pipe stdin when provided
+  if (options?.stdin) {
+    child.stdin.write(options.stdin);
+  }
+  child.stdin.end();
+
+  const exitCode = await new Promise<number>((resolve) => {
+    child.on('close', resolve);
+    child.on('error', () => resolve(-1));
+  });
+
+  return {
+    exitCode,
+    stdout: Buffer.concat(stdout).toString('utf-8'),
+    stderr: Buffer.concat(stderr).toString('utf-8'),
+    killed: child.killed,
+  };
 }

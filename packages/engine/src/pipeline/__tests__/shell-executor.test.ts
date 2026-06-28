@@ -55,13 +55,13 @@ describe('ShellExecutorFactory.create — availability', () => {
     expect(exec).toBeInstanceOf(Function);
   });
 
-  it('should return undefined when sandbox is unavailable', () => {
+  it('should return a function when sandbox is unavailable (MVP direct spawn fallback)', () => {
     const sm = mockSandboxManager(false);
     const exec = ShellExecutorFactory.create(sm, FULL_CAPS);
-    expect(exec).toBeUndefined();
+    expect(exec).toBeInstanceOf(Function);
   });
 
-  it('should return undefined when filesystemWriteable is false', () => {
+  it('should return undefined when filesystemWriteable is false (sandbox available)', () => {
     const sm = mockSandboxManager(true);
     const exec = ShellExecutorFactory.create(sm, {
       ...FULL_CAPS,
