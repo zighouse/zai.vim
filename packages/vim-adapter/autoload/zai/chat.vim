@@ -63,6 +63,22 @@ endfun
 " Configure current buffer as an output (display) buffer. Idempotent — called
 " both on first-time layout creation (vertical botright new) and on subsequent
 " :ZaiChat calls (s:alloc_role_buffer in existing output window).
+" Scroll the window showing {bufnr} to the bottom line. Uses win_execute (Vim
+" 8.2+/Neovim) for non-intrusive scroll, falls back to window-switching.
+function! s:scroll_bottom(bufnr) abort
+  let wn = bufwinnr(a:bufnr)
+  if wn == -1 | return | endif
+  if exists('*win_execute')
+    call win_execute(win_getid(wn), "norm! G")
+  elseif wn != winnr()
+    let cur = winnr()
+    execute wn . 'wincmd w' | norm! G
+    execute cur . 'wincmd w'
+  else
+    norm! G
+  endif
+endfun
+
 function! s:setup_output_buffer() abort
   setlocal buftype=nofile bufhidden=hide nobuflisted noswapfile modifiable wrap syntax=markdown
   let b:zai_role = s:OUTPUT_ROLE
@@ -205,6 +221,11 @@ function! s:send() abort
   if s:current_id == v:null | return | endif
   let c = s:chats[s:current_id]
   if empty(c.sessionId) | return | endif  " still pending; engine hasn't responded
+  " Block send while engine is busy (streaming, thinking, tool use, or request in flight)
+  if index(['response','thinking','tool','request'], c.phase) != -1
+    echom '[zaivim] 请等待当前对话完成'
+    return
+  endif
   let lines = getbufline(c.ibuf_nr, 1, '$')
   while !empty(lines) && lines[-1] ==# '' | call remove(lines, -1) | endwhile
   if empty(lines) | return | endif
@@ -274,7 +295,6 @@ function! s:render_output(c) abort
       let sep = first_block ? [] : ['']
       call appendbufline(a:c.bufnr, '$', sep + [s:user_prompt] + user_lines + ['', s:assistant_prompt])
       let first_block = 0
-      let i += 1
     elseif e.type ==# 'text'
       let content = e.content
       let i += 1
@@ -392,6 +412,9 @@ function! zai#chat#on_chunk(p) abort
     endfor
     if trailing_nl
       let c.stream_lnum = 0
+    endif
+    if sid ==# s:current_id
+      call s:scroll_bottom(c.bufnr)
     endif
   elseif t ==# 'done'
     let c.stream_lnum = 0
@@ -555,6 +578,7 @@ function! zai#chat#switch(id) abort
     execute ow . 'wincmd w'
     execute 'buffer ' . c.bufnr
     call s:render_output(c)
+    norm! G
   endif
   let iw = s:find_window_by_role(s:INPUT_ROLE)
   if iw != -1 && bufexists(c.ibuf_nr)
