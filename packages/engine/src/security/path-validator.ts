@@ -361,6 +361,59 @@ export async function validatePathSafe(
   }
 }
 
+// ─── Boundary-only validation (Story 3.3) ───────────────────────────────────
+
+/**
+ * Boundary-only path validation — confirms the path is inside the project's
+ * .git boundary WITHOUT opening a file handle.
+ *
+ * Use for boundary-membership checks (e.g., shell cwd) where a full
+ * TOCTOU-safe open is unnecessary. validatePathSafe('read') opens a FileHandle
+ * for /proc/self/fd cross-verification; calling it just to discard the handle
+ * leaks the descriptor until GC (Node DEP0137). This function performs the
+ * same normalize/confusable/git-boundary checks but opens nothing.
+ *
+ * Returns PathAcceptance on success or a timing-padded PathRejection on failure.
+ */
+export async function validatePathAsync(
+  inputPath: string,
+  projectRoot: string,
+): Promise<PathAcceptance | PathRejection> {
+  const startTime = performance.now();
+
+  // 1. Unicode normalization (AC6)
+  let normalized: string;
+  try {
+    normalized = normalizePath(inputPath);
+  } catch (e) {
+    if (e instanceof BidiControlCharError) {
+      return await rejectWithTiming('TOOLS_PATH_BIDI', startTime);
+    }
+    return await rejectWithTiming('TOOLS_PATH_OUTSIDE_BOUNDARY', startTime);
+  }
+
+  // 2. Confusable character detection
+  if (hasConfusableChars(normalized)) {
+    return await rejectWithTiming('TOOLS_PATH_CONFUSABLE', startTime);
+  }
+
+  // 3. Resolve to absolute
+  const absolute = resolve(normalized);
+
+  // 4. Find .git boundary
+  const gitRoot = findGitRoot(projectRoot);
+  if (!gitRoot) {
+    return await rejectWithTiming('TOOLS_PATH_NO_GIT_BOUNDARY', startTime);
+  }
+
+  // 5. Boundary check (the path itself — no parent-dir semantics, no handle)
+  if (!isWithinBoundary(absolute, gitRoot)) {
+    return await rejectWithTiming('TOOLS_PATH_OUTSIDE_BOUNDARY', startTime);
+  }
+
+  return padTiming({ valid: true, resolvedPath: absolute }, startTime);
+}
+
 // ─── Sync rejection with timing padding ─────────────────────────────────────
 
 async function rejectWithTiming(code: PathRejectCode, startTime: number): Promise<PathRejection> {

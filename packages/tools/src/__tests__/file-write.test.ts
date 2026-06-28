@@ -27,6 +27,7 @@ function mockSecurityProvider(
     isSandboxAvailable: vi.fn().mockReturnValue(true),
     validatePath: vi.fn().mockReturnValue(true),
     proposeChange: vi.fn().mockResolvedValue(true),
+    validatePathAsync: async () => '/test/project',
     openFile: vi.fn().mockImplementation(async (path: string, operation: string) => {
       if (approvalOrError instanceof Error) throw approvalOrError;
       if (operation === 'read') {

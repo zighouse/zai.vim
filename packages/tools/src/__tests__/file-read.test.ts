@@ -23,6 +23,7 @@ function mockSecurityProvider(handleOrError: SafeFileHandle | Error): ISecurityP
     isSandboxAvailable: vi.fn().mockReturnValue(true),
     validatePath: vi.fn().mockReturnValue(true),
     proposeChange: vi.fn().mockResolvedValue(true),
+    validatePathAsync: async () => '/test/project',
     openFile: vi.fn().mockImplementation(async (_path: string, operation: string) => {
       if (handleOrError instanceof Error) throw handleOrError;
       if (operation === 'read') return handleOrError;

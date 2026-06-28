@@ -24,6 +24,7 @@ function allowProvider(): ISecurityProvider {
     isSandboxAvailable: () => false,
     validatePath: () => true,
     proposeChange: async () => true,
+    validatePathAsync: async () => '/test/project',
   };
 }
 

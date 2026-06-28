@@ -148,11 +148,11 @@ export const shellTool: ToolDefinition<ShellParams, ShellResult> = {
     }
 
     // 1f. cwd: boundary validation via ISecurityProvider (AC12)
-    // HACK: using openFile('read') for cwd boundary validation — semantically imprecise.
-    // TODO(Story-3.3): extend ISecurityProvider with validatePath(path): Promise<string>
+    // validatePathAsync checks the .git boundary WITHOUT opening a file
+    // handle — openFile('read') here leaked a FileHandle per call (DEP0137).
     const cwd = params.cwd ?? ctx.lastCwd ?? process.cwd();
     try {
-      await ctx.security.openFile(cwd, 'read');
+      await ctx.security.validatePathAsync(cwd);
     } catch {
       return rejectedResult(
         'cwd outside project boundary',

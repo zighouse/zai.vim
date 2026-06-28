@@ -16,6 +16,7 @@ function mockSecurityProvider(projectRoot?: string): ISecurityProvider {
     isSandboxAvailable: vi.fn().mockReturnValue(true),
     validatePath: vi.fn().mockReturnValue(true),
     proposeChange: vi.fn().mockResolvedValue(true),
+    validatePathAsync: async () => '/test/project',
     // file_search calls openFile('.', 'read') to obtain a validated project root.
     // The mock returns process.cwd() (or caller-specified root) as validatedPath.
     openFile: vi.fn().mockImplementation(async (path: string, _op: string) => ({

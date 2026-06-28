@@ -183,6 +183,7 @@ describe('Security Types', () => {
         isSandboxAvailable: () => true,
         validatePath: (path, op) => true,
         proposeChange: async (proposal) => true,
+        validatePathAsync: async () => '/test/project',
         openFile: async (path: string, operation: 'read' | 'write' | 'delete') => {
           if (operation === 'read') {
             return {
@@ -235,6 +236,7 @@ describe('Security Types', () => {
         isSandboxAvailable: () => true,
         validatePath: () => true,
         proposeChange: async () => true,
+        validatePathAsync: async () => '/test/project',
         openFile: async (path: string, operation: 'read' | 'write' | 'delete') => {
           if (operation === 'read') {
             return {

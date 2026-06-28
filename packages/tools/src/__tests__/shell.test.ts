@@ -31,6 +31,7 @@ function mockSecurityProvider(
     isSandboxAvailable: vi.fn().mockReturnValue(true),
     validatePath: vi.fn().mockReturnValue(true),
     proposeChange: vi.fn().mockResolvedValue(true),
+    validatePathAsync: async () => '/test/project',
     openFile: openFileImpl ?? vi.fn().mockResolvedValue({
       validatedPath: '/test/project',
       resolvedPath: '/test/project',
@@ -364,9 +365,10 @@ describe('AC11 — env security filtering', () => {
 
 describe('AC12 — cwd boundary validation', () => {
   it('should reject cwd outside project boundary', async () => {
-    const security = mockSecurityProvider(
-      vi.fn().mockRejectedValue(new Error('access denied')),
-    );
+    const security: ISecurityProvider = {
+      ...mockSecurityProvider(),
+      validatePathAsync: async () => { throw Object.assign(new Error('access denied'), { code: 'TOOLS_SECURITY_BLOCKED' }); },
+    };
     const ctx = mockToolContext({ security });
 
     const result = await shellTool.execute({ command: 'make', cwd: '/tmp/evil' }, ctx);

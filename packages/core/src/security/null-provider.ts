@@ -141,6 +141,16 @@ export class NullSecurityProvider implements ISecurityProvider {
     } satisfies WriteApproval;
   }
 
+  async validatePathAsync(path: string): Promise<string> {
+    this.#warn(FALLBACK_WARNING);
+    try {
+      return realpathSync.native(resolve(path));
+    } catch {
+      this.#warn('security: NullSecurityProvider validatePathAsync — path validation skipped (realpath failed)');
+      return resolve(path);
+    }
+  }
+
   /** @deprecated Use preExecute() instead */
   validatePath(_path: string, _operation: string): boolean {
     this.#warn(FALLBACK_WARNING);

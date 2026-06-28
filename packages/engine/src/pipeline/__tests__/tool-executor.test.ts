@@ -24,6 +24,7 @@ function denyProvider(): import('@zaivim/core').ISecurityProvider {
     isSandboxAvailable: () => false,
     validatePath: () => false,
     proposeChange: async () => false,
+    validatePathAsync: async () => '/test/project',
   };
 }
 
@@ -41,6 +42,7 @@ function allowProvider(): import('@zaivim/core').ISecurityProvider {
     isSandboxAvailable: () => false,
     validatePath: () => true,
     proposeChange: async () => true,
+    validatePathAsync: async () => '/test/project',
   };
 }
 

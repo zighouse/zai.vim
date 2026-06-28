@@ -62,6 +62,7 @@ function createMockSecurityProvider(
     sandboxType: 'none',
     validatePath: () => true,
     proposeChange: () => Promise.resolve(true),
+    validatePathAsync: async () => '/test/project',
     isSandboxAvailable: () => true,
     ...override,
   };

@@ -29,9 +29,9 @@ export type { RiskCardSummary } from './risk-card.js';
 // Story 2.4 — TOCTOU-safe path validation
 export { Semaphore } from './semaphore.js';
 export { PATH_VALIDATION_SEMAPHORE } from './path-validator.js';
-import { validatePathSafe as _validatePathSafe, SealedFileHandle as _SealedFileHandle } from './path-validator.js';
+import { validatePathSafe as _validatePathSafe, validatePathAsync as _validatePathAsync, SealedFileHandle as _SealedFileHandle } from './path-validator.js';
 import type { PathAcceptance as _PathAcceptance } from './path-validator.js';
-export { validatePathSafe, normalizePath, findGitRoot, isWithinBoundary, hasConfusableChars, skeleton, SealedFileHandle, ZaiHandleClosedError, BidiControlCharError, detectNormalizationForm, isProcAvailable } from './path-validator.js';
+export { validatePathSafe, validatePathAsync, normalizePath, findGitRoot, isWithinBoundary, hasConfusableChars, skeleton, SealedFileHandle, ZaiHandleClosedError, BidiControlCharError, detectNormalizationForm, isProcAvailable } from './path-validator.js';
 export type { PathRejectCode, PathRejection, PathAcceptance, PathValidationResult } from './path-validator.js';
 
 // Story 3.4 — Isolated sub-sandbox for high-risk tools
@@ -380,6 +380,17 @@ export class SecurityProvider implements ISecurityProvider {
       validatedPath: result.resolvedPath,
       resolvedPath: result.resolvedPath,
     } satisfies WriteApproval;
+  }
+
+  async validatePathAsync(path: string): Promise<string> {
+    const result = await _validatePathAsync(path, this.#projectRoot);
+    if (!result.valid) {
+      throw Object.assign(
+        new Error('access denied'),
+        { code: 'TOOLS_SECURITY_BLOCKED', reason: result.code },
+      );
+    }
+    return result.resolvedPath;
   }
 
   // ============================================================================

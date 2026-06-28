@@ -35,6 +35,7 @@ function createMockSecurity(): ISecurityProvider {
     isSandboxAvailable: vi.fn().mockReturnValue(true),
     validatePath: vi.fn().mockReturnValue(true),
     proposeChange: vi.fn().mockResolvedValue(true),
+    validatePathAsync: async () => '/test/project',
   };
 }
 

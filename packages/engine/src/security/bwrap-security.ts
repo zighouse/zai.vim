@@ -14,7 +14,7 @@ import type {
   WriteApproval,
 } from '@zaivim/core';
 import { HarmClassifier } from './harm-classifier.js';
-import { validatePathSafe, SealedFileHandle } from './path-validator.js';
+import { validatePathSafe, validatePathAsync, SealedFileHandle } from './path-validator.js';
 
 /**
  * Platform detection result
@@ -392,5 +392,16 @@ export class BwrapSecurityProvider implements ISecurityProvider {
       validatedPath: result.resolvedPath,
       resolvedPath: result.resolvedPath,
     } satisfies WriteApproval;
+  }
+
+  async validatePathAsync(path: string): Promise<string> {
+    const result = await validatePathAsync(path, this.#workspaceDir);
+    if (!result.valid) {
+      throw Object.assign(
+        new Error('access denied'),
+        { code: 'TOOLS_SECURITY_BLOCKED', reason: result.code },
+      );
+    }
+    return result.resolvedPath;
   }
 }

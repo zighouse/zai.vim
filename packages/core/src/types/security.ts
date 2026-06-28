@@ -197,6 +197,17 @@ export interface ISecurityProvider {
   openFile(path: string, operation: FileOperation): Promise<SafeFileHandle | WriteApproval>;
 
   /**
+   * Validate a path is inside the project boundary without opening a file
+   * handle (Story 3.3). Use for boundary-membership checks (e.g., shell cwd)
+   * where a TOCTOU-safe open is unnecessary — avoids leaking a FileHandle.
+   *
+   * @param path - Path to validate (relative to project root or absolute)
+   * @returns Resolved absolute path on success
+   * @throws Error with code TOOLS_SECURITY_BLOCKED when the path is outside the boundary
+   */
+  validatePathAsync(path: string): Promise<string>;
+
+  /**
    * Legacy path validation (for backward compatibility)
    *
    * @deprecated Use preExecute() instead for new code

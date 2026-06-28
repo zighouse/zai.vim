@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   validatePathSafe,
+  validatePathAsync,
   normalizePath,
   findGitRoot,
   isWithinBoundary,
@@ -295,5 +296,55 @@ describe('SealedFileHandle', () => {
     await sealed.close(); // Should not throw
 
     expect(mockHandle.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('validatePathAsync (Story 3.3)', () => {
+  const projectRoot = '/home/user/project';
+
+  beforeEach(() => {
+    mockExistsSync.mockImplementation((p: any) => {
+      const s = String(p);
+      return s === projectRoot + '/.git';
+    });
+    mockReadlinkSync.mockReturnValue(projectRoot + '/valid');
+  });
+
+  it('should accept a path within the .git boundary', async () => {
+    const result = await validatePathAsync(projectRoot + '/src/index.ts', projectRoot);
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.resolvedPath).toBe(projectRoot + '/src/index.ts');
+    }
+  });
+
+  it('should reject a path outside the .git boundary', async () => {
+    const result = await validatePathAsync('/tmp/evil', projectRoot);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.code).toBe('TOOLS_PATH_OUTSIDE_BOUNDARY');
+    }
+  });
+
+  it('should reject confusable characters', async () => {
+    const result = await validatePathAsync('src/dаta', projectRoot);
+    expect(result.valid).toBe(false);
+  });
+
+  it('should reject bidi control characters', async () => {
+    const result = await validatePathAsync('src‮index.ts', projectRoot);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.code).toBe('TOOLS_PATH_BIDI');
+    }
+  });
+
+  it('should return TOOLS_PATH_NO_GIT_BOUNDARY when git root not found', async () => {
+    mockExistsSync.mockReturnValue(false);
+    const result = await validatePathAsync('/tmp/something', '/tmp');
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.code).toBe('TOOLS_PATH_NO_GIT_BOUNDARY');
+    }
   });
 });
