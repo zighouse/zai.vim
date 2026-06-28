@@ -1,3 +1,4 @@
+scriptencoding utf-8
 if exists('g:loaded_zai_node') | finish | endif | let g:loaded_zai_node = 1
 if !exists('g:zaivim_engine_path') | let g:zaivim_engine_path = executable('zaivim') ? 'zaivim' : '' | endif
 if !exists('g:zaivim_backend') | let g:zaivim_backend = 'node' | endif

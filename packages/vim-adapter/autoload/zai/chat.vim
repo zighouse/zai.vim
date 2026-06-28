@@ -69,7 +69,7 @@ function! s:scroll_bottom(bufnr) abort
   let wn = bufwinnr(a:bufnr)
   if wn == -1 | return | endif
   if exists('*win_execute')
-    call win_execute(win_getid(wn), "norm! G")
+    call win_execute(win_getid(wn), 'norm! G')
   elseif wn != winnr()
     let cur = winnr()
     execute wn . 'wincmd w' | norm! G
@@ -156,7 +156,7 @@ function! zai#chat#start(args) abort
   " in CREATION order rather than UUID-alphabetical (which inserts new sessions
   " at random positions, masking the relationship between `:cc 2` and "the
   " second session I created").
-  let s:chats[l:client_id] = {'bufnr': disp_bnr, 'ibuf_nr': in_bnr, 'sessionId': '', 'token': '', 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': 'pending', 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'stream_buf': [], 'spinner_idx': 0, 'spinner_lnum': -1, 'info_lnum': -1, 'stream_lnum': 0, 'seq': s:client_seq}
+  let s:chats[l:client_id] = {'bufnr': disp_bnr, 'ibuf_nr': in_bnr, 'sessionId': '', 'token': '', 'mode': get(g:,'zaivim_chat_default_mode','compact'), 'phase': 'pending', 'elapsed_ms': 0, 'tokens_out': 0, 'tool_name': '', 'events': [], 'thinking_ring': [], 'thinking_header_lnum': -1, 'thinking_phase': v:null, 'stats_tokens_in': 0, 'stats_speed': 0, 'stream_buf': [], 'spinner_idx': 0, 'spinner_lnum': -1, 'info_lnum': -1, 'stream_lnum': 0, 'seq': s:client_seq}
   " DIAGNOSTIC: log buffer allocation. If two sessions ever share the same
   " bufnr/ibuf_nr, that's the smoking gun for cross-session contamination.
   " Also list all existing chats' bufnrs so collisions are immediately visible.
@@ -286,6 +286,7 @@ function! s:render_output(c) abort
   " to re-fill the buffer via appendbufline below).
   silent! call deletebufline(a:c.bufnr, 1, '$')
   let first_block = 1
+  let l:thinking_rendered = 0
   let i = 0
   while i < len(a:c.events)
     let e = a:c.events[i]
@@ -296,6 +297,15 @@ function! s:render_output(c) abort
       call appendbufline(a:c.bufnr, '$', sep + [s:user_prompt] + user_lines + ['', s:assistant_prompt])
       let first_block = 0
     elseif e.type ==# 'text'
+      " Story 4.1.1: render thinking area before first text block in compact mode
+      if a:c.mode ==# 'compact' && !l:thinking_rendered && !empty(a:c.thinking_ring)
+        let l:thinking_rendered = 1
+        call appendbufline(a:c.bufnr, '$', ['> 🤔 思考过程：'])
+        for l:line in a:c.thinking_ring
+          call appendbufline(a:c.bufnr, '$', '> ' . l:line)
+        endfor
+        call appendbufline(a:c.bufnr, '$', '---')
+      endif
       let content = e.content
       let i += 1
       while i < len(a:c.events) && a:c.events[i].type ==# 'text'
@@ -309,6 +319,17 @@ function! s:render_output(c) abort
       endfor
       let first_block = 0
       continue
+    elseif e.type ==# 'thinking'
+      " Story 4.1.1: verbose mode shows full thinking content
+      if a:c.mode ==# 'verbose'
+        for l:line in split(get(e, 'content', ''), "\n", 1)
+          call appendbufline(a:c.bufnr, '$', '> ' . l:line)
+        endfor
+        let first_block = 0
+      endif
+      " compact mode: skip — uses thinking_ring
+    elseif e.type ==# 'stats'
+      " skip — info bar rendered at end
     elseif e.type ==# 'tool_call'
       if a:c.mode ==# 'compact'
         call appendbufline(a:c.bufnr, '$', '🔧 ' . get(e,'name',''))
@@ -331,6 +352,11 @@ function! s:render_output(c) abort
     endif
     let i += 1
   endwhile
+  " Story 4.1.1: info bar at end
+  let l:info = s:format_info_bar(a:c)
+  if !empty(l:info)
+    call appendbufline(a:c.bufnr, '$', ['', l:info])
+  endif
   let a:c.spinner_idx = 0 | let a:c.spinner_lnum = -1 | let a:c.stream_lnum = 0
   if exists('g:zaivim_debug_log') && g:zaivim_debug_log
     let l:post_lines = bufexists(a:c.bufnr) ? getbufinfo(a:c.bufnr)[0].linecount : -1
@@ -417,7 +443,45 @@ function! zai#chat#on_chunk(p) abort
       call s:scroll_bottom(c.bufnr)
     endif
   elseif t ==# 'done'
+    " Story 4.1.1: Append info bar at stream end if stats available
+    let l:info = s:format_info_bar(c)
+    if !empty(l:info)
+      call appendbufline(c.bufnr, '$', ['', l:info])
+    endif
     let c.stream_lnum = 0
+    let c.thinking_header_lnum = -1
+    let c.thinking_phase = v:null
+    return
+  elseif t ==# 'thinking'
+    " Story 4.1.1: thinking chunk — update ring buffer + events
+    let c.stream_lnum = 0
+    let l:content = get(a:p, 'content', '')
+    let l:phase = get(a:p, 'phase', 'delta')
+    call add(c.events, {'type': 'thinking', 'content': l:content, 'phase': l:phase})
+    if l:phase ==# 'start'
+      call s:thinking_ring_clear(c)
+    elseif l:phase ==# 'delta'
+      let l:first_delta = empty(c.thinking_ring) && c.thinking_header_lnum == -1
+      call s:thinking_ring_push(c, l:content)
+      if l:first_delta && bufexists(c.bufnr)
+        call appendbufline(c.bufnr, '$', '> 🤔 思考中...')
+        let c.thinking_header_lnum = getbufinfo(c.bufnr)[0].linecount
+      endif
+    elseif l:phase ==# 'end'
+      let c.thinking_phase = 'end'
+      if c.thinking_header_lnum > 0 && bufexists(c.bufnr)
+        call setbufline(c.bufnr, c.thinking_header_lnum, '> ✅ 思考完成')
+      endif
+    endif
+    return
+  elseif t ==# 'stats'
+    " Story 4.1.1: stats chunk — store fields for info bar
+    let c.stream_lnum = 0
+    let c.stats_tokens_in = get(a:p, 'tokensIn', c.stats_tokens_in)
+    let c.tokens_out = get(a:p, 'tokensOut', c.tokens_out)
+    let c.elapsed_ms = get(a:p, 'elapsedMs', c.elapsed_ms)
+    let c.stats_speed = get(a:p, 'speed', c.stats_speed)
+    call add(c.events, {'type': 'stats'})
     return
   else
     let c.stream_lnum = 0
@@ -503,6 +567,10 @@ function! s:ui_tick(timer) abort
         let c.spinner_idx = (c.spinner_idx + 1) % len(s:spinner)
         call setbufline(c.bufnr, c.spinner_lnum, s:phase_icons[c.phase] . get(s:spinner_phase_labels, c.phase, ' ') . s:spinner[c.spinner_idx])
       endif
+      " Story 4.1.1: Update thinking header with latest ring buffer content
+      if c.thinking_header_lnum > 0 && c.thinking_phase ==# 'delta' && !empty(c.thinking_ring)
+        call setbufline(c.bufnr, c.thinking_header_lnum, '> 🤔 ' . c.thinking_ring[-1])
+      endif
     endif
   endfor
   call zai#sessions#render(s:chats, s:current_id)
@@ -528,6 +596,35 @@ endfunction
 function! zai#chat#current_id() abort
   return s:current_id
 endfunction
+
+" Story 4.1.1: Clear thinking ring buffer (called on thinking phase:start).
+function! s:thinking_ring_clear(chat) abort
+  let a:chat.thinking_ring = []
+  let a:chat.thinking_phase = 'start'
+endfun
+
+" Story 4.1.1: Push content lines into 5-line FIFO ring buffer.
+" Content arrives pre-sanitized from Node-side sanitizeForVim (AC4).
+function! s:thinking_ring_push(chat, content) abort
+  let a:chat.thinking_phase = 'delta'
+  for l:line in split(a:content, "\n", 1)
+    call add(a:chat.thinking_ring, l:line)
+    if len(a:chat.thinking_ring) > 5
+      call remove(a:chat.thinking_ring, 0)
+    endif
+  endfor
+endfun
+
+" Story 4.1.1: Format stats info bar string from chat fields.
+" Returns empty string when no stats data collected.
+function! s:format_info_bar(chat) abort
+  if a:chat.stats_tokens_in == 0 && a:chat.tokens_out == 0 | return '' | endif
+  let l:in_k = a:chat.stats_tokens_in > 0 ? printf('%.1f', a:chat.stats_tokens_in / 1000.0) : '?'
+  let l:out_k = a:chat.tokens_out > 0 ? printf('%.1f', a:chat.tokens_out / 1000.0) : '?'
+  let l:el = a:chat.elapsed_ms > 0 ? printf('%.1f', a:chat.elapsed_ms / 1000.0) : '?'
+  let l:spd = a:chat.stats_speed > 0 ? printf('%d', a:chat.stats_speed) : '?'
+  return '📊 ↑' . l:in_k . 'k · ↓' . l:out_k . 'k · ' . l:el . 's · ' . l:spd . 't/s'
+endfun
 
 function! zai#chat#close() abort
   if s:current_id != v:null && has_key(s:chats, s:current_id)
