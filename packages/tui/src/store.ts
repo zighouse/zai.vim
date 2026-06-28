@@ -44,6 +44,7 @@ export type StoreAction =
   | { type: 'SESSION_ACTIVATED'; payload: { id: string } }
   | { type: 'MESSAGE_ADDED'; payload: { sessionId: string; message: MessageState } }
   | { type: 'CHUNK_APPENDED'; payload: { sessionId: string; chunk: ChatChunk } }
+  | { type: 'CHUNKS_APPENDED'; payload: { sessionId: string; chunks: ChatChunk[] } }
   | { type: 'STREAM_START'; payload: { sessionId: string } }
   | { type: 'STREAM_END'; payload: { sessionId: string } }
   | { type: 'STREAM_ERROR'; payload: { sessionId: string; error: string } }
@@ -128,77 +129,44 @@ function reducer(state: TuiState, action: StoreAction): TuiState {
       const { sessionId, chunk } = action.payload;
       const session = sessions.get(sessionId);
       if (!session) return state;
-      const messages = [...session.messages];
+      const result = applyChunkToMessages(session.messages, chunk);
 
-      switch (chunk.type) {
-        case 'text': {
-          const textContent = (chunk.content as string) ?? '';
-          const last = messages[messages.length - 1];
-          if (last?.role === 'assistant' && last.isStreaming) {
-            messages[messages.length - 1] = { ...last, content: last.content + textContent };
-          } else {
-            messages.push({
-              id: `chunk-${Date.now()}`,
-              role: 'assistant',
-              content: textContent,
-              createdAt: Date.now(),
-              isStreaming: true,
-            });
-          }
-          break;
-        }
-        case 'tool_call': {
-          const toolName = (chunk.name as string) ?? 'unknown';
-          messages.push({
-            id: `tool-${Date.now()}`,
-            role: 'assistant',
-            content: `📎 使用了 ${toolName} 工具`,
-            createdAt: Date.now(),
-            isStreaming: false,
-          });
-          break;
-        }
-        case 'tool_result': {
-          const resultStatus = (chunk.status as string) ?? 'ok';
-          messages.push({
-            id: `result-${Date.now()}`,
-            role: 'assistant',
-            content: `📥 ${resultStatus}`,
-            createdAt: Date.now(),
-            isStreaming: false,
-          });
-          break;
-        }
-        case 'error': {
-          const errMsg = (chunk.message as string) ?? 'Unknown error';
-          messages.push({
-            id: `error-${Date.now()}`,
-            role: 'assistant',
-            content: `❌ ${errMsg}`,
-            createdAt: Date.now(),
-            isStreaming: false,
-          });
-          break;
-        }
-        case 'done': {
-          // Finalize last streaming message
-          const msgs = finalizeMessage(session.messages);
-          sessions.set(sessionId, { ...session, messages: msgs });
-          return { ...state, sessions };
-        }
-        default: {
-          // C4.1: Open-ended passthrough — unknown chunk types pass through
-          // Reserved for Story 4.2.1: thinking, stats, phase chunks
-          break;
-        }
+      // `done` chunk finalizes without mutating messages further
+      if (chunk.type === 'done') {
+        const msgs = finalizeMessage(session.messages);
+        sessions.set(sessionId, { ...session, messages: msgs });
+        return { ...state, sessions };
       }
 
-      const tokenDelta = chunk.type === 'text' ? ((chunk.content as string) ?? '').length : 0;
       sessions.set(sessionId, {
         ...session,
-        messages,
-        tokensOut: session.tokensOut + tokenDelta,
+        messages: result.messages,
+        tokensOut: session.tokensOut + result.tokenDelta,
       });
+      return { ...state, sessions };
+    }
+
+    case 'CHUNKS_APPENDED': {
+      const { sessionId, chunks } = action.payload;
+      const session = sessions.get(sessionId);
+      if (!session || chunks.length === 0) return state;
+
+      let messages = session.messages;
+      let tokensOut = session.tokensOut;
+      let lastWasDone = false;
+      for (const chunk of chunks) {
+        if (chunk.type === 'done') {
+          lastWasDone = true;
+          continue;
+        }
+        const r = applyChunkToMessages(messages, chunk);
+        messages = r.messages;
+        tokensOut += r.tokenDelta;
+      }
+      if (lastWasDone) {
+        messages = finalizeMessage(messages);
+      }
+      sessions.set(sessionId, { ...session, messages, tokensOut });
       return { ...state, sessions };
     }
 
@@ -227,6 +195,77 @@ function finalizeMessage(messages: MessageState[]): MessageState[] {
     return copy;
   }
   return messages;
+}
+
+/**
+ * Apply a single chunk to a messages array. Returns the new array and the
+ * token delta to accumulate. Used by both CHUNK_APPENDED and CHUNKS_APPENDED.
+ *
+ * Note: `done` chunks are handled by the caller via finalizeMessage() because
+ * they don't mutate the array, they only flip the last message's isStreaming.
+ */
+function applyChunkToMessages(
+  messages: MessageState[],
+  chunk: ChatChunk,
+): { messages: MessageState[]; tokenDelta: number } {
+  const next = [...messages];
+
+  switch (chunk.type) {
+    case 'text': {
+      const textContent = (chunk.content as string) ?? '';
+      const last = next[next.length - 1];
+      if (last?.role === 'assistant' && last.isStreaming) {
+        next[next.length - 1] = { ...last, content: last.content + textContent };
+      } else {
+        next.push({
+          id: `chunk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          role: 'assistant',
+          content: textContent,
+          createdAt: Date.now(),
+          isStreaming: true,
+        });
+      }
+      return { messages: next, tokenDelta: textContent.length };
+    }
+    case 'tool_call': {
+      const toolName = (chunk.name as string) ?? 'unknown';
+      next.push({
+        id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        role: 'assistant',
+        content: `📎 使用了 ${toolName} 工具`,
+        createdAt: Date.now(),
+        isStreaming: false,
+      });
+      return { messages: next, tokenDelta: 0 };
+    }
+    case 'tool_result': {
+      const resultStatus = (chunk.status as string) ?? 'ok';
+      next.push({
+        id: `result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        role: 'assistant',
+        content: `📥 ${resultStatus}`,
+        createdAt: Date.now(),
+        isStreaming: false,
+      });
+      return { messages: next, tokenDelta: 0 };
+    }
+    case 'error': {
+      const errMsg = (chunk.message as string) ?? 'Unknown error';
+      next.push({
+        id: `error-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        role: 'assistant',
+        content: `❌ ${errMsg}`,
+        createdAt: Date.now(),
+        isStreaming: false,
+      });
+      return { messages: next, tokenDelta: 0 };
+    }
+    default: {
+      // C4.1: Open-ended passthrough — unknown chunk types pass through
+      // Reserved for Story 4.2.1: thinking, stats, phase chunks
+      return { messages: next, tokenDelta: 0 };
+    }
+  }
 }
 
 // ---- Store ----------------------------------------------------------------

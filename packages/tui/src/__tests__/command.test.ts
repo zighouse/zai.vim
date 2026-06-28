@@ -2,6 +2,9 @@
 // Phase D (AC7): parsing, dispatching, alias resolution, error handling.
 
 import { describe, it, expect, vi } from 'vitest';
+import { existsSync, readFileSync, unlinkSync, mkdtempSync, rmdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
   parseCommandLine,
   findCommand,
@@ -101,6 +104,7 @@ describe('listCommands', () => {
     expect(names).toContain('session');
     expect(names).toContain('scroll');
     expect(names).toContain('help');
+    expect(names).toContain('export');
     expect(names).toContain('q');
   });
 });
@@ -194,16 +198,40 @@ describe('executeCommandLine — session switching', () => {
 });
 
 describe('executeCommandLine — scroll', () => {
-  it('scroll up invokes the messages callback', () => {
+  it('scroll up invokes the messages callback with default step', () => {
     const ctx = makeCtx();
     executeCommandLine(':scroll up', ctx);
-    expect(ctx.scrollMessages).toHaveBeenCalledWith('up');
+    expect(ctx.scrollMessages).toHaveBeenCalledWith('up', 10);
   });
 
   it('scroll down via alias', () => {
     const ctx = makeCtx();
     executeCommandLine(':sc down', ctx);
-    expect(ctx.scrollMessages).toHaveBeenCalledWith('down');
+    expect(ctx.scrollMessages).toHaveBeenCalledWith('down', 10);
+  });
+
+  it('scroll accepts explicit step', () => {
+    const ctx = makeCtx();
+    executeCommandLine(':sc up 5', ctx);
+    expect(ctx.scrollMessages).toHaveBeenCalledWith('up', 5);
+  });
+
+  it('scroll clamps invalid step to 1', () => {
+    const ctx = makeCtx();
+    executeCommandLine(':sc up abc', ctx);
+    expect(ctx.scrollMessages).toHaveBeenCalledWith('up', 1);
+  });
+
+  it('scroll top jumps to beginning', () => {
+    const ctx = makeCtx();
+    executeCommandLine(':sc top', ctx);
+    expect(ctx.scrollMessages).toHaveBeenCalledWith('top');
+  });
+
+  it('scroll bottom jumps to newest', () => {
+    const ctx = makeCtx();
+    executeCommandLine(':sc bottom', ctx);
+    expect(ctx.scrollMessages).toHaveBeenCalledWith('bottom');
   });
 
   it('rejects missing direction', () => {
@@ -222,6 +250,64 @@ describe('executeCommandLine — help', () => {
     expect(result.message).toContain(':session');
     expect(result.message).toContain(':scroll');
     expect(result.message).toContain(':help');
+  });
+});
+
+describe('executeCommandLine — export', () => {
+  it('rejects missing file path', () => {
+    const ctx = makeCtx({
+      sessions: new Map([['s1', makeSession('s1', 'S1')]]),
+      activeSessionId: 's1',
+    });
+    const result = executeCommandLine(':export', ctx);
+    expect(result.message).toMatch(/Usage/);
+  });
+
+  it('rejects when no active session', () => {
+    const ctx = makeCtx();
+    const result = executeCommandLine(':export /tmp/x.txt', ctx);
+    expect(result.message).toMatch(/No active session/);
+  });
+
+  it('rejects empty session', () => {
+    const ctx = makeCtx({
+      sessions: new Map([['s1', makeSession('s1', 'S1')]]),
+      activeSessionId: 's1',
+    });
+    const result = executeCommandLine(':export /tmp/x.txt', ctx);
+    expect(result.message).toMatch(/no messages/i);
+  });
+
+  it('writes messages to file via :e alias', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'zai-tui-test-'));
+    const filePath = join(tmpDir, 'export-test.txt');
+
+    const ctx = makeCtx({
+      sessions: new Map([['s1', {
+        ...makeSession('s1', 'Test Session'),
+        messages: [
+          { id: 'm1', role: 'user', content: 'hello', createdAt: 1000, isStreaming: false },
+          { id: 'm2', role: 'assistant', content: 'world', createdAt: 2000, isStreaming: false },
+        ],
+      }]]),
+      activeSessionId: 's1',
+    });
+
+    const result = executeCommandLine(`:e ${filePath}`, ctx);
+    expect(result.ok).toBe(true);
+    expect(result.message).toContain('Exported 2 messages');
+    expect(existsSync(filePath)).toBe(true);
+
+    const content = readFileSync(filePath, 'utf-8');
+    expect(content).toContain('Test Session');
+    expect(content).toContain('[YOU —');
+    expect(content).toContain('hello');
+    expect(content).toContain('[AI —');
+    expect(content).toContain('world');
+
+    // Cleanup
+    unlinkSync(filePath);
+    rmdirSync(tmpDir);
   });
 });
 

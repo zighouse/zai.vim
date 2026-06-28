@@ -2,6 +2,7 @@
 // Implements the command-mode architecture (Phase D, Story 4.2 AC7).
 // Input starting with `:` is parsed as a command; otherwise it's a chat message.
 
+import { writeFileSync } from 'node:fs';
 import type { SessionState, StoreAction } from './store.js';
 
 // ---- Types -----------------------------------------------------------------
@@ -10,8 +11,8 @@ export interface CommandContext {
   sessions: Map<string, SessionState>;
   activeSessionId: string | null;
   dispatch: (action: StoreAction) => void;
-  scrollMessages: (direction: 'up' | 'down') => void;
-  scrollSessionList: (direction: 'up' | 'down') => void;
+  scrollMessages: (direction: 'up' | 'down' | 'top' | 'bottom', step?: number) => void;
+  scrollSessionList: (direction: 'up' | 'down' | 'top' | 'bottom', step?: number) => void;
   onExit: () => void;
 }
 
@@ -74,15 +75,24 @@ const commands: Command[] = [
   {
     name: 'scroll',
     aliases: ['sc'],
-    description: 'Scroll chat messages — :scroll up|down  (alias :sc)',
+    description: 'Scroll chat — :scroll up|down|top|bottom [n]  (alias :sc, default step 10 lines)',
     execute(args, ctx) {
       const dir = args[0]?.toLowerCase();
+      if (dir === 'top') {
+        ctx.scrollMessages('top');
+        return;
+      }
+      if (dir === 'bottom') {
+        ctx.scrollMessages('bottom');
+        return;
+      }
+      const step = args[1] ? Math.max(1, parseInt(args[1], 10) || 1) : 10;
       if (dir === 'up') {
-        ctx.scrollMessages('up');
+        ctx.scrollMessages('up', step);
       } else if (dir === 'down') {
-        ctx.scrollMessages('down');
+        ctx.scrollMessages('down', step);
       } else {
-        return 'Usage: :scroll up|down';
+        return 'Usage: :scroll up|down|top|bottom [n]';
       }
     },
   },
@@ -94,6 +104,35 @@ const commands: Command[] = [
       return commands
         .map(c => `:${c.name}${c.aliases.length ? ` (:${c.aliases.join('|')})` : ''} — ${c.description}`)
         .join('\n');
+    },
+  },
+  {
+    name: 'export',
+    aliases: ['e'],
+    description: 'Export current session to file — :export <file-path>  (alias :e)',
+    execute(args, ctx) {
+      const filePath = args.join(' ');
+      if (!filePath) return 'Usage: :export <file-path>';
+
+      const session = ctx.activeSessionId ? ctx.sessions.get(ctx.activeSessionId) : undefined;
+      if (!session) return 'No active session to export';
+      if (session.messages.length === 0) return 'Session has no messages';
+
+      const lines: string[] = [
+        `=== ${session.name} ===`,
+        `Messages: ${session.messages.length}`,
+        '',
+      ];
+      for (const msg of session.messages) {
+        const ts = new Date(msg.createdAt).toLocaleString();
+        const label = msg.role === 'user' ? 'YOU' : 'AI';
+        lines.push(`[${label} — ${ts}]`);
+        lines.push(msg.content);
+        lines.push('');
+      }
+
+      writeFileSync(filePath, lines.join('\n'), 'utf-8');
+      return `Exported ${session.messages.length} messages to ${filePath}`;
     },
   },
   {

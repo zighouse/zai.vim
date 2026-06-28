@@ -169,6 +169,58 @@ describe('TuiStore', () => {
     expect(msgs[0].isStreaming).toBe(false);
   });
 
+  it('CHUNKS_APPENDED applies a batch in one reducer pass', () => {
+    const store = createTuiStore();
+    store.dispatch({ type: 'SESSION_CREATED', payload: { id: 's1', name: 'S1' } });
+    store.dispatch({ type: 'STREAM_START', payload: { sessionId: 's1' } });
+    store.dispatch({
+      type: 'CHUNKS_APPENDED',
+      payload: {
+        sessionId: 's1',
+        chunks: [
+          { type: 'text', content: 'Hello' },
+          { type: 'text', content: ' ' },
+          { type: 'text', content: 'World' },
+        ],
+      },
+    });
+    const session = store.getState().sessions.get('s1')!;
+    expect(session.messages).toHaveLength(1);
+    expect(session.messages[0].content).toBe('Hello World');
+    expect(session.messages[0].isStreaming).toBe(true);
+    expect(session.tokensOut).toBe('Hello World'.length);
+  });
+
+  it('CHUNKS_APPENDED with done chunk finalizes the streaming message', () => {
+    const store = createTuiStore();
+    store.dispatch({ type: 'SESSION_CREATED', payload: { id: 's1', name: 'S1' } });
+    store.dispatch({ type: 'STREAM_START', payload: { sessionId: 's1' } });
+    store.dispatch({
+      type: 'CHUNKS_APPENDED',
+      payload: {
+        sessionId: 's1',
+        chunks: [
+          { type: 'text', content: 'final' },
+          { type: 'done', finishReason: 'stop' },
+        ],
+      },
+    });
+    const msgs = store.getState().sessions.get('s1')!.messages;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].content).toBe('final');
+    expect(msgs[0].isStreaming).toBe(false);
+  });
+
+  it('CHUNKS_APPENDED with empty array is a no-op', () => {
+    const store = createTuiStore();
+    store.dispatch({ type: 'SESSION_CREATED', payload: { id: 's1', name: 'S1' } });
+    const before = store.getState().sessions.get('s1')!;
+    store.dispatch({ type: 'CHUNKS_APPENDED', payload: { sessionId: 's1', chunks: [] } });
+    const after = store.getState().sessions.get('s1')!;
+    expect(after.messages).toEqual(before.messages);
+    expect(after.tokensOut).toBe(before.tokensOut);
+  });
+
   it('open-ended passthrough for unknown chunk types (C4.1)', () => {
     const store = createTuiStore();
     store.dispatch({ type: 'SESSION_CREATED', payload: { id: 's1', name: 'S1' } });

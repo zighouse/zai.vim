@@ -40,12 +40,20 @@ function App({ store, client }: AppProps) {
       sessions: state.sessions,
       activeSessionId: state.activeSessionId,
       dispatch: store.dispatch,
-      scrollMessages: (dir) => {
-        setChatScrollOffset((prev) => (dir === 'up' ? prev + 1 : Math.max(0, prev - 1)));
+      scrollMessages: (dir, step = 1) => {
+        setChatScrollOffset((prev) =>
+          dir === 'up' ? prev + step
+            : dir === 'down' ? Math.max(0, prev - step)
+            : dir === 'top' ? Infinity
+            : 0,  // bottom
+        );
       },
-      scrollSessionList: (dir) => {
+      scrollSessionList: (dir, step = 1) => {
         setSessionListScrollOffset((prev) =>
-          dir === 'up' ? Math.max(0, prev - 1) : prev + 1,
+          dir === 'up' ? Math.max(0, prev - step)
+            : dir === 'down' ? prev + step
+            : dir === 'top' ? 0
+            : Infinity,  // bottom
         );
       },
       onExit: handleExit,
