@@ -5,6 +5,7 @@
 
 // ---- Error Codes -----------------------------------------------------------
 
+/** Machine-readable error code constants organized by domain. */
 export const ErrorCodes = {
   // Core
   CORE_PARSE_ERROR: 'CORE_PARSE_ERROR',
@@ -32,19 +33,18 @@ export const ErrorCodes = {
   TOOLS_EXECUTION_FAILED: 'TOOLS_EXECUTION_FAILED',
   TOOLS_OUTPUT_TOO_LARGE: 'TOOLS_OUTPUT_TOO_LARGE',
   TOOLS_SANDBOX_DENIED: 'TOOLS_SANDBOX_DENIED',
-  // Story 3.3: Tool registry dispatch / namespace contract
   TOOLS_NOT_FOUND: 'TOOLS_NOT_FOUND',
   TOOLS_NAME_CONFLICT: 'TOOLS_NAME_CONFLICT',
   TOOLS_OUTPUT_NOT_SERIALIZABLE: 'TOOLS_OUTPUT_NOT_SERIALIZABLE',
 
-  // Story 3.4: Isolated execution environment (sub-sandbox lifecycle)
+  // Isolated execution (Story 3.4)
   ISOLATED_TIMEOUT: 'ISOLATED_TIMEOUT',
   ISOLATED_ALREADY_DESTROYED: 'ISOLATED_ALREADY_DESTROYED',
   ISOLATED_CONCURRENCY_LIMIT: 'ISOLATED_CONCURRENCY_LIMIT',
   ISOLATED_UNAVAILABLE: 'ISOLATED_UNAVAILABLE',
   RESOURCE_INSUFFICIENT: 'RESOURCE_INSUFFICIENT',
 
-  // Story 3.5: Async diff review and approval
+  // Async diff review (Story 3.5)
   APPROVAL_ALREADY_RESOLVED: 'APPROVAL_ALREADY_RESOLVED',
   APPROVAL_NOT_FOUND: 'APPROVAL_NOT_FOUND',
   APPROVAL_TIMEOUT: 'APPROVAL_TIMEOUT',
@@ -72,10 +72,19 @@ export const ErrorCodes = {
   PIPELINE_PROVIDER_NOT_STREAMING: 'PIPELINE_PROVIDER_NOT_STREAMING',
 } as const;
 
+/** Union type of all ErrorCodes values. */
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
 
 // ---- Base ZaiError ---------------------------------------------------------
 
+/**
+ * Base error class for all @zaivim/* errors.
+ * Subclassed by domain-specific errors (network, tool, skill, config, etc.).
+ *
+ * @property code - Machine-readable error code from ErrorCodes.
+ * @property statusCode - HTTP-style status code for serialization.
+ * @property detail - Optional structured error context.
+ */
 export class ZaiError extends Error {
   readonly code: ErrorCode;
   readonly statusCode: number;
@@ -87,10 +96,10 @@ export class ZaiError extends Error {
     this.code = code;
     this.statusCode = statusCode;
     this.detail = detail;
-    // Ensure instanceof works correctly across package boundaries
     Object.setPrototypeOf(this, new.target.prototype);
   }
 
+  /** Serialize error to JSON-safe object for protocol transmission. */
   toJSON(): { code: ErrorCode; message: string; stack?: string } {
     return {
       code: this.code,
@@ -102,6 +111,7 @@ export class ZaiError extends Error {
 
 // ---- Network errors --------------------------------------------------------
 
+/** Error from provider connection/network failures. */
 export class ZaiNetworkError extends ZaiError {
   constructor(message: string, code: ErrorCode = 'ENGINE_PROVIDER_ERROR', statusCode = 502, detail?: unknown) {
     super(message, code, statusCode, detail);
@@ -111,6 +121,7 @@ export class ZaiNetworkError extends ZaiError {
 
 // ---- Tool errors -----------------------------------------------------------
 
+/** Error from tool execution failures (file not found, permission denied, etc.). */
 export class ZaiToolError extends ZaiError {
   readonly toolName?: string;
 
@@ -136,6 +147,7 @@ export class ZaiToolError extends ZaiError {
 
 // ---- Skill errors ----------------------------------------------------------
 
+/** Error when a skill fails to load (import error, missing deps). */
 export class SkillLoadError extends ZaiError {
   readonly skillName: string;
   readonly skillPath?: string;
@@ -148,6 +160,7 @@ export class SkillLoadError extends ZaiError {
   }
 }
 
+/** Error when a skill crashes during execution. */
 export class SkillRuntimeError extends ZaiError {
   readonly skillName: string;
 
@@ -158,6 +171,7 @@ export class SkillRuntimeError extends ZaiError {
   }
 }
 
+/** Error when a skill's interface doesn't match the expected signature. */
 export class SkillInvalidSignatureError extends ZaiError {
   readonly skillName: string;
 
@@ -170,6 +184,7 @@ export class SkillInvalidSignatureError extends ZaiError {
 
 // ---- Config errors ---------------------------------------------------------
 
+/** Error from invalid engine configuration. */
 export class ZaiConfigError extends ZaiError {
   constructor(message: string, detail?: unknown) {
     super(message, 'ENGINE_CONFIG_INVALID', 400, detail);
@@ -179,6 +194,7 @@ export class ZaiConfigError extends ZaiError {
 
 // ---- Instance errors -------------------------------------------------------
 
+/** Error when a second engine instance tries to start while one is running. */
 export class ZaiInstanceConflictError extends ZaiError {
   readonly existingPid: number;
   readonly existingStartedAt?: number;
@@ -206,6 +222,7 @@ export class ZaiInstanceConflictError extends ZaiError {
 
 // ---- Security errors -------------------------------------------------------
 
+/** Error from security policy rejection (harm classification, sandbox deny). */
 export class ZaiSecurityError extends ZaiError {
   readonly operation: string;
 
@@ -218,6 +235,7 @@ export class ZaiSecurityError extends ZaiError {
 
 // ---- Gateway errors --------------------------------------------------------
 
+/** Error from gateway transport failures (connection, encoding, method dispatch). */
 export class ZaiGatewayError extends ZaiError {
   constructor(message: string, code: ErrorCode = 'GATEWAY_TRANSPORT_ERROR', statusCode = 502) {
     super(message, code, statusCode);
@@ -227,6 +245,7 @@ export class ZaiGatewayError extends ZaiError {
 
 // ---- Session errors ---------------------------------------------------------
 
+/** Error when a requested session does not exist. */
 export class ZaiSessionNotFoundError extends ZaiError {
   readonly sessionId: string;
 
@@ -237,6 +256,7 @@ export class ZaiSessionNotFoundError extends ZaiError {
   }
 }
 
+/** Error when a session has expired and can no longer be used. */
 export class ZaiSessionExpiredError extends ZaiError {
   readonly sessionId: string;
 
@@ -247,6 +267,7 @@ export class ZaiSessionExpiredError extends ZaiError {
   }
 }
 
+/** Error when a session has reached its maximum message limit. */
 export class ZaiSessionMaxMessagesError extends ZaiError {
   readonly sessionId: string;
   readonly current: number;
