@@ -295,6 +295,34 @@ function applyChunkToMessages(
       });
       return { messages: next, tokenDelta: 0 };
     }
+    case 'thinking': {
+      // Story 4.2.1: thinking content stored in extras.thinkingRing in reducer.
+      // If this path is hit via CHUNK_APPENDED (single chunk), create a message
+      // entry so the content is visible in the message list.
+      const thinkContent = (chunk.content as string) ?? '';
+      if (!thinkContent) return { messages: next, tokenDelta: 0 };
+      const last = next[next.length - 1];
+      if (last?.role === 'assistant' && last.isStreaming && last.content.startsWith('> 🤔')) {
+        next[next.length - 1] = { ...last, content: last.content + thinkContent };
+      } else {
+        next.push({
+          id: `think-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          role: 'assistant',
+          content: `> 🤔 ${thinkContent}`,
+          createdAt: Date.now(),
+          isStreaming: true,
+        });
+      }
+      return { messages: next, tokenDelta: 0 };
+    }
+    case 'stats': {
+      // Story 4.2.1: stats stored in extras in reducer — no message entry needed.
+      return { messages: next, tokenDelta: 0 };
+    }
+    case 'phase': {
+      // Story 4.2.1: phase stored in extras.phase in reducer — no message entry needed.
+      return { messages: next, tokenDelta: 0 };
+    }
     default: {
       // C4.1: Open-ended passthrough — unknown chunk types pass through
       // Reserved for Story 4.2.1: thinking, stats, phase chunks

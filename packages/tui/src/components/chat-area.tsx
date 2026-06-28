@@ -118,6 +118,21 @@ interface ChatAreaProps {
   commandFeedback: string | null;
 }
 
+const phaseIcons: Record<string, string> = {
+  request: '📤', thinking: '🤔', tool: '🔧', response: '💬', done: '✅', error: '❌',
+};
+
+/** Story 4.2.1: Format stats info bar string. Returns '' when no data. */
+function formatStats(session: SessionState): string {
+  const { tokensIn, tokensOut, elapsedMs, speed } = session;
+  if (!tokensIn && !tokensOut) return '';
+  const inK = tokensIn ? (tokensIn / 1000).toFixed(1) : '?';
+  const outK = tokensOut ? (tokensOut / 1000).toFixed(1) : '?';
+  const el = elapsedMs ? (elapsedMs / 1000).toFixed(1) : '?';
+  const spd = speed ? Math.round(speed).toString() : '?';
+  return `📊 ↑${inK}k · ↓${outK}k · ${el}s · ${spd}t/s`;
+}
+
 // ---- ChatMessage component -------------------------------------------------
 
 interface ChatMessageProps {
@@ -136,6 +151,16 @@ const ChatMessage = React.memo(function ChatMessage({ message }: ChatMessageProp
         <Text color="green">&gt; </Text>
         <Text>{safeContent}</Text>
         {message.isStreaming && <Text color="yellow">▌</Text>}
+      </Box>
+    );
+  }
+
+  // Story 4.2.1: thinking messages rendered with dim style and 🤔 prefix
+  if (message.content.startsWith('> 🤔')) {
+    return (
+      <Box>
+        <Text dimColor>{safeContent}</Text>
+        {message.isStreaming && <Text color="yellow" dimColor>▌</Text>}
       </Box>
     );
   }
@@ -321,18 +346,31 @@ export function ChatArea({
     totalColumns,
   );
 
+  // Story 4.2.1: compute stats info bar string
+  const statsInfo = (activeSession && activeSession.status !== 'streaming' && activeSession.status !== 'thinking' && activeSession.status !== 'tool')
+    ? formatStats(activeSession) : '';
+
   return (
     <Box flexDirection="column" height={panelHeight}>
       {/* Header */}
       <Box borderStyle="single" borderColor="gray" paddingX={1}>
         <Text bold>{activeSession?.name ?? activeSessionId}</Text>
+        {activeSession?.phase && activeSession.phase !== 'done' && activeSession.phase !== 'request' && (
+          <Text> {phaseIcons[activeSession.phase] ?? ''}</Text>
+        )}
         {activeSession?.status === 'streaming' && <Text color="yellow"> (streaming...)</Text>}
         {clampedOffset > 0 && <Text color="magenta"> ↑{clampedOffset}</Text>}
       </Box>
 
       {/* Messages area — explicit height so content cannot push the layout */}
       <Box flexDirection="column" height={messagesHeight} overflowY="hidden" paddingX={1} paddingY={1}>
-        {visibleMessages.length === 0 ? (
+        {/* Story 4.2.1: thinking area — show latest thinking snippet during stream */}
+        {activeSession?.thinkingRing && activeSession.status !== 'idle' && activeSession.status !== 'done' && (
+          <Box>
+            <Text dimColor>&gt; 🤔 {activeSession.thinkingRing.slice(-120)}</Text>
+          </Box>
+        )}
+        {visibleMessages.length === 0 && !activeSession?.thinkingRing ? (
           <Box alignItems="center" justifyContent="center" height="100%">
             <Text dimColor>输入消息开始对话</Text>
           </Box>
@@ -342,6 +380,11 @@ export function ChatArea({
           ))
         )}
       </Box>
+
+      {/* Story 4.2.1: stats info bar */}
+      {statsInfo && (
+        <Box paddingX={1}><Text dimColor>{statsInfo}</Text></Box>
+      )}
 
       {/* Command feedback (transient) */}
       {commandFeedback && (
