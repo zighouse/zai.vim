@@ -499,8 +499,8 @@ export const fileSearchTool: ToolDefinition<FileSearchParams, FileSearchResult> 
         matches,
         totalMatches,
         truncated,
-        truncatedMessage,
         elapsedMs,
+        ...(truncatedMessage ? { truncatedMessage } : {}),
       };
     } finally {
       clearTimeout(timeout);

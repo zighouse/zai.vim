@@ -373,6 +373,14 @@ export class Engine implements EngineAPI {
       subSandboxManager: this.#subSandboxManager,
       // Story 3.5: wire ApprovalManager for async diff review
       approvalManager: this.#approvalManager,
+      // Wire sandbox manager for shell execution (ctx.exec)
+      sandboxManager: this.#sandbox,
+      sandboxCapabilities: {
+        filesystemWriteable: true,
+        userNamespace: true,
+        seccomp: true,
+        networkIsolation: true,
+      },
     };
 
     yield* pipelineChat(session, message, deps, signal);

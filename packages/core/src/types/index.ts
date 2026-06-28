@@ -526,6 +526,8 @@ export interface ProviderChatRequest {
   readonly model?: string;
   readonly temperature?: number;
   readonly maxTokens?: number;
+  /** OpenAI-compatible tool definitions (from ToolRegistry.toOpenAITools()). */
+  readonly tools?: unknown[];
 }
 
 /**

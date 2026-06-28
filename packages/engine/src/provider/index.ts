@@ -122,6 +122,7 @@ export class OpenAICompatibleProvider implements IProvider {
       stream: true,
       // Story 5.5: request usage in final chunk for stats emission
       stream_options: { include_usage: true },
+      ...(request.tools?.length ? { tools: request.tools } : {}),
     };
 
     let response: Response;
@@ -207,6 +208,26 @@ export class OpenAICompatibleProvider implements IProvider {
     const chunkWallclock = { firstChunk: 0 as number, lastChunk: 0 as number };
     // Story 5.5: accumulated usage from final chunk
     let usageData: { promptTokens?: number; completionTokens?: number } = {};
+    // Accumulate streaming tool_calls deltas by index across SSE events.
+    // OpenAI-compatible streaming sends tool_calls in multiple delta chunks
+    // (first has id+name, subsequent only have partial arguments).
+    const pendingToolCalls = new Map<number, { id: string; name: string; args: string }>();
+    const flushToolCalls = (): Array<{ type: 'tool_call'; id: string; name: string; arguments: Record<string, unknown> }> => {
+      const chunks: Array<{ type: 'tool_call'; id: string; name: string; arguments: Record<string, unknown> }> = [];
+      for (const [idx, pending] of pendingToolCalls) {
+        if (!pending.name) continue;
+        let args: Record<string, unknown> = {};
+        try { args = JSON.parse(pending.args) as Record<string, unknown>; } catch { /* partial */ }
+        chunks.push({
+          type: 'tool_call',
+          id: pending.id || String(idx),
+          name: pending.name,
+          arguments: args,
+        });
+      }
+      pendingToolCalls.clear();
+      return chunks;
+    };
 
     try {
       while (true) {
@@ -267,9 +288,12 @@ export class OpenAICompatibleProvider implements IProvider {
           const choice = choices?.[0] as Record<string, unknown> | undefined;
           if (!choice) continue;
 
-          // Check finish_reason
+          // Check finish_reason — flush any accumulated tool calls when stream is done
           if (choice.finish_reason) {
             finishReason = String(choice.finish_reason);
+            if (pendingToolCalls.size > 0) {
+              yield* flushToolCalls();
+            }
           }
 
           const delta = choice.delta as Record<string, unknown> | undefined;
@@ -309,21 +333,20 @@ export class OpenAICompatibleProvider implements IProvider {
             yield { type: 'text', content: String(delta.content) };
           }
 
-          // Tool calls
+          // Tool calls — accumulate by index across SSE delta events
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls as Array<Record<string, unknown>>) {
+              const index = (tc.index as number) ?? 0;
+              let pending = pendingToolCalls.get(index);
+              if (!pending) {
+                pending = { id: '', name: '', args: '' };
+                pendingToolCalls.set(index, pending);
+              }
+              if (tc.id) pending.id = String(tc.id);
               if (tc.function) {
                 const fn = tc.function as Record<string, unknown>;
-                let args: Record<string, unknown> = {};
-                if (typeof fn.arguments === 'string') {
-                  try { args = JSON.parse(fn.arguments) as Record<string, unknown>; } catch { /* partial args */ }
-                }
-                yield {
-                  type: 'tool_call',
-                  id: String(tc.id ?? ''),
-                  name: String(fn.name ?? ''),
-                  arguments: args,
-                };
+                if (fn.name) pending.name = String(fn.name);
+                if (fn.arguments) pending.args += String(fn.arguments);
               }
             }
           }
@@ -331,6 +354,11 @@ export class OpenAICompatibleProvider implements IProvider {
       }
     } finally {
       reader.releaseLock();
+    }
+
+    // Flush any tool calls that were accumulated but not flushed by finish_reason
+    if (pendingToolCalls.size > 0) {
+      yield* flushToolCalls();
     }
 
     // Story 5.5 (AC6): emit stats chunk when usage data available

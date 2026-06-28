@@ -47,6 +47,13 @@ export interface ChatDeps {
    * tools can submit changes for user approval instead of applying immediately.
    */
   readonly approvalManager?: import('./approval-manager.js').ApprovalManager;
+  /**
+   * Sandbox manager for shell execution context. When absent, ctx.exec is
+   * undefined and shell tool returns SANDBOX_UNAVAILABLE.
+   */
+  readonly sandboxManager?: import('../security/index.js').SandboxManager;
+  /** Sandbox capabilities for ShellExecutorFactory. */
+  readonly sandboxCapabilities?: import('./shell-executor.js').SandboxCapabilities;
 }
 
 type EmitFn = (event: string, data: Record<string, unknown>) => void;
@@ -64,7 +71,7 @@ export async function* chat(
   const {
     sessionStore,
     provider,
-    registry,
+    registry = new ToolRegistry(),
     security = new NullSecurityProvider(),
     config = {},
     persona,
@@ -72,6 +79,8 @@ export async function* chat(
     onMessagePushed,
     providerRegistry,
     sessionId = session.id,
+    sandboxManager,
+    sandboxCapabilities,
   } = deps;
 
   const maxToolCallRounds = config.maxToolCallRounds ?? PIPELINE_DEFAULTS.maxToolCallRounds;
@@ -136,6 +145,7 @@ export async function* chat(
         sessionId: session.id,
         temperature: persona?.temperature ?? session.config?.defaults?.temperature ?? 0.7,
         maxTokens: persona?.maxTokens ?? session.config?.defaults?.maxTokens ?? 4096,
+        tools: registry.toOpenAITools(),
       };
 
       const toolCalls: ToolCallRequest[] = [];
@@ -362,6 +372,9 @@ export async function* chat(
         subSandboxManager: deps.subSandboxManager,
         // Story 3.5: thread approval manager for async diff review
         approvalManager: deps.approvalManager,
+        // Wire sandbox manager for shell execution (ctx.exec)
+        sandboxManager,
+        sandboxCapabilities,
       });
 
       // 9. Yield tool_result chunks and add to working messages
@@ -553,7 +566,7 @@ async function* callProviderWithRetryAndFallback(
 async function handleContextLengthExceeded(
   workingMessages: Message[],
   provider: IProvider,
-  request: { messages: Message[]; sessionId: string; temperature: number; maxTokens: number },
+  request: { messages: Message[]; sessionId: string; temperature: number; maxTokens: number; tools?: unknown[] },
   sessionId: string,
   signal: AbortSignal | undefined,
   emit: EmitFn,

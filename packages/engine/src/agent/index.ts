@@ -466,6 +466,7 @@ export class AsyncGeneratorAgent implements AgentHandle {
         model: this.persona.model,
         temperature: this.persona.temperature,
         maxTokens: this.persona.maxTokens,
+        tools: this.#registry.toOpenAITools(),
       };
 
       // Stream response
